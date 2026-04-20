@@ -1,0 +1,71 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.database import get_db
+from app.core.deps import get_current_user, require_roles
+from app.models.cue import Contributor, CueEntry
+from app.models.user import User, UserRole
+from app.schemas.cue import CueCreate, CueOut, CueUpdate
+
+router = APIRouter()
+
+
+@router.post("/episode/{episode_id}", response_model=CueOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+async def create_cue(episode_id: int, payload: CueCreate, db: AsyncSession = Depends(get_db)):
+    data = payload.model_dump(exclude={"contributors"})
+    cue = CueEntry(episode_id=episode_id, **data)
+    db.add(cue)
+    await db.flush()
+    for c in payload.contributors:
+        db.add(Contributor(cue_id=cue.id, **c.model_dump()))
+    await db.commit()
+    return await _get_cue(cue.id, db)
+
+
+@router.get("/episode/{episode_id}", response_model=list[CueOut])
+async def list_cues(episode_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+    res = await db.execute(
+        select(CueEntry).where(CueEntry.episode_id == episode_id)
+        .options(selectinload(CueEntry.contributors)).order_by(CueEntry.order_index, CueEntry.id)
+    )
+    return res.scalars().all()
+
+
+@router.get("/{cid}", response_model=CueOut)
+async def get_cue(cid: int, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+    return await _get_cue(cid, db)
+
+
+@router.put("/{cid}", response_model=CueOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+async def update_cue(cid: int, payload: CueUpdate, db: AsyncSession = Depends(get_db)):
+    cue = (await db.execute(select(CueEntry).where(CueEntry.id == cid).options(selectinload(CueEntry.contributors)))).scalar_one_or_none()
+    if not cue:
+        raise HTTPException(404)
+    for k, v in payload.model_dump(exclude={"contributors"}).items():
+        setattr(cue, k, v)
+    for old in list(cue.contributors):
+        await db.delete(old)
+    await db.flush()
+    for c in payload.contributors:
+        db.add(Contributor(cue_id=cue.id, **c.model_dump()))
+    await db.commit()
+    return await _get_cue(cid, db)
+
+
+@router.delete("/{cid}", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+async def delete_cue(cid: int, db: AsyncSession = Depends(get_db)):
+    cue = await db.get(CueEntry, cid)
+    if not cue:
+        raise HTTPException(404)
+    await db.delete(cue)
+    await db.commit()
+    return {"ok": True}
+
+
+async def _get_cue(cid: int, db: AsyncSession) -> CueEntry:
+    cue = (await db.execute(select(CueEntry).where(CueEntry.id == cid).options(selectinload(CueEntry.contributors)))).scalar_one_or_none()
+    if not cue:
+        raise HTTPException(404)
+    return cue
