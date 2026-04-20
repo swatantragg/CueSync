@@ -1,0 +1,28 @@
+# FastAPI stack
+fastapi>=0.118
+uvicorn[standard]>=0.35
+gunicorn>=23
+
+# DB drivers - async asyncpg + sync psycopg v3 (Py 3.13/3.14 compatible)
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30
+psycopg[binary]>=3.2.3
+alembic>=1.14
+
+# Validation
+pydantic>=2.10
+pydantic-settings>=2.7
+email-validator>=2.2
+
+# Auth
+python-jose[cryptography]>=3.3
+bcrypt>=4.2
+python-multipart>=0.0.19
+
+# Excel
+openpyxl>=3.1.5
+
+# Utils
+python-dotenv>=1.0
+orjson>=3.10
+httpx>=0.28
