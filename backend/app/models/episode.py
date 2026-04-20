@@ -14,6 +14,7 @@ class Episode(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     episode_number: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str | None] = mapped_column(String(255))
+    air_date: Mapped[str | None] = mapped_column(String(50))
 
     total_duration_sec: Mapped[int | None] = mapped_column(Integer)
     musical_duration_sec: Mapped[int | None] = mapped_column(Integer)

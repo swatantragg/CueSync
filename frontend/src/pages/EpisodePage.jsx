@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { XCircle, CheckCircle2, History, Send, Check, Package } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { XCircle, CheckCircle2, History, Send, Check, Package, ChevronLeft, ChevronRight } from "lucide-react";
+import { api } from "../utils/api";
 import { C, FONTS } from "../styles/palette";
 import Header from "../components/Header";
 import StatusBadge from "../components/StatusBadge";
@@ -11,16 +12,103 @@ import ExpBtn from "../components/ExpBtn";
 import { USERS_DB } from "../constants/users";
 import { uid } from "../utils/uid";
 import { now } from "../utils/format";
-import { buildIPRS, buildPRS, buildASCAP, dlExport } from "../utils/exporters";
 import { useApp } from "../context/AppContext";
 
 export default function EpisodePage() {
-  const { activeProject, activeEpisode, currentUser, isAdmin, updateEpisode, setNotifications } = useApp();
+  const { activeProject, activeEpisode, currentUser, isAdmin, updateProject, updateEpisode, setActiveEpisodeId, setNotifications } = useApp();
   const [adminReviewNote, setAdminReviewNote] = useState("");
+  const timers = useRef(new Map());
+  const pending = useRef(new Map());
+
+  const schedule = (key, fn) => {
+    pending.current.set(key, fn);
+    const existing = timers.current.get(key);
+    if (existing) clearTimeout(existing);
+    timers.current.set(key, setTimeout(async () => {
+      const run = pending.current.get(key);
+      pending.current.delete(key);
+      timers.current.delete(key);
+      try { await run(); } catch (e) { console.error("save failed", key, e); }
+    }, 400));
+  };
+  const flushAll = async () => {
+    const entries = [...pending.current.entries()];
+    pending.current.clear();
+    for (const [k, t] of timers.current) clearTimeout(t);
+    timers.current.clear();
+    await Promise.all(entries.map(([, fn]) => fn().catch(() => {})));
+  };
+  useEffect(() => () => { flushAll(); }, []);
+
+  useEffect(() => {
+    if (!activeEpisode?.id) return;
+    flushAll().then(() => api.listCues(activeEpisode.id)).then((cues) => {
+      updateEpisode(activeProject.id, activeEpisode.id, (e) => ({
+        ...e,
+        cues: cues.map((c) => ({
+          id: c.id, songTitle: c.song_title, usageType: c.usage_type, duration: c.duration_sec,
+          usages: c.usage_count, songCode: c.song_code, isrc: c.isrc,
+          contributors: c.contributors.map((ct) => ({
+            id: ct.id, name: ct.name, role: ct.role, society: ct.society,
+            share: Number(ct.share_percent), ipi: ct.ipi_number,
+          })),
+        })),
+      }));
+    }).catch(() => {});
+  }, [activeEpisode?.id]);
 
   if (!activeProject || !activeEpisode) return null;
   const proj = activeProject;
   const ep = activeEpisode;
+  const sortedEps = [...proj.episodes].sort((a, b) => (a.number || 0) - (b.number || 0));
+  const epIdx = sortedEps.findIndex((e) => e.id === ep.id);
+  const prevEp = epIdx > 0 ? sortedEps[epIdx - 1] : null;
+  const nextEp = epIdx >= 0 && epIdx < sortedEps.length - 1 ? sortedEps[epIdx + 1] : null;
+
+  const toSec = (v) => {
+    if (v == null || v === "") return null;
+    if (typeof v === "number") return v;
+    const s = String(v).trim();
+    const m = s.match(/^(\d+):(\d+)(?::(\d+))?$/);
+    if (m) return (+m[1]) * (m[3] ? 3600 : 60) + (+m[2]) * (m[3] ? 60 : 1) + (+m[3] || 0);
+    const n = Number(s);
+    return isNaN(n) ? null : n;
+  };
+
+  const saveEpisode = (e) => schedule(`ep:${e.id}`, () => api.updateEpisode(e.id, {
+    episode_number: e.number, title: e.title || null, air_date: e.airDate || null,
+    total_duration_sec: toSec(e.totalDuration), musical_duration_sec: toSec(e.musicalDuration),
+    bg_instrumental_duration_sec: toSec(e.bg_instrumental_duration_sec),
+    bg_vocal_duration_sec: toSec(e.bg_vocal_duration_sec),
+  }));
+  const saveCue = (cue) => schedule(`cue:${cue.id}`, () => api.updateCue(cue.id, {
+    song_title: cue.songTitle || "", usage_type: cue.usageType || "background",
+    duration_sec: toSec(cue.duration) || 0, usage_count: Number(cue.usages) || 1,
+    song_code: cue.songCode || null, isrc: cue.isrc || null,
+    contributors: (cue.contributors || []).map((ct) => ({
+      name: ct.name || "", role: ct.role || "Composer", society: ct.society || null,
+      share_percent: Number(ct.share) || 0, ipi_number: ct.ipi || null,
+    })),
+  }));
+  const saveProject = (p) => schedule(`proj:${p.id}`, () => api.updateProject(p.id, {
+    title: p.title, type: p.type, language: p.language || null, genre: p.genre || null,
+    production_company: p.productionCompany || null, director: p.director || null,
+    producer: p.producer || null, actors: p.actors || null,
+    production_year: p.year ? Number(p.year) : null, channel_name: p.channel || null,
+    country: p.countryOfOrigin || null, total_episodes: p.total_episodes || null,
+    bg_music_composer: p.backgroundMusicComposer || null,
+  }));
+
+  const editProj = (k, v) => {
+    let updated;
+    updateProject(proj.id, (p) => { updated = { ...p, [k]: v }; return updated; });
+    if (updated) saveProject(updated);
+  };
+  const editEp = (k, v) => {
+    let updated;
+    updateEpisode(proj.id, ep.id, (e) => { updated = { ...e, [k]: v }; return updated; });
+    if (updated) saveEpisode(updated);
+  };
   const uploader = USERS_DB.find((u) => u.id === ep.uploadedBy);
 
   const shareCheck = (c) => {
@@ -33,38 +121,52 @@ export default function EpisodePage() {
     updateEpisode(proj.id, ep.id, (e) => ({ ...e, editHistory: [...e.editHistory, { userId: currentUser.id, name: currentUser.name, action, at: now() }] }));
   };
   const updateCue = (cid, k, v) => {
+    let updated;
     updateEpisode(proj.id, ep.id, (e) => ({
       ...e,
       status: e.status === "pending" || e.status === "rejected" ? "in_progress" : e.status,
-      cues: e.cues.map((c) => (c.id === cid ? { ...c, [k]: v } : c)),
+      cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, [k]: v }; return updated; } return c; }),
     }));
+    if (updated) saveCue(updated);
   };
   const updateContrib = (cid, coid, k, v) => {
+    let updated;
     updateEpisode(proj.id, ep.id, (e) => ({
       ...e,
       status: e.status === "pending" || e.status === "rejected" ? "in_progress" : e.status,
-      cues: e.cues.map((c) => (c.id === cid ? { ...c, contributors: c.contributors.map((co) => (co.id === coid ? { ...co, [k]: v } : co)) } : c)),
+      cues: e.cues.map((c) => {
+        if (c.id !== cid) return c;
+        updated = { ...c, contributors: c.contributors.map((co) => (co.id === coid ? { ...co, [k]: v } : co)) };
+        return updated;
+      }),
     }));
+    if (updated) saveCue(updated);
   };
   const addContrib = (cid) => {
+    let updated;
     updateEpisode(proj.id, ep.id, (e) => ({
       ...e,
-      cues: e.cues.map((c) => (c.id === cid ? { ...c, contributors: [...c.contributors, { id: uid(), name: "", role: "Composer", society: "", share: 0, ipi: "" }] } : c)),
+      cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, contributors: [...c.contributors, { id: uid(), name: "", role: "Composer", society: "", share: 0, ipi: "" }] }; return updated; } return c; }),
     }));
+    if (updated) saveCue(updated);
   };
   const removeContrib = (cid, coid) => {
+    let updated;
     updateEpisode(proj.id, ep.id, (e) => ({
       ...e,
-      cues: e.cues.map((c) => (c.id === cid ? { ...c, contributors: c.contributors.filter((co) => co.id !== coid) } : c)),
+      cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, contributors: c.contributors.filter((co) => co.id !== coid) }; return updated; } return c; }),
     }));
+    if (updated) saveCue(updated);
   };
   const removeSong = (cid) => {
     updateEpisode(proj.id, ep.id, (e) => ({ ...e, cues: e.cues.filter((c) => c.id !== cid) }));
     addEditEntry("Removed a song");
+    api.deleteCue(cid).catch(() => {});
   };
   const handleSubmit = () => {
     updateEpisode(proj.id, ep.id, (e) => ({ ...e, status: "submitted" }));
     addEditEntry("Submitted for approval");
+    if (nextEp) setTimeout(() => setActiveEpisodeId(nextEp.id), 400);
   };
   const handleApprove = () => {
     updateEpisode(proj.id, ep.id, (e) => ({ ...e, status: "approved", rejectionNote: "" }));
@@ -90,6 +192,26 @@ export default function EpisodePage() {
             {ep.airDate && <div className="text-sm" style={{ color: C.sub }}>Air date: {ep.airDate}</div>}
           </div>
           <StatusBadge status={ep.status} />
+        </div>
+
+        <div className="flex items-center justify-between mb-6">
+          <button
+            disabled={!prevEp}
+            onClick={async () => { if (prevEp) { await flushAll(); setActiveEpisodeId(prevEp.id); } }}
+            className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm disabled:opacity-30"
+            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
+          >
+            <ChevronLeft className="w-4 h-4" />Prev {prevEp ? `Ep ${prevEp.number}` : ""}
+          </button>
+          <div className="text-xs" style={{ color: C.sub }}>{epIdx + 1} of {sortedEps.length}</div>
+          <button
+            disabled={!nextEp}
+            onClick={async () => { if (nextEp) { await flushAll(); setActiveEpisodeId(nextEp.id); } }}
+            className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm disabled:opacity-30"
+            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
+          >
+            Next {nextEp ? `Ep ${nextEp.number}` : ""}<ChevronRight className="w-4 h-4" />
+          </button>
         </div>
 
         {ep.status === "rejected" && ep.rejectionNote && (
@@ -126,31 +248,47 @@ export default function EpisodePage() {
         <SectionTitle title="Cue Details" />
         <div className="rounded-2xl border p-6 mb-6" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
           <div className="grid grid-cols-4 gap-4">
-            <Fld label="Serial Title" tag="once"><Inp value={proj.title} readOnly={isAdmin} /></Fld>
-            <Fld label="Channel" tag="once"><Inp value={proj.channel} readOnly={isAdmin} /></Fld>
-            <Fld label="Serial Type" tag="once"><Inp value={proj.serialType} readOnly={isAdmin} /></Fld>
-            <Fld label="Language" tag="auto"><Inp value={proj.language} readOnly={isAdmin} /></Fld>
-            <Fld label="Director" tag="auto"><Inp value={proj.director} readOnly={isAdmin} /></Fld>
-            <Fld label="Genre" tag="auto"><Inp value={proj.genre} readOnly={isAdmin} /></Fld>
-            <Fld label="Production Company" tag="auto"><Inp value={proj.productionCompany} readOnly={isAdmin} /></Fld>
-            <Fld label="Country" tag="once"><Inp value={proj.countryOfOrigin} readOnly={isAdmin} /></Fld>
-            <Fld label="Principal Actors" tag="auto" span={2}><Inp value={proj.actors} readOnly={isAdmin} /></Fld>
-            <Fld label="Producer" tag="auto"><Inp value={proj.producer} readOnly={isAdmin} /></Fld>
-            <Fld label="Production Year" tag="once"><Inp value={proj.year} readOnly={isAdmin} /></Fld>
+            <Fld label="Serial Title" tag="once"><Inp value={proj.title} onChange={(v) => editProj("title", v)} /></Fld>
+            <Fld label="Channel" tag="once"><Inp value={proj.channel} onChange={(v) => editProj("channel", v)} /></Fld>
+            <Fld label="Serial Type" tag="once"><Inp value={proj.type} onChange={(v) => editProj("type", v)} /></Fld>
+            <Fld label="Language" tag="auto"><Inp value={proj.language} onChange={(v) => editProj("language", v)} /></Fld>
+            <Fld label="Director" tag="auto"><Inp value={proj.director} onChange={(v) => editProj("director", v)} /></Fld>
+            <Fld label="Genre" tag="auto"><Inp value={proj.genre} onChange={(v) => editProj("genre", v)} /></Fld>
+            <Fld label="Production Company" tag="auto"><Inp value={proj.productionCompany} onChange={(v) => editProj("productionCompany", v)} /></Fld>
+            <Fld label="Country" tag="once"><Inp value={proj.countryOfOrigin} onChange={(v) => editProj("countryOfOrigin", v)} /></Fld>
+            <Fld label="Principal Actors" tag="auto" span={2}><Inp value={proj.actors} onChange={(v) => editProj("actors", v)} /></Fld>
+            <Fld label="Producer" tag="auto"><Inp value={proj.producer} onChange={(v) => editProj("producer", v)} /></Fld>
+            <Fld label="Production Year" tag="once"><Inp value={proj.year} onChange={(v) => editProj("year", v)} /></Fld>
           </div>
         </div>
 
         <SectionTitle title="Episode Details" />
         <div className="rounded-2xl border p-6 mb-6" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
           <div className="grid grid-cols-4 gap-4">
-            <Fld label="Episode #" tag="auto"><Inp value={ep.number} readOnly /></Fld>
-            <Fld label="Air Date" tag="auto"><Inp value={ep.airDate} readOnly={isAdmin} /></Fld>
-            <Fld label="Total Duration" tag="auto"><Inp value={ep.totalDuration} readOnly={isAdmin} mono /></Fld>
-            <Fld label="Musical Duration" tag="auto"><Inp value={ep.musicalDuration} readOnly={isAdmin} mono /></Fld>
+            <Fld label="Episode #" tag="auto"><Inp value={ep.number} onChange={(v) => editEp("number", Number(v) || ep.number)} /></Fld>
+            <Fld label="Episode Title" tag="auto"><Inp value={ep.title} onChange={(v) => editEp("title", v)} /></Fld>
+            <Fld label="Air Date" tag="auto"><Inp value={ep.airDate} onChange={(v) => editEp("airDate", v)} /></Fld>
+            <Fld label="Total Duration" tag="auto"><Inp value={ep.totalDuration} onChange={(v) => editEp("totalDuration", v)} mono /></Fld>
+            <Fld label="Musical Duration" tag="auto"><Inp value={ep.musicalDuration} onChange={(v) => editEp("musicalDuration", v)} mono /></Fld>
           </div>
         </div>
 
-        <SectionTitle title={`Song Details (${ep.cues.length})`} />
+        <div className="flex items-center justify-between mb-3">
+          <SectionTitle title={`Song Details (${ep.cues.length})`} />
+          {!isAdmin && (
+            <button
+              onClick={async () => {
+                const created = await api.createCue(ep.id, { song_title: "New Song", usage_type: "background", duration_sec: 0, usage_count: 1, contributors: [] });
+                updateEpisode(proj.id, ep.id, (e) => ({
+                  ...e,
+                  cues: [...e.cues, { id: created.id, songTitle: created.song_title, usageType: created.usage_type, duration: created.duration_sec, usages: created.usage_count, contributors: [] }],
+                }));
+              }}
+              className="px-4 py-2 rounded-lg text-sm font-medium"
+              style={{ background: C.dark, color: C.mint4 }}
+            >+ Add Song</button>
+          )}
+        </div>
         <div className="space-y-6 mb-8">
           {ep.cues.map((cue, idx) => (
             <CueCard
@@ -163,6 +301,11 @@ export default function EpisodePage() {
               onContribAdd={addContrib}
               onContribRemove={removeContrib}
               onRemove={removeSong}
+              otherEpisodes={sortedEps.filter((e) => e.id !== ep.id)}
+              onCopyTo={async (cid, targetEid) => {
+                try { await api.copyCue(cid, targetEid); alert(`Copied to Ep ${sortedEps.find((e) => e.id === targetEid)?.number}`); }
+                catch (ex) { alert(ex.message); }
+              }}
             />
           ))}
         </div>
@@ -243,12 +386,37 @@ export default function EpisodePage() {
               <span className="text-xs px-3 py-1.5 rounded-lg" style={{ background: "#27AE6033", border: "1px solid #27AE60", color: "#7DCEA0" }}>Ready to export</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 divide-x" style={{ borderColor: C.mid }}>
-              <ExpBtn label="IPRS" sub="India" icon="🇮🇳" onClick={() => dlExport(buildIPRS, "IPRS", proj, ep)} />
-              <ExpBtn label="PRS" sub="UK" icon="🇬🇧" onClick={() => dlExport(buildPRS, "PRS", proj, ep)} />
-              <ExpBtn label="ASCAP" sub="USA" icon="🇺🇸" onClick={() => dlExport(buildASCAP, "ASCAP", proj, ep)} />
+              {(() => {
+                const fname = (soc) => `${proj.title.replace(/[^a-z0-9]+/gi, "_")}_Ep${String(ep.number).padStart(2, "0")}_${soc}.xlsx`;
+                return <>
+                  <ExpBtn label="IPRS" sub="India" icon="🇮🇳" onClick={() => api.downloadExport(ep.id, "iprs", fname("IPRS"))} />
+                  <ExpBtn label="PRS" sub="UK" icon="🇬🇧" onClick={() => api.downloadExport(ep.id, "prs", fname("PRS"))} />
+                  <ExpBtn label="ASCAP" sub="USA" icon="🇺🇸" onClick={() => api.downloadExport(ep.id, "ascap", fname("ASCAP"))} />
+                </>;
+              })()}
             </div>
           </div>
         )}
+
+        <div className="flex items-center justify-between mt-8 pt-6 border-t" style={{ borderColor: C.mint4 }}>
+          <button
+            disabled={!prevEp}
+            onClick={async () => { if (prevEp) { await flushAll(); setActiveEpisodeId(prevEp.id); } }}
+            className="flex items-center gap-1 px-5 py-2.5 rounded-xl text-sm disabled:opacity-30"
+            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
+          >
+            <ChevronLeft className="w-4 h-4" />Prev {prevEp ? `Ep ${prevEp.number}` : ""}
+          </button>
+          <div className="text-xs" style={{ color: C.sub }}>{epIdx + 1} of {sortedEps.length}</div>
+          <button
+            disabled={!nextEp}
+            onClick={async () => { if (nextEp) { await flushAll(); setActiveEpisodeId(nextEp.id); } }}
+            className="flex items-center gap-1 px-5 py-2.5 rounded-xl text-sm disabled:opacity-30"
+            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
+          >
+            Next {nextEp ? `Ep ${nextEp.number}` : ""}<ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </main>
     </div>
   );

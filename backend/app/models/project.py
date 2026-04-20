@@ -26,6 +26,9 @@ class Project(Base):
     actors: Mapped[str | None] = mapped_column(Text)
     production_year: Mapped[int | None] = mapped_column(Integer)
     channel_name: Mapped[str | None] = mapped_column(String(255))
+    country: Mapped[str | None] = mapped_column(String(100))
+    total_episodes: Mapped[int | None] = mapped_column(Integer)
+    bg_music_composer: Mapped[str | None] = mapped_column(String(255))
 
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

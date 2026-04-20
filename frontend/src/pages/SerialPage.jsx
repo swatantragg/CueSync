@@ -1,45 +1,46 @@
-import * as XLSX from "xlsx";
-import { Upload, FileSpreadsheet, ChevronRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Upload, FileSpreadsheet, ChevronRight, Trash2 } from "lucide-react";
 import { C, FONTS } from "../styles/palette";
 import Header from "../components/Header";
 import MetaCard from "../components/MetaCard";
 import StatusBadge from "../components/StatusBadge";
-import { parseRoughSheet } from "../utils/parser";
-import { now } from "../utils/format";
+import { api } from "../utils/api";
 import { useApp } from "../context/AppContext";
 
 export default function SerialPage() {
-  const { activeProject, currentUser, isAdmin, updateProject, setActiveEpisodeId, setScreen } = useApp();
+  const { activeProject, isAdmin, updateProject, setActiveEpisodeId, setScreen } = useApp();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const reload = async () => {
+    if (!activeProject) return;
+    const [p, eps] = await Promise.all([api.getProject(activeProject.id), api.listEpisodes(activeProject.id)]);
+    updateProject(activeProject.id, (prev) => ({
+      ...prev, ...p,
+      year: p.production_year, productionCompany: p.production_company, channel: p.channel_name,
+      countryOfOrigin: p.country, backgroundMusicComposer: p.bg_music_composer,
+      episodes: eps.map((e) => ({
+        ...e, id: e.id, number: e.episode_number, airDate: e.air_date,
+        totalDuration: e.total_duration_sec, musicalDuration: e.musical_duration_sec,
+        status: "pending", editHistory: [], cues: [],
+      })),
+    }));
+  };
+
+  useEffect(() => { reload().catch(() => {}); }, [activeProject?.id]);
+
   if (!activeProject) return null;
   const proj = activeProject;
 
   const handleImport = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf);
-    const eps = parseRoughSheet(wb);
-    eps.forEach((ep) => {
-      ep.uploadedBy = currentUser.id;
-      ep.uploadedAt = now();
-      ep.status = "pending";
-      ep.editHistory = [{ userId: currentUser.id, name: currentUser.name, action: "Uploaded rough sheet", at: now() }];
-    });
-    if (eps.length > 0 && eps[0].extracted) {
-      const ex = eps[0].extracted;
-      updateProject(proj.id, (p) => ({
-        ...p,
-        director: ex.director || p.director,
-        genre: ex.genre || p.genre,
-        language: ex.language || p.language,
-        productionCompany: ex.prodCo || p.productionCompany,
-        actors: ex.actors || p.actors,
-        producer: ex.producer || p.producer,
-        backgroundMusicComposer: ex.bgComposer || p.backgroundMusicComposer,
-        episodes: [...p.episodes, ...eps],
-      }));
-    }
-    e.target.value = "";
+    setBusy(true); setErr("");
+    try {
+      await api.uploadRough(proj.id, file);
+      await reload();
+    } catch (ex) { setErr(ex.message); }
+    finally { setBusy(false); e.target.value = ""; }
   };
 
   return (
@@ -59,6 +60,8 @@ export default function SerialPage() {
           <MetaCard label="Episodes" value={proj.episodes.length} mono />
         </div>
 
+        {err && <div className="mb-4 text-sm" style={{ color: C.danger }}>{err}</div>}
+        {busy && <div className="mb-4 text-sm" style={{ color: C.sub }}>Importing…</div>}
         {!isAdmin && (
           <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: C.mint1 + "66", background: C.mint4 + "88" }}>
             <div className="px-6 py-5 flex items-center justify-between">
@@ -92,7 +95,7 @@ export default function SerialPage() {
                 <th className="text-left px-5 py-3 w-16">Songs</th>
                 <th className="text-left px-5 py-3 w-32">Status</th>
                 <th className="text-left px-5 py-3">Last Activity</th>
-                <th className="text-right px-5 py-3 w-24">Action</th>
+                <th className="text-right px-5 py-3 w-32">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -107,13 +110,24 @@ export default function SerialPage() {
                     <td className="px-5 py-3"><StatusBadge status={ep.status} /></td>
                     <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>{lastEdit ? `${lastEdit.name} · ${lastEdit.at}` : "—"}</td>
                     <td className="px-5 py-3 text-right">
-                      <button
-                        onClick={() => { setActiveEpisodeId(ep.id); setScreen("episode"); }}
-                        className="text-xs uppercase tracking-wider flex items-center gap-1 ml-auto font-medium hover:gap-2 transition-all"
-                        style={{ color: C.dark }}
-                      >
-                        {isAdmin ? "Review" : "Open"} <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete episode ${ep.number}?`)) return;
+                            try { await api.deleteEpisode(ep.id); await reload(); }
+                            catch (ex) { alert(ex.message); }
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-red-50"
+                          title="Delete episode"
+                        ><Trash2 className="w-4 h-4" style={{ color: C.danger }} /></button>
+                        <button
+                          onClick={() => { setActiveEpisodeId(ep.id); setScreen("episode"); }}
+                          className="text-xs uppercase tracking-wider flex items-center gap-1 font-medium hover:gap-2 transition-all"
+                          style={{ color: C.dark }}
+                        >
+                          {isAdmin ? "Review" : "Open"} <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

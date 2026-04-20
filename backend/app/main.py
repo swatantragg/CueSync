@@ -5,9 +5,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
+from sqlalchemy import text
+
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import Base, engine
+
+MIGRATIONS = [
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS country VARCHAR(100)",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS total_episodes INTEGER",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS bg_music_composer VARCHAR(255)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS air_date VARCHAR(50)",
+]
 
 
 @asynccontextmanager
@@ -15,6 +24,11 @@ async def lifespan(app: FastAPI):
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            for sql in MIGRATIONS:
+                try:
+                    await conn.execute(text(sql))
+                except Exception as me:
+                    print(f"[migration] skipped: {me}")
         print("[startup] DB connected, tables ensured")
     except Exception as e:
         print(f"[startup] DB unavailable — API will run without DB. Error: {e}")

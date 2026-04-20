@@ -54,6 +54,26 @@ async def update_cue(cid: int, payload: CueUpdate, db: AsyncSession = Depends(ge
     return await _get_cue(cid, db)
 
 
+@router.post("/{cid}/copy-to/{target_episode_id}", response_model=CueOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+async def copy_cue_to_episode(cid: int, target_episode_id: int, db: AsyncSession = Depends(get_db)):
+    src = (await db.execute(select(CueEntry).where(CueEntry.id == cid).options(selectinload(CueEntry.contributors)))).scalar_one_or_none()
+    if not src:
+        raise HTTPException(404, "Source cue not found")
+    nc = CueEntry(
+        episode_id=target_episode_id, song_title=src.song_title, usage_type=src.usage_type,
+        duration_sec=src.duration_sec, usage_count=src.usage_count, isrc=src.isrc,
+        song_code=src.song_code, work_number=src.work_number, ascap_work_id=src.ascap_work_id,
+        validation_link=src.validation_link, order_index=src.order_index,
+    )
+    db.add(nc)
+    await db.flush()
+    for ct in src.contributors:
+        db.add(Contributor(cue_id=nc.id, name=ct.name, role=ct.role, society=ct.society,
+                           share_percent=ct.share_percent, ipi_number=ct.ipi_number, cae_number=ct.cae_number))
+    await db.commit()
+    return await _get_cue(nc.id, db)
+
+
 @router.delete("/{cid}", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
 async def delete_cue(cid: int, db: AsyncSession = Depends(get_db)):
     cue = await db.get(CueEntry, cid)

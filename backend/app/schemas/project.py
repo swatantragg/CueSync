@@ -16,6 +16,9 @@ class ProjectBase(BaseModel):
     actors: str | None = None
     production_year: int | None = None
     channel_name: str | None = None
+    country: str | None = None
+    total_episodes: int | None = None
+    bg_music_composer: str | None = None
 
 
 class ProjectCreate(ProjectBase):
