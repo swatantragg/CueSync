@@ -33,6 +33,9 @@ class CueEntry(Base):
     ascap_work_id: Mapped[str | None] = mapped_column(String(50))
     validation_link: Mapped[str | None] = mapped_column(String(500))
 
+    singer: Mapped[str | None] = mapped_column(String(255))
+    library_id: Mapped[int | None] = mapped_column(ForeignKey("song_library.id", ondelete="SET NULL"), index=True)
+
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

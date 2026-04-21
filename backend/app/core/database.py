@@ -3,7 +3,17 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
-engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG, pool_pre_ping=True)
+_connect_args = {}
+if "asyncpg" in settings.DATABASE_URL:
+    # Neon pooler (PgBouncer) requires disabled prepared-statement cache for asyncpg
+    _connect_args = {"statement_cache_size": 0, "prepared_statement_cache_size": 0}
+
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=settings.DEBUG,
+    pool_pre_ping=True,
+    connect_args=_connect_args,
+)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 

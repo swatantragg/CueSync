@@ -45,7 +45,7 @@ export default function Header() {
             </div>
           </div>
           <button onClick={logout} className="text-xs flex items-center gap-1 hover:opacity-70" style={{ color: C.sub }}>
-            <LogOut className="w-3.5 h-3.5" /> Exit
+            <LogOut className="w-3.5 h-3.5" /> Sign Out
           </button>
         </div>
       </div>

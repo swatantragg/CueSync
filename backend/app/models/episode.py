@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -20,6 +20,10 @@ class Episode(Base):
     musical_duration_sec: Mapped[int | None] = mapped_column(Integer)
     bg_instrumental_duration_sec: Mapped[int | None] = mapped_column(Integer)
     bg_vocal_duration_sec: Mapped[int | None] = mapped_column(Integer)
+
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    rejection_note: Mapped[str | None] = mapped_column(Text)
+    review_note: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

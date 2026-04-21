@@ -22,9 +22,16 @@ class EpisodeUpdate(EpisodeBase):
 class EpisodeOut(EpisodeBase):
     id: int
     project_id: int
+    status: str = "pending"
+    rejection_note: str | None = None
+    review_note: str | None = None
 
     class Config:
         from_attributes = True
+
+
+class ReviewNoteIn(BaseModel):
+    note: str
 
 
 class EpisodeCloneIn(BaseModel):

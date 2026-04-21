@@ -1,11 +1,11 @@
-import { CheckCircle2, AlertCircle, Trash2, Plus, X } from "lucide-react";
+import { CheckCircle2, AlertCircle, Trash2, Plus, X, Database, Save } from "lucide-react";
 import { C, FONTS } from "../styles/palette";
 import { iprsCode, prsCode, ascapCode } from "../constants/usage";
 import Fld from "./Fld";
 import Inp from "./Inp";
 import InpSm from "./InpSm";
 
-export default function CueCard({ cue, idx, isAdmin, onUpdate, onContribUpdate, onContribAdd, onContribRemove, onRemove, onCopyTo, otherEpisodes = [] }) {
+export default function CueCard({ cue, idx, isAdmin, onUpdate, onContribUpdate, onContribAdd, onContribRemove, onRemove, onCopyTo, onSaveToLibrary, otherEpisodes = [] }) {
   const sum = cue.contributors.reduce((a, x) => a + Number(x.share || 0), 0);
   const ok = sum === 100;
 
@@ -31,19 +31,19 @@ export default function CueCard({ cue, idx, isAdmin, onUpdate, onContribUpdate, 
           )}
         </div>
         <div className="flex items-center gap-2">
-          {onCopyTo && otherEpisodes.length > 0 && (
-            <select
-              value=""
-              onChange={(e) => { const v = e.target.value; if (v) { onCopyTo(cue.id, Number(v)); e.target.value = ""; } }}
-              className="text-xs px-2 py-1.5 rounded-lg border"
-              style={{ borderColor: C.mint1 + "66", background: C.white }}
-              title="Copy this song to another episode"
+          {onSaveToLibrary && !isAdmin && (
+            <button
+              onClick={() => onSaveToLibrary(cue.id)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-90"
+              style={{
+                background: cue.libraryId ? C.mint1 : C.dark,
+                color: cue.libraryId ? C.dark : C.mint4,
+              }}
+              title={cue.libraryId ? "Update this song's details in the shared library" : "Add this song to the shared library for future autofill"}
             >
-              <option value="">Copy to Ep…</option>
-              {otherEpisodes.map((oe) => (
-                <option key={oe.id} value={oe.id}>Ep {oe.number}</option>
-              ))}
-            </select>
+              {cue.libraryId ? <Save className="w-3.5 h-3.5" /> : <Database className="w-3.5 h-3.5" />}
+              {cue.libraryId ? "Update DB" : "Add to DB"}
+            </button>
           )}
           <button onClick={() => { if (confirm(`Remove Song ${idx + 1}?`)) onRemove(cue.id); }} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg opacity-50 hover:opacity-100" style={{ color: C.danger, background: "#FFDDD2" }}>
             <Trash2 className="w-3.5 h-3.5" />Remove
@@ -92,7 +92,7 @@ export default function CueCard({ cue, idx, isAdmin, onUpdate, onContribUpdate, 
                   <td className="p-1.5"><InpSm value={co.name} onChange={(v) => onContribUpdate(cue.id, co.id, "name", v)} readOnly={false} placeholder="Name" /></td>
                   <td className="p-1.5"><InpSm value={co.role} onChange={(v) => onContribUpdate(cue.id, co.id, "role", v)} readOnly={false} placeholder="C/A/E" /></td>
                   <td className="p-1.5"><InpSm value={co.society} onChange={(v) => onContribUpdate(cue.id, co.id, "society", v)} readOnly={false} mono placeholder="IPRS" /></td>
-                  <td className="p-1.5"><InpSm value={co.ipi} onChange={(v) => onContribUpdate(cue.id, co.id, "ipi", v)} readOnly={false} mono placeholder="IPI" /></td>
+                  <td className="p-1.5"><InpSm value={co.ipi} onChange={(v) => onContribUpdate(cue.id, co.id, "ipi", v)} readOnly={false} mono placeholder="IPI/CAE" /></td>
                   <td className="p-1.5"><InpSm value={co.share} onChange={(v) => onContribUpdate(cue.id, co.id, "share", parseFloat(v) || 0)} readOnly={false} mono placeholder="%" /></td>
                   <td className="p-1.5">
                     <button onClick={() => onContribRemove(cue.id, co.id)} className="opacity-30 hover:opacity-100" style={{ color: C.danger }} tabIndex={-1}>

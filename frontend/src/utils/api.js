@@ -56,6 +56,14 @@ export const api = {
   updateCue: (cid, payload) => request(`/api/cues/${cid}`, { method: "PUT", body: payload }),
   deleteCue: (cid) => request(`/api/cues/${cid}`, { method: "DELETE" }),
   copyCue: (cid, targetEpisodeId) => request(`/api/cues/${cid}/copy-to/${targetEpisodeId}`, { method: "POST" }),
+  upsertSongLibrary: (payload) => request(`/api/library/songs/upsert`, { method: "POST", body: payload }),
+  lookupSong: (title, isrc) => request(`/api/library/songs/lookup?title=${encodeURIComponent(title || "")}&isrc=${encodeURIComponent(isrc || "")}`),
+  submitEpisode: (eid) => request(`/api/episodes/${eid}/submit`, { method: "POST" }),
+  approveEpisode: (eid) => request(`/api/episodes/${eid}/approve`, { method: "POST" }),
+  rejectEpisode: (eid, note) => request(`/api/episodes/${eid}/reject`, { method: "POST", body: { note } }),
+  suggestEpisode: (eid, note) => request(`/api/episodes/${eid}/suggest`, { method: "POST", body: { note } }),
+  listEpisodeActivity: (eid) => request(`/api/activity/episode/${eid}`),
+  listProjectActivity: (pid) => request(`/api/activity/project/${pid}`),
   downloadExport: async (episodeId, society, filename) => {
     const t = tokenStore.get();
     const res = await fetch(`${BASE}/api/exports/episode/${episodeId}?society=${society}`, {

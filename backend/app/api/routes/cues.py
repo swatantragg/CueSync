@@ -8,18 +8,27 @@ from app.core.deps import get_current_user, require_roles
 from app.models.cue import Contributor, CueEntry
 from app.models.user import User, UserRole
 from app.schemas.cue import CueCreate, CueOut, CueUpdate
+from app.services.audit import log_activity
+from app.services.library_sync import find_library_match, apply_library_to_cue, propagate_cue_to_siblings, reconcile_library
 
 router = APIRouter()
 
 
 @router.post("/episode/{episode_id}", response_model=CueOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
-async def create_cue(episode_id: int, payload: CueCreate, db: AsyncSession = Depends(get_db)):
+async def create_cue(episode_id: int, payload: CueCreate, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     data = payload.model_dump(exclude={"contributors"})
     cue = CueEntry(episode_id=episode_id, **data)
     db.add(cue)
     await db.flush()
     for c in payload.contributors:
         db.add(Contributor(cue_id=cue.id, **c.model_dump()))
+    await db.flush()
+    # Autofill from library or from same-song siblings
+    lib = await find_library_match(db, cue.song_title, cue.isrc)
+    if lib:
+        await apply_library_to_cue(db, cue, lib)
+    await propagate_cue_to_siblings(db, await _get_cue(cue.id, db))
+    await log_activity(db, current.id, "create", "episode", episode_id, f"Added song '{payload.song_title}'")
     await db.commit()
     return await _get_cue(cue.id, db)
 
@@ -39,10 +48,11 @@ async def get_cue(cid: int, db: AsyncSession = Depends(get_db), _: User = Depend
 
 
 @router.put("/{cid}", response_model=CueOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
-async def update_cue(cid: int, payload: CueUpdate, db: AsyncSession = Depends(get_db)):
+async def update_cue(cid: int, payload: CueUpdate, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     cue = (await db.execute(select(CueEntry).where(CueEntry.id == cid).options(selectinload(CueEntry.contributors)))).scalar_one_or_none()
     if not cue:
         raise HTTPException(404)
+    ep_id = cue.episode_id
     for k, v in payload.model_dump(exclude={"contributors"}).items():
         setattr(cue, k, v)
     for old in list(cue.contributors):
@@ -50,6 +60,10 @@ async def update_cue(cid: int, payload: CueUpdate, db: AsyncSession = Depends(ge
     await db.flush()
     for c in payload.contributors:
         db.add(Contributor(cue_id=cue.id, **c.model_dump()))
+    await db.flush()
+    await reconcile_library(db, cue.song_title, cue.isrc)
+    await propagate_cue_to_siblings(db, await _get_cue(cue.id, db))
+    await log_activity(db, current.id, "update", "episode", ep_id, f"Edited song '{payload.song_title}'")
     await db.commit()
     return await _get_cue(cid, db)
 
@@ -75,11 +89,14 @@ async def copy_cue_to_episode(cid: int, target_episode_id: int, db: AsyncSession
 
 
 @router.delete("/{cid}", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
-async def delete_cue(cid: int, db: AsyncSession = Depends(get_db)):
+async def delete_cue(cid: int, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     cue = await db.get(CueEntry, cid)
     if not cue:
         raise HTTPException(404)
+    ep_id = cue.episode_id
+    title = cue.song_title
     await db.delete(cue)
+    await log_activity(db, current.id, "delete", "episode", ep_id, f"Removed song '{title}'")
     await db.commit()
     return {"ok": True}
 

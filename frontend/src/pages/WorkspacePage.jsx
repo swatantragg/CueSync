@@ -1,14 +1,17 @@
-import { useEffect, useState } from "react";
-import { Plus, ChevronRight, Tv, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, ChevronRight, Tv, Trash2, ChevronLeft } from "lucide-react";
 import { C, FONTS } from "../styles/palette";
 import Header from "../components/Header";
 import NewSerialModal from "../components/NewSerialModal";
 import { useApp } from "../context/AppContext";
 import { api } from "../utils/api";
 
+const PAGE_SIZE = 10;
+
 export default function WorkspacePage() {
   const { projects, setProjects, isAdmin, setActiveProjectId, setScreen } = useApp();
   const [showNew, setShowNew] = useState(false);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     api.projects().then((list) => {
@@ -36,6 +39,13 @@ export default function WorkspacePage() {
     catch (ex) { alert(ex.message); }
   };
 
+  const totalPages = Math.max(1, Math.ceil(projects.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const pageItems = useMemo(
+    () => projects.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE),
+    [projects, pageSafe]
+  );
+
   return (
     <div className="min-h-screen" style={{ background: C.light, fontFamily: FONTS.sans, color: C.dark }}>
       <Header />
@@ -52,47 +62,111 @@ export default function WorkspacePage() {
           </button>
           {showNew && <NewSerialModal onClose={() => setShowNew(false)} onCreate={handleCreate} />}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {projects.map((p) => {
-            const approved = p.episodes.filter((e) => e.status === "approved").length;
-            const submitted = p.episodes.filter((e) => e.status === "submitted").length;
-            const rejected = p.episodes.filter((e) => e.status === "rejected").length;
-            return (
-              <div
-                key={p.id}
-                className="group border rounded-2xl transition-all hover:shadow-lg cursor-pointer"
-                style={{ background: C.white, borderColor: C.mint1 + "44" }}
-                onClick={() => { setActiveProjectId(p.id); setScreen("serial"); }}
+
+        <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+          <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
+            <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>Serials ({projects.length})</h3>
+            <span className="text-xs" style={{ color: C.sub }}>Page {pageSafe} of {totalPages}</span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-[10px] uppercase tracking-wider" style={{ borderColor: C.mint4, color: C.sub, background: C.mint4 + "33" }}>
+                <th className="text-left px-5 py-3">Title</th>
+                <th className="text-left px-5 py-3 w-28">Type</th>
+                <th className="text-left px-5 py-3">Language · Genre · Year</th>
+                <th className="text-left px-5 py-3">Production · Channel</th>
+                <th className="text-left px-5 py-3 w-56">Status</th>
+                <th className="text-right px-5 py-3 w-40">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageItems.length === 0 && (
+                <tr><td colSpan={6} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>No serials yet.</td></tr>
+              )}
+              {pageItems.map((p) => {
+                const approved = p.episodes.filter((e) => e.status === "approved").length;
+                const submitted = p.episodes.filter((e) => e.status === "submitted").length;
+                const rejected = p.episodes.filter((e) => e.status === "rejected").length;
+                return (
+                  <tr
+                    key={p.id}
+                    className="border-b last:border-0 hover:bg-green-50/40 transition cursor-pointer"
+                    style={{ borderColor: C.mint4 + "88" }}
+                    onClick={() => { setActiveProjectId(p.id); setScreen("serial"); }}
+                  >
+                    <td className="px-5 py-4">
+                      <div className="font-medium" style={{ fontFamily: FONTS.serif, color: C.dark }}>{p.title}</div>
+                      <div className="text-[11px] mt-0.5" style={{ color: C.sub }}>{p.episodes.length} episodes</div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className="inline-flex items-center gap-1 text-xs uppercase tracking-wider" style={{ color: C.sub }}>
+                        <Tv className="w-3.5 h-3.5" />{p.type}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-xs" style={{ color: C.sub }}>
+                      {[p.language, p.genre, p.year].filter(Boolean).join(" · ") || "—"}
+                    </td>
+                    <td className="px-5 py-4 text-xs" style={{ color: C.sub }}>
+                      {[p.productionCompany, p.channel].filter(Boolean).join(" · ") || "—"}
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="text-[10px] px-2 py-0.5 rounded" style={{ background: "#E8F5E9", color: C.ok }}>{approved} approved</span>
+                        {submitted > 0 && <span className="text-[10px] px-2 py-0.5 rounded" style={{ background: "#F3E5F5", color: "#7B1FA2" }}>{submitted} in review</span>}
+                        {rejected > 0 && <span className="text-[10px] px-2 py-0.5 rounded" style={{ background: "#FFEBEE", color: C.danger }}>{rejected} rejected</span>}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={(e) => handleDelete(e, p.id)}
+                          className="p-1.5 rounded-lg hover:bg-red-50"
+                          title="Delete serial"
+                        ><Trash2 className="w-4 h-4" style={{ color: C.danger }} /></button>
+                        <span className="text-xs uppercase tracking-wider flex items-center gap-1 font-medium" style={{ color: C.dark }}>
+                          Open <ChevronRight className="w-3.5 h-3.5" />
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {totalPages > 1 && (
+            <div className="px-5 py-3 border-t flex items-center justify-between text-xs" style={{ borderColor: C.mint4, background: C.mint4 + "22", color: C.sub }}>
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={pageSafe <= 1}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg disabled:opacity-30"
+                style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
               >
-                <div className="p-6 relative">
+                <ChevronLeft className="w-3.5 h-3.5" /> Prev
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
                   <button
-                    onClick={(e) => handleDelete(e, p.id)}
-                    className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-red-50"
-                    title="Delete serial"
-                  ><Trash2 className="w-4 h-4" style={{ color: C.danger }} /></button>
-                  <div className="flex items-center gap-2 text-xs uppercase tracking-wider mb-4" style={{ color: C.sub }}>
-                    <Tv className="w-3.5 h-3.5" />{p.type}
-                  </div>
-                  <h3 className="text-2xl mb-3" style={{ fontFamily: FONTS.serif }}>{p.title}</h3>
-                  <div className="text-xs space-y-1 mb-4" style={{ color: C.sub }}>
-                    <div>{p.language} · {p.genre} · {p.year}</div>
-                    <div>{p.productionCompany} · {p.channel}</div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    <span className="text-[10px] px-2 py-0.5 rounded" style={{ background: "#E8F5E9", color: C.ok }}>{approved} approved</span>
-                    {submitted > 0 && <span className="text-[10px] px-2 py-0.5 rounded" style={{ background: "#F3E5F5", color: "#7B1FA2" }}>{submitted} pending review</span>}
-                    {rejected > 0 && <span className="text-[10px] px-2 py-0.5 rounded" style={{ background: "#FFEBEE", color: C.danger }}>{rejected} rejected</span>}
-                  </div>
-                  <div className="flex items-center justify-between pt-4 border-t" style={{ borderColor: C.mint4 }}>
-                    <span className="text-xs" style={{ color: C.sub }}>{p.episodes.length} episodes</span>
-                    <span className="text-xs uppercase tracking-wider flex items-center gap-1 font-medium group-hover:gap-2 transition-all" style={{ color: C.dark }}>
-                      Open <ChevronRight className="w-3.5 h-3.5" />
-                    </span>
-                  </div>
-                </div>
+                    key={n}
+                    onClick={() => setPage(n)}
+                    className="w-8 h-8 rounded-lg text-xs font-medium"
+                    style={{
+                      background: n === pageSafe ? C.dark : C.white,
+                      color: n === pageSafe ? C.mint4 : C.dark,
+                      border: `1px solid ${C.mint1}55`,
+                    }}
+                  >{n}</button>
+                ))}
               </div>
-            );
-          })}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={pageSafe >= totalPages}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg disabled:opacity-30"
+                style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
+              >
+                Next <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       </main>
     </div>

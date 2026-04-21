@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Upload, FileSpreadsheet, ChevronRight, Trash2 } from "lucide-react";
+import { Upload, FileSpreadsheet, ChevronRight, Trash2, ArrowLeft } from "lucide-react";
 import { C, FONTS } from "../styles/palette";
 import Header from "../components/Header";
 import MetaCard from "../components/MetaCard";
@@ -8,7 +8,7 @@ import { api } from "../utils/api";
 import { useApp } from "../context/AppContext";
 
 export default function SerialPage() {
-  const { activeProject, isAdmin, updateProject, setActiveEpisodeId, setScreen } = useApp();
+  const { activeProject, isAdmin, updateProject, setActiveEpisodeId, setScreen, goHome } = useApp();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -22,7 +22,8 @@ export default function SerialPage() {
       episodes: eps.map((e) => ({
         ...e, id: e.id, number: e.episode_number, airDate: e.air_date,
         totalDuration: e.total_duration_sec, musicalDuration: e.musical_duration_sec,
-        status: "pending", editHistory: [], cues: [],
+        status: e.status || "pending", rejectionNote: e.rejection_note, reviewNote: e.review_note,
+        editHistory: [], cues: [],
       })),
     }));
   };
@@ -47,6 +48,9 @@ export default function SerialPage() {
     <div className="min-h-screen" style={{ background: C.light, fontFamily: FONTS.sans, color: C.dark }}>
       <Header />
       <main className="max-w-7xl mx-auto px-6 py-10">
+        <button onClick={goHome} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}>
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Serials
+        </button>
         <div className="flex items-end justify-between mb-8">
           <div>
             <div className="text-xs uppercase tracking-widest mb-2" style={{ color: C.sub }}>{proj.type} · {proj.language}</div>
