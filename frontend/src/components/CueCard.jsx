@@ -1,11 +1,11 @@
-import { CheckCircle2, AlertCircle, Trash2, Plus, X } from "lucide-react";
+import { CheckCircle2, AlertCircle, Trash2, Plus, X, Database, Save } from "lucide-react";
 import { C, FONTS } from "../styles/palette";
 import { iprsCode, prsCode, ascapCode } from "../constants/usage";
 import Fld from "./Fld";
 import Inp from "./Inp";
 import InpSm from "./InpSm";
 
-export default function CueCard({ cue, idx, isAdmin, onUpdate, onContribUpdate, onContribAdd, onContribRemove, onRemove }) {
+export default function CueCard({ cue, idx, isAdmin, onUpdate, onContribUpdate, onContribAdd, onContribRemove, onRemove, onCopyTo, onSaveToLibrary, otherEpisodes = [] }) {
   const sum = cue.contributors.reduce((a, x) => a + Number(x.share || 0), 0);
   const ok = sum === 100;
 
@@ -30,24 +30,38 @@ export default function CueCard({ cue, idx, isAdmin, onUpdate, onContribUpdate, 
             </span>
           )}
         </div>
-        {!isAdmin && (
+        <div className="flex items-center gap-2">
+          {onSaveToLibrary && !isAdmin && (
+            <button
+              onClick={() => onSaveToLibrary(cue.id)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-90"
+              style={{
+                background: cue.libraryId ? C.mint1 : C.dark,
+                color: cue.libraryId ? C.dark : C.mint4,
+              }}
+              title={cue.libraryId ? "Update this song's details in the shared library" : "Add this song to the shared library for future autofill"}
+            >
+              {cue.libraryId ? <Save className="w-3.5 h-3.5" /> : <Database className="w-3.5 h-3.5" />}
+              {cue.libraryId ? "Update DB" : "Add to DB"}
+            </button>
+          )}
           <button onClick={() => { if (confirm(`Remove Song ${idx + 1}?`)) onRemove(cue.id); }} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg opacity-50 hover:opacity-100" style={{ color: C.danger, background: "#FFDDD2" }}>
             <Trash2 className="w-3.5 h-3.5" />Remove
           </button>
-        )}
+        </div>
       </div>
       <div className="px-5 py-5">
         <div className="grid grid-cols-6 gap-3 mb-5">
-          <Fld label="Song Title" tag="hybrid" span={3}><Inp value={cue.songTitle} onChange={(v) => onUpdate(cue.id, "songTitle", v)} readOnly={isAdmin} /></Fld>
-          <Fld label="Usage Type" tag="auto"><Inp value={cue.usageType} onChange={(v) => onUpdate(cue.id, "usageType", v)} readOnly={isAdmin} /></Fld>
-          <Fld label="Duration" tag="auto"><Inp value={cue.duration} onChange={(v) => onUpdate(cue.id, "duration", v)} readOnly={isAdmin} mono /></Fld>
-          <Fld label="Usages" tag="auto"><Inp value={cue.usages} onChange={(v) => onUpdate(cue.id, "usages", parseInt(v) || 1)} readOnly={isAdmin} mono /></Fld>
-          <Fld label="Song Code" tag="manual"><Inp value={cue.songCode} onChange={(v) => onUpdate(cue.id, "songCode", v)} readOnly={isAdmin} mono /></Fld>
-          <Fld label="ISRC" tag="manual"><Inp value={cue.isrc || ""} onChange={(v) => onUpdate(cue.id, "isrc", v)} readOnly={isAdmin} mono /></Fld>
-          <Fld label="Singer" tag="hybrid"><Inp value={cue.singer} onChange={(v) => onUpdate(cue.id, "singer", v)} readOnly={isAdmin} /></Fld>
-          <Fld label="PRS Work No." tag="manual"><Inp value={cue.workNumber || ""} onChange={(v) => onUpdate(cue.id, "workNumber", v)} readOnly={isAdmin} mono /></Fld>
-          <Fld label="ASCAP Work ID" tag="manual"><Inp value={cue.ascapWorkId || ""} onChange={(v) => onUpdate(cue.id, "ascapWorkId", v)} readOnly={isAdmin} mono /></Fld>
-          <Fld label="Validation Link" tag="manual" span={3}><Inp value={cue.validationLink || ""} onChange={(v) => onUpdate(cue.id, "validationLink", v)} readOnly={isAdmin} /></Fld>
+          <Fld label="Song Title" tag="hybrid" span={3}><Inp value={cue.songTitle} onChange={(v) => onUpdate(cue.id, "songTitle", v)} readOnly={false} /></Fld>
+          <Fld label="Usage Type" tag="auto"><Inp value={cue.usageType} onChange={(v) => onUpdate(cue.id, "usageType", v)} readOnly={false} /></Fld>
+          <Fld label="Duration" tag="auto"><Inp value={cue.duration} onChange={(v) => onUpdate(cue.id, "duration", v)} readOnly={false} mono /></Fld>
+          <Fld label="Usages" tag="auto"><Inp value={cue.usages} onChange={(v) => onUpdate(cue.id, "usages", parseInt(v) || 1)} readOnly={false} mono /></Fld>
+          <Fld label="Song Code" tag="manual"><Inp value={cue.songCode} onChange={(v) => onUpdate(cue.id, "songCode", v)} readOnly={false} mono /></Fld>
+          <Fld label="ISRC" tag="manual"><Inp value={cue.isrc || ""} onChange={(v) => onUpdate(cue.id, "isrc", v)} readOnly={false} mono /></Fld>
+          <Fld label="Singer" tag="hybrid"><Inp value={cue.singer} onChange={(v) => onUpdate(cue.id, "singer", v)} readOnly={false} /></Fld>
+          <Fld label="PRS Work No." tag="manual"><Inp value={cue.workNumber || ""} onChange={(v) => onUpdate(cue.id, "workNumber", v)} readOnly={false} mono /></Fld>
+          <Fld label="ASCAP Work ID" tag="manual"><Inp value={cue.ascapWorkId || ""} onChange={(v) => onUpdate(cue.id, "ascapWorkId", v)} readOnly={false} mono /></Fld>
+          <Fld label="Validation Link" tag="manual" span={3}><Inp value={cue.validationLink || ""} onChange={(v) => onUpdate(cue.id, "validationLink", v)} readOnly={false} /></Fld>
         </div>
         <div className="flex items-center justify-between mb-2">
           <h4 className="text-xs uppercase tracking-widest font-semibold" style={{ color: C.sub }}>Contributors</h4>
@@ -55,11 +69,9 @@ export default function CueCard({ cue, idx, isAdmin, onUpdate, onContribUpdate, 
             <span className="text-xs px-2 py-1 rounded-lg" style={{ color: ok ? C.ok : C.danger, background: ok ? "#D8F3DC" : "#FFDDD2" }}>
               Total: {sum}% {ok ? "✓" : "(need 100%)"}
             </span>
-            {!isAdmin && (
-              <button onClick={() => onContribAdd(cue.id)} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-90" style={{ background: C.dark, color: C.mint4 }}>
-                <Plus className="w-3 h-3" />Add Row
-              </button>
-            )}
+            <button onClick={() => onContribAdd(cue.id)} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-90" style={{ background: C.dark, color: C.mint4 }}>
+              <Plus className="w-3 h-3" />Add Row
+            </button>
           </div>
         </div>
         <div className="rounded-xl border overflow-hidden" style={{ borderColor: C.mint1 + "44" }}>
@@ -71,24 +83,22 @@ export default function CueCard({ cue, idx, isAdmin, onUpdate, onContribUpdate, 
                 <th className="text-left px-3 py-2 w-24">Society</th>
                 <th className="text-left px-3 py-2 w-32">IPI / CAE</th>
                 <th className="text-left px-3 py-2 w-20">Share%</th>
-                {!isAdmin && <th className="w-8"></th>}
+                <th className="w-8"></th>
               </tr>
             </thead>
             <tbody>
               {cue.contributors.map((co) => (
                 <tr key={co.id} className="border-t" style={{ borderColor: C.mint4 + "88" }}>
-                  <td className="p-1.5"><InpSm value={co.name} onChange={(v) => onContribUpdate(cue.id, co.id, "name", v)} readOnly={isAdmin} placeholder="Name" /></td>
-                  <td className="p-1.5"><InpSm value={co.role} onChange={(v) => onContribUpdate(cue.id, co.id, "role", v)} readOnly={isAdmin} placeholder="C/A/E" /></td>
-                  <td className="p-1.5"><InpSm value={co.society} onChange={(v) => onContribUpdate(cue.id, co.id, "society", v)} readOnly={isAdmin} mono placeholder="IPRS" /></td>
-                  <td className="p-1.5"><InpSm value={co.ipi} onChange={(v) => onContribUpdate(cue.id, co.id, "ipi", v)} readOnly={isAdmin} mono placeholder="IPI" /></td>
-                  <td className="p-1.5"><InpSm value={co.share} onChange={(v) => onContribUpdate(cue.id, co.id, "share", parseFloat(v) || 0)} readOnly={isAdmin} mono placeholder="%" /></td>
-                  {!isAdmin && (
-                    <td className="p-1.5">
-                      <button onClick={() => onContribRemove(cue.id, co.id)} className="opacity-30 hover:opacity-100" style={{ color: C.danger }} tabIndex={-1}>
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  )}
+                  <td className="p-1.5"><InpSm value={co.name} onChange={(v) => onContribUpdate(cue.id, co.id, "name", v)} readOnly={false} placeholder="Name" /></td>
+                  <td className="p-1.5"><InpSm value={co.role} onChange={(v) => onContribUpdate(cue.id, co.id, "role", v)} readOnly={false} placeholder="C/A/E" /></td>
+                  <td className="p-1.5"><InpSm value={co.society} onChange={(v) => onContribUpdate(cue.id, co.id, "society", v)} readOnly={false} mono placeholder="IPRS" /></td>
+                  <td className="p-1.5"><InpSm value={co.ipi} onChange={(v) => onContribUpdate(cue.id, co.id, "ipi", v)} readOnly={false} mono placeholder="IPI/CAE" /></td>
+                  <td className="p-1.5"><InpSm value={co.share} onChange={(v) => onContribUpdate(cue.id, co.id, "share", parseFloat(v) || 0)} readOnly={false} mono placeholder="%" /></td>
+                  <td className="p-1.5">
+                    <button onClick={() => onContribRemove(cue.id, co.id)} className="opacity-30 hover:opacity-100" style={{ color: C.danger }} tabIndex={-1}>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

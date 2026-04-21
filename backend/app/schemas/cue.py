@@ -29,6 +29,7 @@ class CueBase(BaseModel):
     work_number: str | None = None
     ascap_work_id: str | None = None
     validation_link: str | None = None
+    singer: str | None = None
     order_index: int = 0
 
 
@@ -43,7 +44,19 @@ class CueUpdate(CueCreate):
 class CueOut(CueBase):
     id: int
     episode_id: int
+    library_id: int | None = None
     contributors: list[ContributorOut] = []
 
     class Config:
         from_attributes = True
+
+
+class LibraryUpsertIn(BaseModel):
+    cue_id: int | None = None
+    title: str
+    isrc: str | None = None
+    song_code: str | None = None
+    work_number: str | None = None
+    ascap_work_id: str | None = None
+    singer: str | None = None
+    contributors: list[ContributorIn] = []

@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { XCircle, CheckCircle2, History, Send, Check, Package } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { XCircle, CheckCircle2, History, Send, Check, Package, ChevronLeft, ChevronRight, Save, ArrowLeft, MessageSquare } from "lucide-react";
+import { api } from "../utils/api";
 import { C, FONTS } from "../styles/palette";
 import Header from "../components/Header";
 import StatusBadge from "../components/StatusBadge";
@@ -11,17 +12,165 @@ import ExpBtn from "../components/ExpBtn";
 import { USERS_DB } from "../constants/users";
 import { uid } from "../utils/uid";
 import { now } from "../utils/format";
-import { buildIPRS, buildPRS, buildASCAP, dlExport } from "../utils/exporters";
 import { useApp } from "../context/AppContext";
 
 export default function EpisodePage() {
-  const { activeProject, activeEpisode, currentUser, isAdmin, updateEpisode, setNotifications } = useApp();
+  const { activeProject, activeEpisode, currentUser, isAdmin, updateProject, updateEpisode, setActiveEpisodeId, setNotifications, setScreen } = useApp();
   const [adminReviewNote, setAdminReviewNote] = useState("");
+  const [suggestNote, setSuggestNote] = useState("");
+  const [activity, setActivity] = useState([]);
+  const [showAllActivity, setShowAllActivity] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
+  const timers = useRef(new Map());
+  const pending = useRef(new Map());
+
+  const schedule = (key, fn) => {
+    pending.current.set(key, fn);
+    const existing = timers.current.get(key);
+    if (existing) clearTimeout(existing);
+    timers.current.set(key, setTimeout(async () => {
+      const run = pending.current.get(key);
+      pending.current.delete(key);
+      timers.current.delete(key);
+      try { await run(); } catch (e) { console.error("save failed", key, e); }
+    }, 400));
+  };
+  const flushAll = async () => {
+    const entries = [...pending.current.entries()];
+    pending.current.clear();
+    for (const [k, t] of timers.current) clearTimeout(t);
+    timers.current.clear();
+    await Promise.all(entries.map(([, fn]) => fn().catch(() => {})));
+  };
+  useEffect(() => () => { flushAll(); }, []);
+
+  const refreshActivity = async (eid) => {
+    try {
+      const rows = await api.listEpisodeActivity(eid);
+      setActivity(rows || []);
+    } catch (e) { console.error("activity load failed", e); }
+  };
+
+  const refreshEpisode = async () => {
+    if (!activeEpisode?.id || !activeProject?.id) return;
+    setLoading(true);
+    try {
+      await flushAll();
+      const [epRow, cues, projRow] = await Promise.all([
+        api.getEpisode(activeEpisode.id),
+        api.listCues(activeEpisode.id),
+        api.getProject(activeProject.id),
+      ]);
+      updateProject(activeProject.id, (p) => ({
+        ...p, ...projRow,
+        year: projRow.production_year, productionCompany: projRow.production_company,
+        channel: projRow.channel_name, countryOfOrigin: projRow.country,
+        backgroundMusicComposer: projRow.bg_music_composer,
+      }));
+      updateEpisode(activeProject.id, activeEpisode.id, (e) => ({
+        ...e,
+        number: epRow.episode_number, title: epRow.title, airDate: epRow.air_date,
+        totalDuration: epRow.total_duration_sec, musicalDuration: epRow.musical_duration_sec,
+        bg_instrumental_duration_sec: epRow.bg_instrumental_duration_sec,
+        bg_vocal_duration_sec: epRow.bg_vocal_duration_sec,
+        status: epRow.status || "pending",
+        rejectionNote: epRow.rejection_note,
+        reviewNote: epRow.review_note,
+        cues: cues.map((c) => ({
+          id: c.id, songTitle: c.song_title, usageType: c.usage_type, duration: c.duration_sec,
+          usages: c.usage_count, songCode: c.song_code, isrc: c.isrc,
+          workNumber: c.work_number, ascapWorkId: c.ascap_work_id, validationLink: c.validation_link,
+          singer: c.singer, libraryId: c.library_id,
+          contributors: c.contributors.map((ct) => ({
+            id: ct.id, name: ct.name, role: ct.role, society: ct.society,
+            share: Number(ct.share_percent), ipi: ct.ipi_number || ct.cae_number,
+          })),
+        })),
+      }));
+      await refreshActivity(activeEpisode.id);
+    } catch (e) { console.error("episode refresh failed", e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    if (!activeEpisode?.id) return;
+    refreshEpisode();
+  }, [activeEpisode?.id]);
 
   if (!activeProject || !activeEpisode) return null;
   const proj = activeProject;
   const ep = activeEpisode;
+  const sortedEps = [...proj.episodes].sort((a, b) => (a.number || 0) - (b.number || 0));
+  const epIdx = sortedEps.findIndex((e) => e.id === ep.id);
+  const prevEp = epIdx > 0 ? sortedEps[epIdx - 1] : null;
+  const nextEp = epIdx >= 0 && epIdx < sortedEps.length - 1 ? sortedEps[epIdx + 1] : null;
+
+  const toSec = (v) => {
+    if (v == null || v === "") return null;
+    if (typeof v === "number") return v;
+    const s = String(v).trim();
+    const m = s.match(/^(\d+):(\d+)(?::(\d+))?$/);
+    if (m) return (+m[1]) * (m[3] ? 3600 : 60) + (+m[2]) * (m[3] ? 60 : 1) + (+m[3] || 0);
+    const n = Number(s);
+    return isNaN(n) ? null : n;
+  };
+
+  const saveEpisode = (e) => schedule(`ep:${e.id}`, () => api.updateEpisode(e.id, {
+    episode_number: e.number, title: e.title || null, air_date: e.airDate || null,
+    total_duration_sec: toSec(e.totalDuration), musical_duration_sec: toSec(e.musicalDuration),
+    bg_instrumental_duration_sec: toSec(e.bg_instrumental_duration_sec),
+    bg_vocal_duration_sec: toSec(e.bg_vocal_duration_sec),
+  }));
+  const saveCue = (cue) => schedule(`cue:${cue.id}`, () => api.updateCue(cue.id, {
+    song_title: cue.songTitle || "", usage_type: cue.usageType || "background",
+    duration_sec: toSec(cue.duration) || 0, usage_count: Number(cue.usages) || 1,
+    song_code: cue.songCode || null, isrc: cue.isrc || null,
+    work_number: cue.workNumber || null, ascap_work_id: cue.ascapWorkId || null,
+    validation_link: cue.validationLink || null, singer: cue.singer || null,
+    contributors: (cue.contributors || []).map((ct) => ({
+      name: ct.name || "", role: ct.role || "Composer", society: ct.society || null,
+      share_percent: Number(ct.share) || 0, ipi_number: ct.ipi || null,
+    })),
+  }));
+  const saveProject = (p) => schedule(`proj:${p.id}`, () => api.updateProject(p.id, {
+    title: p.title, type: p.type, language: p.language || null, genre: p.genre || null,
+    production_company: p.productionCompany || null, director: p.director || null,
+    producer: p.producer || null, actors: p.actors || null,
+    production_year: p.year ? Number(p.year) : null, channel_name: p.channel || null,
+    country: p.countryOfOrigin || null, total_episodes: p.total_episodes || null,
+    bg_music_composer: p.backgroundMusicComposer || null,
+  }));
+
+  const editProj = (k, v) => {
+    let updated;
+    updateProject(proj.id, (p) => { updated = { ...p, [k]: v }; return updated; });
+    if (updated) saveProject(updated);
+  };
+  const editEp = (k, v) => {
+    let updated;
+    updateEpisode(proj.id, ep.id, (e) => { updated = { ...e, [k]: v }; return updated; });
+    if (updated) saveEpisode(updated);
+  };
   const uploader = USERS_DB.find((u) => u.id === ep.uploadedBy);
+  const uploadRow = [...activity].reverse().find((r) => r.action === "upload");
+  const lastEditor = activity.find((r) => r.action !== "upload") || activity[0];
+  const fmtAt = (iso) => {
+    if (!iso) return "";
+    try { const d = new Date(iso); return d.toLocaleString(); } catch { return iso; }
+  };
+  const initialsOf = (name) => (name || "??").trim().split(/\s+/).map((s) => s[0]).join("").slice(0, 2).toUpperCase();
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await flushAll();
+      await refreshEpisode();
+      setSavedAt(new Date().toLocaleTimeString());
+    } catch (e) { console.error(e); alert("Save failed: " + (e?.message || e)); }
+    finally { setSaving(false); }
+  };
 
   const shareCheck = (c) => {
     const s = c.contributors.reduce((a, x) => a + Number(x.share || 0), 0);
@@ -33,56 +182,118 @@ export default function EpisodePage() {
     updateEpisode(proj.id, ep.id, (e) => ({ ...e, editHistory: [...e.editHistory, { userId: currentUser.id, name: currentUser.name, action, at: now() }] }));
   };
   const updateCue = (cid, k, v) => {
+    let updated;
     updateEpisode(proj.id, ep.id, (e) => ({
       ...e,
       status: e.status === "pending" || e.status === "rejected" ? "in_progress" : e.status,
-      cues: e.cues.map((c) => (c.id === cid ? { ...c, [k]: v } : c)),
+      cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, [k]: v }; return updated; } return c; }),
     }));
+    if (updated) saveCue(updated);
   };
   const updateContrib = (cid, coid, k, v) => {
+    let updated;
     updateEpisode(proj.id, ep.id, (e) => ({
       ...e,
       status: e.status === "pending" || e.status === "rejected" ? "in_progress" : e.status,
-      cues: e.cues.map((c) => (c.id === cid ? { ...c, contributors: c.contributors.map((co) => (co.id === coid ? { ...co, [k]: v } : co)) } : c)),
+      cues: e.cues.map((c) => {
+        if (c.id !== cid) return c;
+        updated = { ...c, contributors: c.contributors.map((co) => (co.id === coid ? { ...co, [k]: v } : co)) };
+        return updated;
+      }),
     }));
+    if (updated) saveCue(updated);
   };
   const addContrib = (cid) => {
+    let updated;
     updateEpisode(proj.id, ep.id, (e) => ({
       ...e,
-      cues: e.cues.map((c) => (c.id === cid ? { ...c, contributors: [...c.contributors, { id: uid(), name: "", role: "Composer", society: "", share: 0, ipi: "" }] } : c)),
+      cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, contributors: [...c.contributors, { id: uid(), name: "", role: "Composer", society: "", share: 0, ipi: "" }] }; return updated; } return c; }),
     }));
+    if (updated) saveCue(updated);
   };
   const removeContrib = (cid, coid) => {
+    let updated;
     updateEpisode(proj.id, ep.id, (e) => ({
       ...e,
-      cues: e.cues.map((c) => (c.id === cid ? { ...c, contributors: c.contributors.filter((co) => co.id !== coid) } : c)),
+      cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, contributors: c.contributors.filter((co) => co.id !== coid) }; return updated; } return c; }),
     }));
+    if (updated) saveCue(updated);
   };
   const removeSong = (cid) => {
     updateEpisode(proj.id, ep.id, (e) => ({ ...e, cues: e.cues.filter((c) => c.id !== cid) }));
     addEditEntry("Removed a song");
+    api.deleteCue(cid).catch(() => {});
   };
-  const handleSubmit = () => {
-    updateEpisode(proj.id, ep.id, (e) => ({ ...e, status: "submitted" }));
-    addEditEntry("Submitted for approval");
+  const handleSubmit = async () => {
+    try {
+      await flushAll();
+      await api.submitEpisode(ep.id);
+      await refreshEpisode();
+      setNotifications((prev) => [...prev, { id: uid(), type: "submission", serial: proj.title, epNum: ep.number, message: `Episode ${ep.number} submitted for review.`, from: currentUser.name, at: now(), read: false }]);
+      if (nextEp) setTimeout(() => setActiveEpisodeId(nextEp.id), 400);
+    } catch (e) { alert("Submit failed: " + e.message); }
   };
-  const handleApprove = () => {
-    updateEpisode(proj.id, ep.id, (e) => ({ ...e, status: "approved", rejectionNote: "" }));
-    addEditEntry("Approved");
-    setNotifications((prev) => [...prev, { id: uid(), type: "approval", serial: proj.title, epNum: ep.number, message: `Episode ${ep.number} has been approved. Cue sheets are ready for export.`, from: currentUser.name, at: now(), read: false }]);
+  const handleApprove = async () => {
+    try {
+      await api.approveEpisode(ep.id);
+      await refreshEpisode();
+      setNotifications((prev) => [...prev, { id: uid(), type: "approval", serial: proj.title, epNum: ep.number, message: `Episode ${ep.number} has been approved. Cue sheets are ready for export.`, from: currentUser.name, at: now(), read: false }]);
+    } catch (e) { alert("Approve failed: " + e.message); }
   };
-  const handleReject = () => {
+  const handleReject = async () => {
     if (!adminReviewNote.trim()) return;
-    updateEpisode(proj.id, ep.id, (e) => ({ ...e, status: "rejected", rejectionNote: adminReviewNote }));
-    addEditEntry(`Rejected — ${adminReviewNote}`);
-    setNotifications((prev) => [...prev, { id: uid(), type: "rejection", serial: proj.title, epNum: ep.number, message: adminReviewNote, from: currentUser.name, at: now(), read: false }]);
-    setAdminReviewNote("");
+    try {
+      await api.rejectEpisode(ep.id, adminReviewNote.trim());
+      await refreshEpisode();
+      setNotifications((prev) => [...prev, { id: uid(), type: "rejection", serial: proj.title, epNum: ep.number, message: adminReviewNote, from: currentUser.name, at: now(), read: false }]);
+      setAdminReviewNote("");
+    } catch (e) { alert("Reject failed: " + e.message); }
+  };
+  const handleSaveToLibrary = async (cid) => {
+    const cue = ep.cues.find((c) => c.id === cid);
+    if (!cue) return;
+    try {
+      await flushAll();
+      await api.upsertSongLibrary({
+        cue_id: cue.id,
+        title: cue.songTitle || "",
+        isrc: cue.isrc || null,
+        song_code: cue.songCode || null,
+        work_number: cue.workNumber || null,
+        ascap_work_id: cue.ascapWorkId || null,
+        singer: cue.singer || null,
+        contributors: (cue.contributors || []).map((ct) => ({
+          name: ct.name || "", role: ct.role || "Composer", society: ct.society || null,
+          share_percent: Number(ct.share) || 0, ipi_number: ct.ipi || null,
+        })),
+      });
+      await refreshEpisode();
+    } catch (e) { alert("Save to library failed: " + e.message); }
+  };
+
+  const handleSuggest = async () => {
+    if (!suggestNote.trim()) return;
+    try {
+      await api.suggestEpisode(ep.id, suggestNote.trim());
+      await refreshEpisode();
+      setNotifications((prev) => [...prev, { id: uid(), type: "suggestion", serial: proj.title, epNum: ep.number, message: suggestNote, from: currentUser.name, at: now(), read: false }]);
+      setSuggestNote("");
+    } catch (e) { alert("Suggestion failed: " + e.message); }
   };
 
   return (
     <div className="min-h-screen" style={{ background: C.light, fontFamily: FONTS.sans, color: C.dark }}>
       <Header />
+      {(loading || saving) && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-lg" style={{ background: C.dark, color: C.mint4 }}>
+          <span className="w-3 h-3 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: C.mint1, borderTopColor: "transparent" }} />
+          <span className="text-xs font-medium">{saving ? "Saving…" : "Loading data…"}</span>
+        </div>
+      )}
       <main className="max-w-7xl mx-auto px-6 py-10">
+        <button onClick={async () => { await flushAll(); setActiveEpisodeId(null); setScreen("serial"); }} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}>
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Episodes
+        </button>
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="text-xs uppercase tracking-widest mb-2" style={{ color: C.sub }}>{proj.title} · Episode {String(ep.number).padStart(2, "0")}</div>
@@ -90,6 +301,65 @@ export default function EpisodePage() {
             {ep.airDate && <div className="text-sm" style={{ color: C.sub }}>Air date: {ep.airDate}</div>}
           </div>
           <StatusBadge status={ep.status} />
+        </div>
+
+        <div className="rounded-2xl border mb-6 overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+          <div className="px-5 py-3 border-b flex items-center gap-2 flex-wrap" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
+            <History className="w-4 h-4" style={{ color: C.sub }} />
+            <span className="text-sm font-semibold" style={{ fontFamily: FONTS.serif }}>Activity Log</span>
+            <span className="ml-auto flex items-center gap-4 text-xs" style={{ color: C.sub }}>
+              {uploadRow && <span>Uploaded by <strong>{uploadRow.user_name}</strong> · {fmtAt(uploadRow.at)}</span>}
+              {lastEditor && lastEditor !== uploadRow && <span>Last edit by <strong>{lastEditor.user_name}</strong> · {fmtAt(lastEditor.at)}</span>}
+            </span>
+          </div>
+          <div className={"divide-y " + (showAllActivity ? "max-h-96 overflow-auto" : "")} style={{ borderColor: C.mint4 + "88" }}>
+            {activity.length === 0 && (
+              <div className="px-5 py-4 text-xs" style={{ color: C.sub }}>No activity yet.</div>
+            )}
+            {(showAllActivity ? activity : activity.slice(0, 5)).map((h, i) => (
+              <div key={h.id} className="px-5 py-2.5 flex items-center gap-3 text-xs" style={{ background: i === 0 ? C.mint4 + "44" : "" }}>
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[8px] font-bold shrink-0" style={{ background: h.user_id === currentUser?.id ? C.dark : C.mint1, color: h.user_id === currentUser?.id ? C.mint1 : C.dark }}>
+                  {initialsOf(h.user_name)}
+                </div>
+                <span className="font-medium" style={{ color: C.dark }}>{h.user_name}</span>
+                {h.user_role && <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: C.mint4, color: C.sub }}>{h.user_role}</span>}
+                <span style={{ color: C.sub }}>{h.details || h.action}</span>
+                <span className="ml-auto" style={{ color: C.muted, fontFamily: FONTS.mono, fontSize: 10 }}>{fmtAt(h.at)}</span>
+                {i === 0 && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: C.mint1, color: C.dark }}>LATEST</span>}
+              </div>
+            ))}
+          </div>
+          {activity.length > 5 && (
+            <div className="px-5 py-2 border-t flex items-center justify-center" style={{ borderColor: C.mint4 + "88", background: C.mint4 + "22" }}>
+              <button
+                onClick={() => setShowAllActivity((v) => !v)}
+                className="text-xs font-medium px-3 py-1.5 rounded-lg hover:opacity-80"
+                style={{ color: C.dark }}
+              >
+                {showAllActivity ? "Hide Activity Log" : `Show Activity Log (${activity.length})`}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between mb-6">
+          <button
+            disabled={!prevEp}
+            onClick={async () => { if (prevEp) { await flushAll(); setActiveEpisodeId(prevEp.id); } }}
+            className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm disabled:opacity-30"
+            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
+          >
+            <ChevronLeft className="w-4 h-4" />Prev {prevEp ? `Ep ${prevEp.number}` : ""}
+          </button>
+          <div className="text-xs" style={{ color: C.sub }}>{epIdx + 1} of {sortedEps.length}</div>
+          <button
+            disabled={!nextEp}
+            onClick={async () => { if (nextEp) { await flushAll(); setActiveEpisodeId(nextEp.id); } }}
+            className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm disabled:opacity-30"
+            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
+          >
+            Next {nextEp ? `Ep ${nextEp.number}` : ""}<ChevronRight className="w-4 h-4" />
+          </button>
         </div>
 
         {ep.status === "rejected" && ep.rejectionNote && (
@@ -101,56 +371,60 @@ export default function EpisodePage() {
             </div>
           </div>
         )}
-
-        <div className="rounded-2xl border mb-6 overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-          <div className="px-5 py-3 border-b flex items-center gap-2" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
-            <History className="w-4 h-4" style={{ color: C.sub }} />
-            <span className="text-sm font-semibold" style={{ fontFamily: FONTS.serif }}>Activity Log</span>
-            {uploader && <span className="ml-auto text-xs" style={{ color: C.sub }}>Uploaded by <strong>{uploader.name}</strong> on {ep.uploadedAt}</span>}
+        {ep.reviewNote && (
+          <div className="rounded-2xl border px-5 py-4 mb-6 flex items-start gap-3" style={{ background: "#FFF8E1", borderColor: "#FFE082" }}>
+            <MessageSquare className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#F57C00" }} />
+            <div>
+              <div className="font-semibold text-sm mb-1" style={{ color: "#E65100" }}>Admin suggested changes</div>
+              <p className="text-sm leading-relaxed" style={{ color: "#BF360C" }}>{ep.reviewNote}</p>
+            </div>
           </div>
-          <div className="divide-y" style={{ borderColor: C.mint4 + "88" }}>
-            {[...(ep.editHistory || [])].reverse().map((h, i) => (
-              <div key={i} className="px-5 py-2.5 flex items-center gap-3 text-xs" style={{ background: i === 0 ? C.mint4 + "44" : "" }}>
-                <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[8px] font-bold shrink-0" style={{ background: h.userId === currentUser?.id ? C.dark : C.mint1, color: h.userId === currentUser?.id ? C.mint1 : C.dark }}>
-                  {USERS_DB.find((u) => u.id === h.userId)?.avatar || "??"}
-                </div>
-                <span className="font-medium" style={{ color: C.dark }}>{h.name}</span>
-                <span style={{ color: C.sub }}>{h.action}</span>
-                <span className="ml-auto" style={{ color: C.muted, fontFamily: FONTS.mono, fontSize: 10 }}>{h.at}</span>
-                {i === 0 && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: C.mint1, color: C.dark }}>LATEST</span>}
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
 
         <SectionTitle title="Cue Details" />
         <div className="rounded-2xl border p-6 mb-6" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
           <div className="grid grid-cols-4 gap-4">
-            <Fld label="Serial Title" tag="once"><Inp value={proj.title} readOnly={isAdmin} /></Fld>
-            <Fld label="Channel" tag="once"><Inp value={proj.channel} readOnly={isAdmin} /></Fld>
-            <Fld label="Serial Type" tag="once"><Inp value={proj.serialType} readOnly={isAdmin} /></Fld>
-            <Fld label="Language" tag="auto"><Inp value={proj.language} readOnly={isAdmin} /></Fld>
-            <Fld label="Director" tag="auto"><Inp value={proj.director} readOnly={isAdmin} /></Fld>
-            <Fld label="Genre" tag="auto"><Inp value={proj.genre} readOnly={isAdmin} /></Fld>
-            <Fld label="Production Company" tag="auto"><Inp value={proj.productionCompany} readOnly={isAdmin} /></Fld>
-            <Fld label="Country" tag="once"><Inp value={proj.countryOfOrigin} readOnly={isAdmin} /></Fld>
-            <Fld label="Principal Actors" tag="auto" span={2}><Inp value={proj.actors} readOnly={isAdmin} /></Fld>
-            <Fld label="Producer" tag="auto"><Inp value={proj.producer} readOnly={isAdmin} /></Fld>
-            <Fld label="Production Year" tag="once"><Inp value={proj.year} readOnly={isAdmin} /></Fld>
+            <Fld label="Serial Title" tag="once"><Inp value={proj.title} onChange={(v) => editProj("title", v)} /></Fld>
+            <Fld label="Channel" tag="once"><Inp value={proj.channel} onChange={(v) => editProj("channel", v)} /></Fld>
+            <Fld label="Serial Type" tag="once"><Inp value={proj.type} onChange={(v) => editProj("type", v)} /></Fld>
+            <Fld label="Language" tag="auto"><Inp value={proj.language} onChange={(v) => editProj("language", v)} /></Fld>
+            <Fld label="Director" tag="auto"><Inp value={proj.director} onChange={(v) => editProj("director", v)} /></Fld>
+            <Fld label="Genre" tag="auto"><Inp value={proj.genre} onChange={(v) => editProj("genre", v)} /></Fld>
+            <Fld label="Production Company" tag="auto"><Inp value={proj.productionCompany} onChange={(v) => editProj("productionCompany", v)} /></Fld>
+            <Fld label="Country" tag="once"><Inp value={proj.countryOfOrigin} onChange={(v) => editProj("countryOfOrigin", v)} /></Fld>
+            <Fld label="Principal Actors" tag="auto" span={2}><Inp value={proj.actors} onChange={(v) => editProj("actors", v)} /></Fld>
+            <Fld label="Producer" tag="auto"><Inp value={proj.producer} onChange={(v) => editProj("producer", v)} /></Fld>
+            <Fld label="Production Year" tag="once"><Inp value={proj.year} onChange={(v) => editProj("year", v)} /></Fld>
           </div>
         </div>
 
         <SectionTitle title="Episode Details" />
         <div className="rounded-2xl border p-6 mb-6" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
           <div className="grid grid-cols-4 gap-4">
-            <Fld label="Episode #" tag="auto"><Inp value={ep.number} readOnly /></Fld>
-            <Fld label="Air Date" tag="auto"><Inp value={ep.airDate} readOnly={isAdmin} /></Fld>
-            <Fld label="Total Duration" tag="auto"><Inp value={ep.totalDuration} readOnly={isAdmin} mono /></Fld>
-            <Fld label="Musical Duration" tag="auto"><Inp value={ep.musicalDuration} readOnly={isAdmin} mono /></Fld>
+            <Fld label="Episode #" tag="auto"><Inp value={ep.number} onChange={(v) => editEp("number", Number(v) || ep.number)} /></Fld>
+            <Fld label="Episode Title" tag="auto"><Inp value={ep.title} onChange={(v) => editEp("title", v)} /></Fld>
+            <Fld label="Air Date" tag="auto"><Inp value={ep.airDate} onChange={(v) => editEp("airDate", v)} /></Fld>
+            <Fld label="Total Duration" tag="auto"><Inp value={ep.totalDuration} onChange={(v) => editEp("totalDuration", v)} mono /></Fld>
+            <Fld label="Musical Duration" tag="auto"><Inp value={ep.musicalDuration} onChange={(v) => editEp("musicalDuration", v)} mono /></Fld>
           </div>
         </div>
 
-        <SectionTitle title={`Song Details (${ep.cues.length})`} />
+        <div className="flex items-center justify-between mb-3">
+          <SectionTitle title={`Song Details (${ep.cues.length})`} />
+          {!isAdmin && (
+            <button
+              onClick={async () => {
+                const created = await api.createCue(ep.id, { song_title: "New Song", usage_type: "background", duration_sec: 0, usage_count: 1, contributors: [] });
+                updateEpisode(proj.id, ep.id, (e) => ({
+                  ...e,
+                  cues: [...e.cues, { id: created.id, songTitle: created.song_title, usageType: created.usage_type, duration: created.duration_sec, usages: created.usage_count, contributors: [] }],
+                }));
+              }}
+              className="px-4 py-2 rounded-lg text-sm font-medium"
+              style={{ background: C.dark, color: C.mint4 }}
+            >+ Add Song</button>
+          )}
+        </div>
         <div className="space-y-6 mb-8">
           {ep.cues.map((cue, idx) => (
             <CueCard
@@ -163,6 +437,12 @@ export default function EpisodePage() {
               onContribAdd={addContrib}
               onContribRemove={removeContrib}
               onRemove={removeSong}
+              otherEpisodes={sortedEps.filter((e) => e.id !== ep.id)}
+              onSaveToLibrary={handleSaveToLibrary}
+              onCopyTo={async (cid, targetEid) => {
+                try { await api.copyCue(cid, targetEid); alert(`Copied to Ep ${sortedEps.find((e) => e.id === targetEid)?.number}`); }
+                catch (ex) { alert(ex.message); }
+              }}
             />
           ))}
         </div>
@@ -173,14 +453,25 @@ export default function EpisodePage() {
               <div className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>Ready to submit?</div>
               <div className="text-xs mt-1" style={{ color: C.sub }}>Once submitted, the admin will review and approve or request changes.</div>
             </div>
-            <button
-              onClick={handleSubmit}
-              disabled={!allValid || ep.cues.length === 0}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium disabled:opacity-40 hover:opacity-90 transition"
-              style={{ background: C.dark, color: C.mint4 }}
-            >
-              <Send className="w-4 h-4" />Submit for Approval
-            </button>
+            <div className="flex items-center gap-3">
+              {savedAt && <span className="text-xs" style={{ color: C.sub }}>Saved {savedAt}</span>}
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium disabled:opacity-40 hover:opacity-90 transition"
+                style={{ background: C.white, color: C.dark, border: `1px solid ${C.mint1}` }}
+              >
+                <Save className="w-4 h-4" />{saving ? "Saving…" : "Save"}
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!allValid || ep.cues.length === 0}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium disabled:opacity-40 hover:opacity-90 transition"
+                style={{ background: C.dark, color: C.mint4 }}
+              >
+                <Send className="w-4 h-4" />Submit for Approval
+              </button>
+            </div>
           </div>
         )}
 
@@ -200,30 +491,44 @@ export default function EpisodePage() {
           </div>
         )}
 
-        {isAdmin && ep.status === "submitted" && (
+        {isAdmin && (ep.status === "submitted" || ep.status === "edited") && (
           <div className="rounded-2xl overflow-hidden mb-6" style={{ background: C.dark }}>
             <div className="px-6 py-5 border-b" style={{ borderColor: C.mid }}>
               <div className="font-semibold text-xl" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>Admin Review</div>
-              <div className="text-xs mt-1" style={{ color: C.mint1 + "88" }}>Review the data above. Approve to enable export, or reject with a note.</div>
+              <div className="text-xs mt-1" style={{ color: C.mint1 + "88" }}>Approve to enable export, reject with a note, or suggest changes without rejecting.</div>
             </div>
-            <div className="p-6">
-              <div className="mb-4">
+            <div className="p-6 space-y-5">
+              <div>
                 <label className="text-xs uppercase tracking-widest block mb-2" style={{ color: C.mint1 + "88" }}>Rejection note (required to reject)</label>
                 <textarea
                   value={adminReviewNote}
                   onChange={(e) => setAdminReviewNote(e.target.value)}
                   rows={3}
-                  placeholder="e.g. Song Code missing for 'Montu Da Theme'. Please verify singer name."
+                  placeholder="e.g. Song Code missing for 'Montu Da Theme'."
                   className="w-full border rounded-xl px-4 py-3 text-sm focus:outline-none"
                   style={{ borderColor: C.mid, background: "rgba(255,255,255,0.05)", color: C.mint4 }}
                 />
               </div>
-              <div className="flex items-center gap-3">
+              <div>
+                <label className="text-xs uppercase tracking-widest block mb-2" style={{ color: C.mint1 + "88" }}>Suggest changes (user can keep editing)</label>
+                <textarea
+                  value={suggestNote}
+                  onChange={(e) => setSuggestNote(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. Double-check IPI numbers for contributors."
+                  className="w-full border rounded-xl px-4 py-3 text-sm focus:outline-none"
+                  style={{ borderColor: C.mid, background: "rgba(255,255,255,0.05)", color: C.mint4 }}
+                />
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
                 <button onClick={handleApprove} className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium hover:opacity-90 transition" style={{ background: C.ok, color: C.white }}>
                   <Check className="w-4 h-4" />Approve
                 </button>
                 <button onClick={handleReject} disabled={!adminReviewNote.trim()} className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium disabled:opacity-40 hover:opacity-90 transition" style={{ background: C.danger, color: C.white }}>
                   <XCircle className="w-4 h-4" />Reject
+                </button>
+                <button onClick={handleSuggest} disabled={!suggestNote.trim()} className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium disabled:opacity-40 hover:opacity-90 transition" style={{ background: "#F57C00", color: C.white }}>
+                  <MessageSquare className="w-4 h-4" />Suggest Changes
                 </button>
               </div>
             </div>
@@ -243,12 +548,37 @@ export default function EpisodePage() {
               <span className="text-xs px-3 py-1.5 rounded-lg" style={{ background: "#27AE6033", border: "1px solid #27AE60", color: "#7DCEA0" }}>Ready to export</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 divide-x" style={{ borderColor: C.mid }}>
-              <ExpBtn label="IPRS" sub="India" icon="🇮🇳" onClick={() => dlExport(buildIPRS, "IPRS", proj, ep)} />
-              <ExpBtn label="PRS" sub="UK" icon="🇬🇧" onClick={() => dlExport(buildPRS, "PRS", proj, ep)} />
-              <ExpBtn label="ASCAP" sub="USA" icon="🇺🇸" onClick={() => dlExport(buildASCAP, "ASCAP", proj, ep)} />
+              {(() => {
+                const fname = (soc) => `${proj.title.replace(/[^a-z0-9]+/gi, "_")}_Ep${String(ep.number).padStart(2, "0")}_${soc}.xlsx`;
+                return <>
+                  <ExpBtn label="IPRS" sub="India" icon="🇮🇳" onClick={() => api.downloadExport(ep.id, "iprs", fname("IPRS"))} />
+                  <ExpBtn label="PRS" sub="UK" icon="🇬🇧" onClick={() => api.downloadExport(ep.id, "prs", fname("PRS"))} />
+                  <ExpBtn label="ASCAP" sub="USA" icon="🇺🇸" onClick={() => api.downloadExport(ep.id, "ascap", fname("ASCAP"))} />
+                </>;
+              })()}
             </div>
           </div>
         )}
+
+        <div className="flex items-center justify-between mt-8 pt-6 border-t" style={{ borderColor: C.mint4 }}>
+          <button
+            disabled={!prevEp}
+            onClick={async () => { if (prevEp) { await flushAll(); setActiveEpisodeId(prevEp.id); } }}
+            className="flex items-center gap-1 px-5 py-2.5 rounded-xl text-sm disabled:opacity-30"
+            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
+          >
+            <ChevronLeft className="w-4 h-4" />Prev {prevEp ? `Ep ${prevEp.number}` : ""}
+          </button>
+          <div className="text-xs" style={{ color: C.sub }}>{epIdx + 1} of {sortedEps.length}</div>
+          <button
+            disabled={!nextEp}
+            onClick={async () => { if (nextEp) { await flushAll(); setActiveEpisodeId(nextEp.id); } }}
+            className="flex items-center gap-1 px-5 py-2.5 rounded-xl text-sm disabled:opacity-30"
+            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
+          >
+            Next {nextEp ? `Ep ${nextEp.number}` : ""}<ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </main>
     </div>
   );

@@ -8,7 +8,8 @@ from app.core.deps import get_current_user, require_roles
 from app.models.cue import Contributor, CueEntry
 from app.models.episode import Episode
 from app.models.user import User, UserRole
-from app.schemas.episode import EpisodeCloneIn, EpisodeCreate, EpisodeOut, EpisodeUpdate
+from app.schemas.episode import EpisodeCloneIn, EpisodeCreate, EpisodeOut, EpisodeUpdate, ReviewNoteIn
+from app.services.audit import log_activity
 
 router = APIRouter()
 
@@ -36,12 +37,13 @@ async def get_episode(eid: int, db: AsyncSession = Depends(get_db), _: User = De
 
 
 @router.put("/{eid}", response_model=EpisodeOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
-async def update_episode(eid: int, payload: EpisodeUpdate, db: AsyncSession = Depends(get_db)):
+async def update_episode(eid: int, payload: EpisodeUpdate, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     ep = await db.get(Episode, eid)
     if not ep:
         raise HTTPException(404)
     for k, v in payload.model_dump().items():
         setattr(ep, k, v)
+    await log_activity(db, current.id, "update", "episode", eid, "Edited episode details")
     await db.commit()
     await db.refresh(ep)
     return ep
@@ -55,6 +57,62 @@ async def delete_episode(eid: int, db: AsyncSession = Depends(get_db)):
     await db.delete(ep)
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/{eid}/submit", response_model=EpisodeOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+async def submit_episode(eid: int, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+    ep = await db.get(Episode, eid)
+    if not ep:
+        raise HTTPException(404)
+    ep.status = "submitted"
+    ep.rejection_note = None
+    await log_activity(db, current.id, "submit", "episode", eid, "Submitted for approval")
+    await db.commit()
+    await db.refresh(ep)
+    return ep
+
+
+@router.post("/{eid}/approve", response_model=EpisodeOut, dependencies=[Depends(require_roles(UserRole.ADMIN))])
+async def approve_episode(eid: int, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+    ep = await db.get(Episode, eid)
+    if not ep:
+        raise HTTPException(404)
+    ep.status = "approved"
+    ep.rejection_note = None
+    await log_activity(db, current.id, "approve", "episode", eid, "Approved episode")
+    await db.commit()
+    await db.refresh(ep)
+    return ep
+
+
+@router.post("/{eid}/reject", response_model=EpisodeOut, dependencies=[Depends(require_roles(UserRole.ADMIN))])
+async def reject_episode(eid: int, payload: ReviewNoteIn, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+    ep = await db.get(Episode, eid)
+    if not ep:
+        raise HTTPException(404)
+    if not payload.note.strip():
+        raise HTTPException(400, "Rejection note required")
+    ep.status = "rejected"
+    ep.rejection_note = payload.note.strip()
+    await log_activity(db, current.id, "reject", "episode", eid, f"Rejected — {payload.note.strip()}")
+    await db.commit()
+    await db.refresh(ep)
+    return ep
+
+
+@router.post("/{eid}/suggest", response_model=EpisodeOut, dependencies=[Depends(require_roles(UserRole.ADMIN))])
+async def suggest_changes(eid: int, payload: ReviewNoteIn, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+    ep = await db.get(Episode, eid)
+    if not ep:
+        raise HTTPException(404)
+    if not payload.note.strip():
+        raise HTTPException(400, "Suggestion note required")
+    ep.status = "edited"
+    ep.review_note = payload.note.strip()
+    await log_activity(db, current.id, "suggest", "episode", eid, f"Suggested changes — {payload.note.strip()}")
+    await db.commit()
+    await db.refresh(ep)
+    return ep
 
 
 @router.post("/clone", response_model=EpisodeOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, field_validator
 
 from app.models.user import UserRole
 
@@ -6,6 +6,20 @@ from app.models.user import UserRole
 class LoginIn(BaseModel):
     email: str
     password: str
+
+
+class SignupIn(BaseModel):
+    full_name: str
+    email: str
+    password: str
+    confirm_password: str
+
+    @field_validator("confirm_password")
+    @classmethod
+    def _match(cls, v, info):
+        if v != info.data.get("password"):
+            raise ValueError("Passwords do not match")
+        return v
 
 
 class TokenOut(BaseModel):
@@ -30,3 +44,10 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: UserOut
