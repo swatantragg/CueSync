@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { XCircle, CheckCircle2, History, Send, Check, Package, ChevronLeft, ChevronRight, Save, ArrowLeft, MessageSquare } from "lucide-react";
+import { XCircle, CheckCircle2, History, Send, Check, Package, ChevronLeft, ChevronRight, Save, ArrowLeft, MessageSquare, List } from "lucide-react";
 import { api } from "../utils/api";
 import { C, FONTS } from "../styles/palette";
 import Header from "../components/Header";
@@ -13,6 +13,116 @@ import { USERS_DB } from "../constants/users";
 import { uid } from "../utils/uid";
 import { now } from "../utils/format";
 import { useApp } from "../context/AppContext";
+import { STATUS } from "../constants/status";
+
+function EpNavRow({ id, className, style, prevEp, nextEp, epIdx, sortedEps, currentEpId, showEpPicker, setShowEpPicker, onPrev, onNext, onPick }) {
+  const pickerKey = `${id}-picker`;
+  return (
+    <div className={`flex items-center justify-between gap-3 ${className || ""}`} style={style}>
+
+      {/* ← Prev — full button navigates */}
+      <button
+        disabled={!prevEp}
+        onClick={onPrev}
+        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-25 hover:opacity-75 transition-opacity"
+        style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark, minWidth: 130 }}
+      >
+        <ChevronLeft className="w-4 h-4 shrink-0" />
+        <span className="truncate">
+          {prevEp ? `Ep ${String(prevEp.number).padStart(2, "0")}` : "—"}
+        </span>
+      </button>
+
+      {/* Center — list icon + counter, click to open picker */}
+      <div className="relative shrink-0">
+        <button
+          onClick={() => setShowEpPicker(showEpPicker === pickerKey ? null : pickerKey)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium hover:opacity-75 transition-opacity"
+          style={{
+            background: showEpPicker === pickerKey ? C.dark : C.mint4,
+            border: `1px solid ${C.mint1}44`,
+            color: showEpPicker === pickerKey ? C.mint1 : C.sub,
+          }}
+          title="Jump to any episode"
+        >
+          <List className="w-3.5 h-3.5 shrink-0" />
+          <span style={{ fontFamily: FONTS.mono }}>{epIdx + 1} / {sortedEps.length}</span>
+        </button>
+        {showEpPicker === pickerKey && (
+          <EpPickerDropdown sortedEps={sortedEps} currentEpId={currentEpId} onPick={onPick} />
+        )}
+      </div>
+
+      {/* Next → — full button navigates */}
+      <button
+        disabled={!nextEp}
+        onClick={onNext}
+        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-25 hover:opacity-75 transition-opacity justify-end"
+        style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark, minWidth: 130 }}
+      >
+        <span className="truncate">
+          {nextEp ? `Ep ${String(nextEp.number).padStart(2, "0")}` : "—"}
+        </span>
+        <ChevronRight className="w-4 h-4 shrink-0" />
+      </button>
+
+    </div>
+  );
+}
+
+function EpPickerDropdown({ sortedEps, currentEpId, onPick }) {
+  return (
+    <div
+      className="absolute z-50 rounded-xl shadow-2xl flex flex-col"
+      style={{
+        top: "calc(100% + 8px)",
+        left: "50%",
+        transform: "translateX(-50%)",
+        background: C.dark,
+        border: `1px solid ${C.mid}`,
+        width: 260,
+        maxHeight: 360,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        className="px-4 py-2.5 text-[10px] uppercase tracking-widest font-semibold shrink-0"
+        style={{ borderBottom: `1px solid ${C.mid}`, color: C.mint1 }}
+      >
+        Jump to Episode
+      </div>
+      <div style={{ overflowY: "auto", maxHeight: 310 }}>
+        {sortedEps.map((e) => {
+          const s = STATUS[e.status] || STATUS.pending;
+          const isActive = e.id === currentEpId;
+          return (
+            <button
+              key={e.id}
+              onClick={() => onPick(e)}
+              className="w-full text-left px-4 py-2.5 flex items-center gap-3 text-xs hover:opacity-70 transition-opacity"
+              style={{ background: isActive ? C.mid : "transparent", color: C.mint4 }}
+            >
+              <span
+                className="shrink-0 font-mono text-right"
+                style={{ color: C.mint1, minWidth: 22 }}
+              >
+                {String(e.number).padStart(2, "0")}
+              </span>
+              <span className="truncate flex-1" style={{ color: isActive ? C.mint1 : C.mint4 }}>
+                {e.airDate || e.title || `Episode ${e.number}`}
+              </span>
+              <span
+                className="shrink-0 w-2 h-2 rounded-full"
+                style={{ background: s.color }}
+                title={s.label}
+              />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function EpisodePage() {
   const { activeProject, activeEpisode, currentUser, isAdmin, updateProject, updateEpisode, setActiveEpisodeId, setNotifications, setScreen } = useApp();
@@ -23,6 +133,7 @@ export default function EpisodePage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
+  const [showEpPicker, setShowEpPicker] = useState(null);
   const timers = useRef(new Map());
   const pending = useRef(new Map());
 
@@ -342,25 +453,17 @@ export default function EpisodePage() {
           )}
         </div>
 
-        <div className="flex items-center justify-between mb-6">
-          <button
-            disabled={!prevEp}
-            onClick={async () => { if (prevEp) { await flushAll(); setActiveEpisodeId(prevEp.id); } }}
-            className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm disabled:opacity-30"
-            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
-          >
-            <ChevronLeft className="w-4 h-4" />Prev {prevEp ? `Ep ${prevEp.number}` : ""}
-          </button>
-          <div className="text-xs" style={{ color: C.sub }}>{epIdx + 1} of {sortedEps.length}</div>
-          <button
-            disabled={!nextEp}
-            onClick={async () => { if (nextEp) { await flushAll(); setActiveEpisodeId(nextEp.id); } }}
-            className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm disabled:opacity-30"
-            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
-          >
-            Next {nextEp ? `Ep ${nextEp.number}` : ""}<ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+        {showEpPicker && <div className="fixed inset-0 z-40" onClick={() => setShowEpPicker(null)} />}
+        <EpNavRow
+          id="top"
+          className="mb-6"
+          prevEp={prevEp} nextEp={nextEp} epIdx={epIdx}
+          sortedEps={sortedEps} currentEpId={ep.id}
+          showEpPicker={showEpPicker} setShowEpPicker={setShowEpPicker}
+          onPrev={async () => { if (prevEp) { await flushAll(); setActiveEpisodeId(prevEp.id); } }}
+          onNext={async () => { if (nextEp) { await flushAll(); setActiveEpisodeId(nextEp.id); } }}
+          onPick={async (e) => { await flushAll(); setActiveEpisodeId(e.id); setShowEpPicker(null); }}
+        />
 
         {ep.status === "rejected" && ep.rejectionNote && (
           <div className="rounded-2xl border px-5 py-4 mb-6 flex items-start gap-3" style={{ background: "#FFEBEE", borderColor: "#EF9A9A" }}>
@@ -560,25 +663,17 @@ export default function EpisodePage() {
           </div>
         )}
 
-        <div className="flex items-center justify-between mt-8 pt-6 border-t" style={{ borderColor: C.mint4 }}>
-          <button
-            disabled={!prevEp}
-            onClick={async () => { if (prevEp) { await flushAll(); setActiveEpisodeId(prevEp.id); } }}
-            className="flex items-center gap-1 px-5 py-2.5 rounded-xl text-sm disabled:opacity-30"
-            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
-          >
-            <ChevronLeft className="w-4 h-4" />Prev {prevEp ? `Ep ${prevEp.number}` : ""}
-          </button>
-          <div className="text-xs" style={{ color: C.sub }}>{epIdx + 1} of {sortedEps.length}</div>
-          <button
-            disabled={!nextEp}
-            onClick={async () => { if (nextEp) { await flushAll(); setActiveEpisodeId(nextEp.id); } }}
-            className="flex items-center gap-1 px-5 py-2.5 rounded-xl text-sm disabled:opacity-30"
-            style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}
-          >
-            Next {nextEp ? `Ep ${nextEp.number}` : ""}<ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+        <EpNavRow
+          id="bottom"
+          className="mt-8 pt-6 border-t"
+          style={{ borderColor: C.mint4 }}
+          prevEp={prevEp} nextEp={nextEp} epIdx={epIdx}
+          sortedEps={sortedEps} currentEpId={ep.id}
+          showEpPicker={showEpPicker} setShowEpPicker={setShowEpPicker}
+          onPrev={async () => { if (prevEp) { await flushAll(); setActiveEpisodeId(prevEp.id); } }}
+          onNext={async () => { if (nextEp) { await flushAll(); setActiveEpisodeId(nextEp.id); } }}
+          onPick={async (e) => { await flushAll(); setActiveEpisodeId(e.id); setShowEpPicker(null); }}
+        />
       </main>
     </div>
   );

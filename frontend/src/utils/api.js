@@ -86,4 +86,16 @@ export const api = {
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
     return res.json();
   },
+  previewRough: async (pid, file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const t = tokenStore.get();
+    const res = await fetch(`${BASE}/api/uploads/rough/project/${pid}/preview`, {
+      method: "POST", body: fd, headers: t ? { Authorization: `Bearer ${t}` } : {},
+    });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    return res.json();
+  },
+  commitRough: (pid, payload) =>
+    request(`/api/uploads/rough/project/${pid}/commit`, { method: "POST", body: payload }),
 };
