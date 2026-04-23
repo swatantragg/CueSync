@@ -1,15 +1,18 @@
+import re
 from contextlib import asynccontextmanager
 
 import orjson
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse, ORJSONResponse
 
 from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import Base, engine
+
+_CORS_RE = re.compile(r"http://localhost:\d+")
 
 MIGRATIONS = [
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS country VARCHAR(100)",
@@ -56,12 +59,29 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_list,
+    allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 app.include_router(api_router)
+
+
+# ── Safety net: guarantee CORS headers even when CORSMiddleware misses them ──
+# (happens when an unhandled exception causes uvicorn to drop the connection
+#  before the middleware can annotate the response)
+@app.middleware("http")
+async def cors_safety_net(request: Request, call_next):
+    response = await call_next(request)
+    origin = request.headers.get("origin", "")
+    if origin and (origin in settings.cors_list or _CORS_RE.fullmatch(origin)):
+        if "access-control-allow-origin" not in response.headers:
+            response.headers["access-control-allow-origin"] = origin
+            response.headers["access-control-allow-credentials"] = "true"
+            response.headers["vary"] = "Origin"
+    return response
 
 
 @app.get("/")

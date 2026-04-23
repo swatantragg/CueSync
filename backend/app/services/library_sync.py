@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -110,6 +110,42 @@ async def propagate_cue_to_siblings(db: AsyncSession, source: CueEntry) -> int:
         if changed:
             count += 1
     return count
+
+
+async def find_library_match_extended(
+    db: AsyncSession,
+    title: str | None,
+    isrc: str | None,
+    song_code: str | None,
+) -> tuple["SongLibrary | None", str]:
+    """Find best library match. Returns (match, match_type).
+    Priority: song_code > isrc > title."""
+    if song_code:
+        row = (await db.execute(
+            select(SongLibrary).where(or_(
+                SongLibrary.song_code == song_code,
+                SongLibrary.work_number == song_code,
+                SongLibrary.ascap_work_id == song_code,
+            ))
+        )).scalar_one_or_none()
+        if row:
+            return row, "code"
+    if isrc:
+        row = (await db.execute(
+            select(SongLibrary).where(SongLibrary.isrc == isrc)
+        )).scalar_one_or_none()
+        if row:
+            return row, "isrc"
+    if title:
+        rows = (await db.execute(
+            select(SongLibrary).where(SongLibrary.title.ilike(title.strip()))
+        )).scalars().all()
+        no_isrc = [r for r in rows if not r.isrc]
+        if no_isrc:
+            return no_isrc[0], "title"
+        if rows:
+            return rows[0], "title"
+    return None, "none"
 
 
 async def apply_library_to_cue(db: AsyncSession, cue: CueEntry, entry: SongLibrary, force: bool = False) -> None:
