@@ -1,6 +1,10 @@
-const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const BASE = (import.meta.env.VITE_API_URL || "").trim().replace(/\/+$/, "");
 const TOKEN_KEY = "cuesync_token";
 const USER_KEY = "cuesync_user";
+
+function apiUrl(path) {
+  return BASE ? `${BASE}${path}` : path;
+}
 
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY),
@@ -19,13 +23,24 @@ async function request(path, { method = "GET", body, form, auth = true } = {}) {
     const t = tokenStore.get();
     if (t) headers["Authorization"] = `Bearer ${t}`;
   }
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: form ? form : body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(apiUrl(path), {
+      method,
+      headers,
+      body: form ? form : body ? JSON.stringify(body) : undefined,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `API request failed. Check backend availability and VITE_API_URL/proxy config. ${msg}`
+    );
+  }
   const ct = res.headers.get("content-type") || "";
   const data = ct.includes("application/json") ? await res.json() : await res.text();
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent("auth:expired"));
+  }
   if (!res.ok) {
     const msg = (data && (data.detail || data.message)) || `${res.status} ${res.statusText}`;
     throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
@@ -58,6 +73,7 @@ export const api = {
   copyCue: (cid, targetEpisodeId) => request(`/api/cues/${cid}/copy-to/${targetEpisodeId}`, { method: "POST" }),
   upsertSongLibrary: (payload) => request(`/api/library/songs/upsert`, { method: "POST", body: payload }),
   lookupSong: (title, isrc) => request(`/api/library/songs/lookup?title=${encodeURIComponent(title || "")}&isrc=${encodeURIComponent(isrc || "")}`),
+  lookupContributor: (name) => request(`/api/library/contributors/lookup?name=${encodeURIComponent(name || "")}`),
   submitEpisode: (eid) => request(`/api/episodes/${eid}/submit`, { method: "POST" }),
   approveEpisode: (eid) => request(`/api/episodes/${eid}/approve`, { method: "POST" }),
   rejectEpisode: (eid, note) => request(`/api/episodes/${eid}/reject`, { method: "POST", body: { note } }),
@@ -66,7 +82,7 @@ export const api = {
   listProjectActivity: (pid) => request(`/api/activity/project/${pid}`),
   downloadExport: async (episodeId, society, filename) => {
     const t = tokenStore.get();
-    const res = await fetch(`${BASE}/api/exports/episode/${episodeId}?society=${society}`, {
+    const res = await fetch(apiUrl(`/api/exports/episode/${episodeId}?society=${society}`), {
       headers: t ? { Authorization: `Bearer ${t}` } : {},
     });
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
@@ -80,9 +96,15 @@ export const api = {
     const fd = new FormData();
     fd.append("file", file);
     const t = tokenStore.get();
-    const res = await fetch(`${BASE}/api/uploads/rough/project/${pid}`, {
-      method: "POST", body: fd, headers: t ? { Authorization: `Bearer ${t}` } : {},
-    });
+    let res;
+    try {
+      res = await fetch(apiUrl(`/api/uploads/rough/project/${pid}`), {
+        method: "POST", body: fd, headers: t ? { Authorization: `Bearer ${t}` } : {},
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Rough upload request failed. ${msg}`);
+    }
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
     return res.json();
   },
@@ -90,9 +112,15 @@ export const api = {
     const fd = new FormData();
     fd.append("file", file);
     const t = tokenStore.get();
-    const res = await fetch(`${BASE}/api/uploads/rough/project/${pid}/preview`, {
-      method: "POST", body: fd, headers: t ? { Authorization: `Bearer ${t}` } : {},
-    });
+    let res;
+    try {
+      res = await fetch(apiUrl(`/api/uploads/rough/project/${pid}/preview`), {
+        method: "POST", body: fd, headers: t ? { Authorization: `Bearer ${t}` } : {},
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Rough preview request failed. ${msg}`);
+    }
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
     return res.json();
   },

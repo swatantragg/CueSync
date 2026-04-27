@@ -9,15 +9,26 @@ _info()  { echo -e "\033[0;32m[CueSync]\033[0m $*"; }
 _warn()  { echo -e "\033[0;33m[CueSync]\033[0m $*"; }
 _error() { echo -e "\033[0;31m[CueSync]\033[0m $*" >&2; }
 
+# ── Resolve a usable Python interpreter ────────────────────────────────────────
+PYTHON_CMD=()
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_CMD=(python3)
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_CMD=(python)
+elif command -v py >/dev/null 2>&1; then
+  PYTHON_CMD=(py -3)
+else
+  _error "Python 3 was not found. Install Python 3 and re-run this script."
+  exit 1
+fi
+
 # ── Resolve venv paths for Windows (Git Bash / MSYS2) and Unix ─────────────────
 if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* || "${OSTYPE:-}" == win32* ]]; then
   VENV_PYTHON=".venv/Scripts/python.exe"
-  VENV_PIP=".venv/Scripts/pip.exe"
-  VENV_UVICORN=".venv/Scripts/uvicorn.exe"
+  VENV_ALEMBIC=".venv/Scripts/alembic.exe"
 else
   VENV_PYTHON=".venv/bin/python"
-  VENV_PIP=".venv/bin/pip"
-  VENV_UVICORN=".venv/bin/uvicorn"
+  VENV_ALEMBIC=".venv/bin/alembic"
 fi
 
 # ── Parse flags ────────────────────────────────────────────────────────────────
@@ -46,14 +57,14 @@ done
 # ── Virtual environment ────────────────────────────────────────────────────────
 if [ ! -f "$VENV_PYTHON" ]; then
   _info "Creating virtual environment…"
-  python -m venv .venv
+  "${PYTHON_CMD[@]}" -m venv .venv
 fi
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 if [ "$SKIP_INSTALL" -eq 0 ]; then
   _info "Installing / syncing dependencies…"
-  "$VENV_PIP" install --quiet --upgrade pip
-  "$VENV_PIP" install --quiet -r requirements.txt
+  "$VENV_PYTHON" -m pip install --quiet --upgrade pip
+  "$VENV_PYTHON" -m pip install --quiet -r requirements.txt
 else
   _warn "Skipping pip install (--no-install)"
 fi
@@ -65,9 +76,25 @@ if [ ! -f ".env" ]; then
   _warn "Edit .env and set your POSTGRES credentials before the first run."
 fi
 
+# Export the backend's .env values so they override unrelated shell vars.
+RUN_PORT="$PORT"
+RUN_HOST="$HOST"
+set -a
+# shellcheck disable=SC1091
+source .env
+set +a
+PORT="$RUN_PORT"
+HOST="$RUN_HOST"
+
 # ── Database migrations ───────────────────────────────────────────────────────
 _info "Running Alembic migrations…"
-"$VENV_PYTHON" -m alembic upgrade head
+if ! "$VENV_ALEMBIC" upgrade head; then
+  if [ "$PROD" -eq 1 ]; then
+    _error "Alembic migrations failed. Aborting production startup."
+    exit 1
+  fi
+  _warn "Alembic migrations failed. Continuing with dev server startup."
+fi
 
 # ── Launch ────────────────────────────────────────────────────────────────────
 if [ "$PROD" -eq 1 ]; then
@@ -83,7 +110,7 @@ if [ "$PROD" -eq 1 ]; then
     --error-logfile -
 else
   _info "Starting uvicorn (dev) on ${HOST}:${PORT}  — hot-reload ON"
-  exec "$VENV_UVICORN" app.main:app \
+  exec "$VENV_PYTHON" -m uvicorn app.main:app \
     --reload \
     --host "$HOST" \
     --port "$PORT" \

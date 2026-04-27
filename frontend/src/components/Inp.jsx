@@ -1,6 +1,6 @@
 import { C, FONTS } from "../styles/palette";
 
-export default function Inp({ value, onChange, placeholder, mono, readOnly }) {
+export default function Inp({ value, onChange, onBlur, placeholder, mono, readOnly }) {
   return (
     <input
       value={value ?? ""}
@@ -15,7 +15,7 @@ export default function Inp({ value, onChange, placeholder, mono, readOnly }) {
         background: readOnly ? "#f5f5f5" : C.white,
       }}
       onFocus={(e) => { if (!readOnly) e.target.style.borderColor = C.mint1; }}
-      onBlur={(e) => (e.target.style.borderColor = C.mint1 + "66")}
+      onBlur={(e) => { e.target.style.borderColor = C.mint1 + "66"; onBlur?.(e.target.value); }}
     />
   );
 }
