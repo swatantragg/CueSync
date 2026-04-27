@@ -21,6 +21,12 @@ export function AppProvider({ children }) {
     }
   }, []);
 
+  useEffect(() => {
+    const handle = () => { tokenStore.clear(); userStore.set(null); setCurrentUser(null); setScreen("login"); setActiveProjectId(null); setActiveEpisodeId(null); };
+    window.addEventListener("auth:expired", handle);
+    return () => window.removeEventListener("auth:expired", handle);
+  }, []);
+
   const updateProject = (pid, fn) => setProjects((prev) => prev.map((p) => (p.id === pid ? fn(p) : p)));
   const updateEpisode = (pid, eid, fn) =>
     updateProject(pid, (p) => ({ ...p, episodes: p.episodes.map((e) => (e.id === eid ? fn(e) : e)) }));

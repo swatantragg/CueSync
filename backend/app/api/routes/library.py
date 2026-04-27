@@ -1,13 +1,12 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
-from app.models.cue import CueEntry
+from app.models.cue import Contributor, CueEntry
 from app.models.library import ContributorLibrary, SongLibrary
 from app.models.user import User, UserRole
 from app.schemas.cue import LibraryUpsertIn
@@ -85,6 +84,29 @@ async def upsert_song(payload: LibraryUpsertIn, db: AsyncSession = Depends(get_d
         if cue:
             cue.library_id = entry.id
 
+    # Upsert contributors into ContributorLibrary for future name-based lookup
+    for c in payload.contributors:
+        if not c.name:
+            continue
+        existing_cl = (await db.execute(
+            select(ContributorLibrary).where(
+                ContributorLibrary.name.ilike(c.name.strip()),
+                ContributorLibrary.role == (c.role or "Composer"),
+            )
+        )).scalar_one_or_none()
+        if existing_cl:
+            if c.ipi_number and not existing_cl.ipi_number:
+                existing_cl.ipi_number = c.ipi_number
+            if c.society and not existing_cl.society:
+                existing_cl.society = c.society
+        else:
+            db.add(ContributorLibrary(
+                name=c.name.strip(),
+                role=c.role or "Composer",
+                society=c.society or None,
+                ipi_number=c.ipi_number or None,
+            ))
+
     await db.commit()
     await db.refresh(entry)
     return _lib_payload(entry)
@@ -98,3 +120,42 @@ async def search_contributors(q: str = Query("", min_length=0), role: str | None
     if role:
         stmt = stmt.where(ContributorLibrary.role == role)
     return (await db.execute(stmt.limit(25))).scalars().all()
+
+
+@router.get("/contributors/lookup")
+async def lookup_contributor(name: str = Query("", min_length=1), db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+    """Return IPI/CAE, society, role for a contributor name. Checks ContributorLibrary first, then Contributor records."""
+    if not name or len(name.strip()) < 2:
+        return None
+    n = name.strip()
+
+    # 1. ContributorLibrary (curated, highest priority)
+    lib_rows = (await db.execute(
+        select(ContributorLibrary).where(ContributorLibrary.name.ilike(n)).limit(5)
+    )).scalars().all()
+    if lib_rows:
+        best = max(lib_rows, key=lambda r: (
+            1 if r.ipi_number else 0,
+            1 if r.cae_number else 0,
+            1 if r.society else 0,
+        ))
+        return {"name": best.name, "role": best.role, "society": best.society,
+                "ipi_number": best.ipi_number or best.cae_number}
+
+    # 2. Contributor table (from cue entries) — fuzzy ilike
+    cue_rows = (await db.execute(
+        select(Contributor).where(Contributor.name.ilike(f"%{n}%")).limit(20)
+    )).scalars().all()
+    if not cue_rows:
+        return None
+
+    # Pick richest record (has IPI/CAE)
+    best = max(cue_rows, key=lambda r: (
+        1 if r.ipi_number else 0,
+        1 if r.cae_number else 0,
+        1 if r.society else 0,
+    ))
+    if not best.ipi_number and not best.cae_number and not best.society:
+        return None
+    return {"name": best.name, "role": best.role, "society": best.society,
+            "ipi_number": best.ipi_number or best.cae_number}

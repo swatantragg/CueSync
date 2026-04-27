@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,9 +16,19 @@ router = APIRouter()
 async def create_project(payload: ProjectCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     proj = Project(**payload.model_dump(), created_by_id=user.id)
     db.add(proj)
-    await db.commit()
-    await db.refresh(proj)
-    return proj
+    try:
+        await db.commit()
+        await db.refresh(proj)
+        return proj
+    except IntegrityError as exc:
+        await db.rollback()
+        detail = str(exc.orig) if exc.orig else str(exc)
+        if "duplicate key" in detail.lower() or "unique" in detail.lower():
+            raise HTTPException(409, "A project with this title already exists or a database ID conflict occurred. Please restart the backend to sync sequences.")
+        raise HTTPException(409, f"Database constraint error: {detail[:200]}")
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        raise HTTPException(500, f"Create project failed: {exc.__class__.__name__}")
 
 
 @router.get("/", response_model=list[ProjectOut])

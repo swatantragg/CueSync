@@ -14,9 +14,12 @@ export default function SerialPage() {
   const [importProgress, setImportProgress] = useState(null);
   const [err, setErr] = useState("");
   const [preview, setPreview] = useState(null);
+  const [importResult, setImportResult] = useState(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 25;
-  const [reviewModal, setReviewModal] = useState(null); // { ep, action: 'reject'|'suggest', note: '' }
+  const [reviewModal, setReviewModal] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   const reload = async () => {
     if (!activeProject) return;
@@ -25,6 +28,7 @@ export default function SerialPage() {
       ...prev, ...p,
       year: p.production_year, productionCompany: p.production_company, channel: p.channel_name,
       countryOfOrigin: p.country, backgroundMusicComposer: p.bg_music_composer,
+      submittedBy: p.submitted_by,
       episodes: eps.map((e) => ({
         ...e, id: e.id, number: e.episode_number, airDate: e.air_date,
         totalDuration: e.total_duration_sec, musicalDuration: e.musical_duration_sec,
@@ -45,16 +49,22 @@ export default function SerialPage() {
     e.target.value = "";
     setBusy(true);
     setErr("");
+    setImportResult(null);
     const errors = [];
-    const mergedEpisodes = [];
-    let mergedMeta = {};
+    const merged = { meta: {}, episodes: [] };
+    const seenEpNums = new Set();
     setImportProgress({ current: 0, total: files.length });
     for (let i = 0; i < files.length; i++) {
       setImportProgress({ current: i + 1, total: files.length });
       try {
         const data = await api.previewRough(proj.id, files[i]);
-        mergedEpisodes.push(...(data.episodes || []));
-        mergedMeta = { ...data.meta, ...mergedMeta };
+        if (data.meta) Object.assign(merged.meta, data.meta);
+        for (const ep of data.episodes || []) {
+          if (!seenEpNums.has(ep.episode_number)) {
+            seenEpNums.add(ep.episode_number);
+            merged.episodes.push(ep);
+          }
+        }
       } catch (ex) {
         errors.push(`${files[i].name}: ${ex.message}`);
       }
@@ -62,13 +72,18 @@ export default function SerialPage() {
     setImportProgress(null);
     setBusy(false);
     if (errors.length) setErr(errors.join("\n"));
-    if (mergedEpisodes.length) {
-      setPreview({ data: { meta: mergedMeta, episodes: mergedEpisodes } });
+    if (merged.episodes.length > 0) {
+      merged.episodes.sort((a, b) => a.episode_number - b.episode_number);
+      setPreview(merged);
     }
   };
 
-  const handlePreviewSaved = async () => {
+  const handlePreviewSaved = async (result) => {
     setPreview(null);
+    const created = result?.episodes_created || 0;
+    if (created > 0) {
+      setImportResult(`${created} episode${created !== 1 ? "s" : ""} imported successfully.`);
+    }
     await reload();
   };
 
@@ -76,6 +91,28 @@ export default function SerialPage() {
     try { await api.approveEpisode(ep.id); await reload(); }
     catch (ex) { alert(ex.message); }
   };
+
+  const handleDeleteSelected = async () => {
+    if (!selected.size) return;
+    if (!confirm(`Delete ${selected.size} episode${selected.size > 1 ? "s" : ""}?`)) return;
+    setDeleting(true);
+    const ids = [...selected];
+    const errors = [];
+    for (const id of ids) {
+      try { await api.deleteEpisode(id); }
+      catch (ex) { errors.push(ex.message); }
+    }
+    setSelected(new Set());
+    setDeleting(false);
+    await reload();
+    if (errors.length) alert(`${errors.length} deletion(s) failed:\n${errors.join("\n")}`);
+  };
+
+  const pageEps = proj.episodes.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pageIds = pageEps.map((e) => e.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const toggleOne = (id) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setSelected(allPageSelected ? new Set([...selected].filter((id) => !pageIds.includes(id))) : new Set([...selected, ...pageIds]));
 
   const handleReviewSubmit = async () => {
     if (!reviewModal || !reviewModal.note.trim()) return;
@@ -95,7 +132,7 @@ export default function SerialPage() {
       {preview && (
         <RoughSheetPreview
           projectId={proj.id}
-          data={preview.data}
+          data={preview}
           onClose={() => setPreview(null)}
           onSaved={handlePreviewSaved}
         />
@@ -151,12 +188,16 @@ export default function SerialPage() {
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-          <MetaCard label="Director" value={proj.director} />
-          <MetaCard label="Producer" value={proj.producer} />
           <MetaCard label="Channel" value={proj.channel} />
           <MetaCard label="Episodes" value={proj.episodes.length} mono />
         </div>
 
+        {importResult && (
+          <div className="mb-4 text-sm rounded-xl px-4 py-3 flex items-center justify-between" style={{ color: "#2E7D32", background: "#E8F5E9", border: "1px solid #A5D6A7" }}>
+            {importResult}
+            <button onClick={() => setImportResult(null)} className="ml-4 opacity-60 hover:opacity-100">×</button>
+          </div>
+        )}
         {err && (
           <div className="mb-4 text-sm whitespace-pre-line rounded-xl px-4 py-3" style={{ color: C.danger, background: "#FFEBEE", border: "1px solid #EF9A9A" }}>
             {err}
@@ -175,7 +216,7 @@ export default function SerialPage() {
                   <div className="text-xs" style={{ color: C.sub }}>
                     {busy && importProgress
                       ? `Parsing file ${importProgress.current} of ${importProgress.total}…`
-                      : "Select one or multiple .xlsx sheets — data is matched against DB before saving"}
+                      : "Select one or multiple .xlsx sheets — review extracted data before saving"}
                   </div>
                 </div>
               </div>
@@ -203,12 +244,21 @@ export default function SerialPage() {
           <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
             <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>Episodes ({proj.episodes.length})</h3>
             <div className="flex items-center gap-3">
+              {selected.size > 0 && (
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={deleting}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
+                  style={{ background: "#FFEBEE", color: C.danger, border: `1px solid #EF9A9A` }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />{deleting ? "Deleting…" : `Delete ${selected.size} selected`}
+                </button>
+              )}
               {isAdmin && proj.episodes.filter((e) => e.status === "submitted" || e.status === "edited").length > 0 && (
                 <span className="text-xs px-2.5 py-1 rounded-lg font-medium" style={{ background: "#F3E5F5", color: "#7B1FA2" }}>
                   {proj.episodes.filter((e) => e.status === "submitted" || e.status === "edited").length} pending review
                 </span>
               )}
-              {/* Pagination controls */}
               {proj.episodes.length > PAGE_SIZE && (() => {
                 const totalPages = Math.ceil(proj.episodes.length / PAGE_SIZE);
                 return (
@@ -229,34 +279,41 @@ export default function SerialPage() {
             <thead>
               <tr className="border-b text-[10px] uppercase tracking-wider" style={{ borderColor: C.mint4, color: C.sub, background: C.mint4 + "33" }}>
                 <th className="text-left px-5 py-3 w-16">Ep.</th>
+                <th className="text-left px-5 py-3">Title</th>
                 <th className="text-left px-5 py-3">Air Date</th>
                 <th className="text-left px-5 py-3 w-28">Duration</th>
                 <th className="text-left px-5 py-3 w-16">Songs</th>
                 <th className="text-left px-5 py-3 w-32">Status</th>
                 <th className="text-left px-5 py-3">Last Activity</th>
                 <th className="text-right px-5 py-3 w-52">Action</th>
+                <th className="px-5 py-3 w-10 text-center">
+                  <input type="checkbox" checked={allPageSelected} onChange={toggleAll} style={{ accentColor: C.dark }} className="cursor-pointer" title="Select all on this page" />
+                </th>
               </tr>
             </thead>
             <tbody>
               {proj.episodes.length === 0 && (
-                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>No episodes yet.</td></tr>
+                <tr><td colSpan={9} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>No episodes yet.</td></tr>
               )}
-              {proj.episodes.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((ep) => {
+              {pageEps.map((ep) => {
                 const lastEdit = ep.editHistory?.[ep.editHistory.length - 1];
                 const canReview = isAdmin && (ep.status === "submitted" || ep.status === "edited");
+                const isSelected = selected.has(ep.id);
                 return (
                   <tr
                     key={ep.id}
-                    className="border-b last:border-0 hover:bg-green-50/30 transition"
-                    style={{ borderColor: C.mint4 + "88", background: canReview ? "#F3E5F511" : undefined }}
+                    className="border-b last:border-0 hover:bg-green-50/30 transition cursor-pointer"
+                    style={{ borderColor: C.mint4 + "88", background: isSelected ? C.mint4 + "99" : canReview ? "#F3E5F511" : undefined }}
+                    onClick={() => { setActiveEpisodeId(ep.id); setScreen("episode"); }}
                   >
                     <td className="px-5 py-3 font-mono text-sm">{String(ep.number).padStart(2, "0")}</td>
+                    <td className="px-5 py-3 text-xs font-medium" style={{ color: C.dark }}>{ep.title || "—"}</td>
                     <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{ep.airDate || "—"}</td>
                     <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{ep.totalDuration}</td>
                     <td className="px-5 py-3" style={{ color: C.sub }}>{ep.cues.length}</td>
                     <td className="px-5 py-3"><StatusBadge status={ep.status} /></td>
                     <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>{lastEdit ? `${lastEdit.name} · ${lastEdit.at}` : "—"}</td>
-                    <td className="px-5 py-3 text-right">
+                    <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={async () => {
@@ -299,6 +356,9 @@ export default function SerialPage() {
                           {isAdmin ? "Review" : "Open"} <ChevronRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
+                    </td>
+                    <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={isSelected} onChange={() => toggleOne(ep.id)} style={{ accentColor: C.dark }} className="cursor-pointer" />
                     </td>
                   </tr>
                 );

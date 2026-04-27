@@ -1,4 +1,6 @@
 import json
+import re
+from difflib import SequenceMatcher
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +8,14 @@ from sqlalchemy.orm import selectinload
 
 from app.models.cue import Contributor, CueEntry
 from app.models.library import SongLibrary
+
+_TITLE_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_TITLE_STOPWORDS = {
+    "a", "an", "and", "background", "family", "feat", "featuring", "film",
+    "from", "motion", "mp3", "mp4", "music", "of", "official", "original",
+    "ost", "picture", "score", "soundtrack", "theme", "the", "track",
+    "version",
+}
 
 
 async def reconcile_library(db: AsyncSession, title: str | None, isrc: str | None) -> SongLibrary | None:
@@ -40,24 +50,122 @@ async def reconcile_library(db: AsyncSession, title: str | None, isrc: str | Non
 
 
 def _norm_title(t: str | None) -> str:
-    return (t or "").strip().lower()
+    if not t:
+        return ""
+    s = (t or "").strip().lower()
+    s = s.replace("&", " and ")
+    s = re.sub(r"\((?:\s*from\b[^)]*)\)", " ", s)
+    s = re.sub(r"\[(?:\s*from\b[^\]]*)\]", " ", s)
+    s = re.sub(r"[\"'`]+", "", s)
+    s = re.sub(r"[\[\]{}()]+", " ", s)
+    s = s.replace("-", " ")
+    tokens = [tok for tok in _TITLE_TOKEN_RE.findall(s) if tok not in _TITLE_STOPWORDS]
+    return " ".join(tokens)
+
+
+def _match_terms(title: str | None) -> list[str]:
+    tokens = _norm_title(title).split()
+    terms = [tok for tok in tokens if len(tok) >= 3]
+    return sorted(dict.fromkeys(terms), key=lambda tok: (-len(tok), tok))[:3]
+
+
+def _title_score(needle: str | None, candidate: str | None) -> float:
+    a = _norm_title(needle)
+    b = _norm_title(candidate)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    a_words = set(a.split())
+    b_words = set(b.split())
+    if not a_words or not b_words:
+        return 0.0
+    overlap = len(a_words & b_words) / max(1, min(len(a_words), len(b_words)))
+    contains = 1.0 if a_words <= b_words or b_words <= a_words else 0.0
+    seq = SequenceMatcher(None, a, b).ratio()
+    return max(overlap, contains, seq)
+
+
+def _entry_richness(entry: SongLibrary) -> tuple[int, int, int, int, int, int]:
+    return (
+        1 if entry.isrc else 0,
+        1 if entry.song_code else 0,
+        1 if entry.work_number else 0,
+        1 if entry.ascap_work_id else 0,
+        1 if entry.singer else 0,
+        1 if entry.contributors_json else 0,
+    )
+
+
+def _tail_match_len(needle: str | None, candidate: str | None) -> int:
+    a = _norm_title(needle).split()
+    b = _norm_title(candidate).split()
+    matched = 0
+    while matched < min(len(a), len(b)) and a[-(matched + 1)] == b[-(matched + 1)]:
+        matched += 1
+    return matched
+
+
+def _head_match_len(needle: str | None, candidate: str | None) -> int:
+    a = _norm_title(needle).split()
+    b = _norm_title(candidate).split()
+    matched = 0
+    while matched < min(len(a), len(b)) and a[matched] == b[matched]:
+        matched += 1
+    return matched
+
+
+def _pick_best_title_match(rows: list[SongLibrary], title: str | None) -> SongLibrary | None:
+    best = None
+    best_key = None
+    for row in rows:
+        score = _title_score(title, row.title)
+        if score < 0.72:
+            continue
+        key = (
+            score,
+            _tail_match_len(title, row.title),
+            _head_match_len(title, row.title),
+            *_entry_richness(row),
+            row.id,
+        )
+        if best_key is None or key > best_key:
+            best_key = key
+            best = row
+    return best
+
+
+async def _lookup_by_title(db: AsyncSession, title: str | None) -> SongLibrary | None:
+    if not title:
+        return None
+
+    exact_rows = (await db.execute(
+        select(SongLibrary).where(SongLibrary.title.ilike(title.strip()))
+    )).scalars().all()
+    best_exact = _pick_best_title_match(exact_rows, title)
+    if best_exact:
+        return best_exact
+
+    terms = _match_terms(title)
+    if not terms:
+        return None
+    fuzzy_rows = (await db.execute(
+        select(SongLibrary)
+        .where(or_(*[SongLibrary.title.ilike(f"%{term}%") for term in terms]))
+        .limit(200)
+    )).scalars().all()
+    return _pick_best_title_match(fuzzy_rows, title)
 
 
 async def find_library_match(db: AsyncSession, title: str | None, isrc: str | None) -> SongLibrary | None:
     """ISRC is authoritative; title is a fallback for songs with no ISRC."""
     if isrc:
-        row = (await db.execute(select(SongLibrary).where(SongLibrary.isrc == isrc))).scalar_one_or_none()
+        row = (await db.execute(
+            select(SongLibrary).where(SongLibrary.isrc == isrc).order_by(SongLibrary.id.desc())
+        )).scalars().first()
         if row:
             return row
-    if title:
-        rows = (await db.execute(select(SongLibrary).where(SongLibrary.title.ilike(title.strip())))).scalars().all()
-        # Prefer rows with no ISRC (to avoid cross-wiring distinct recordings)
-        no_isrc = [r for r in rows if not r.isrc]
-        if no_isrc:
-            return no_isrc[0]
-        if rows and not isrc:
-            return rows[0]
-    return None
+    return await _lookup_by_title(db, title)
 
 
 def serialize_contributors(cue: CueEntry) -> str:
@@ -76,7 +184,15 @@ def parse_contributors(entry: SongLibrary) -> list[dict]:
     if not entry.contributors_json:
         return []
     try:
-        return json.loads(entry.contributors_json)
+        raw = json.loads(entry.contributors_json)
+        seen: set[tuple] = set()
+        unique: list[dict] = []
+        for c in raw:
+            key = (c.get("name", "").strip().lower(), c.get("role", "").strip().lower())
+            if key not in seen:
+                seen.add(key)
+                unique.append(c)
+        return unique
     except Exception:
         return []
 
@@ -127,25 +243,19 @@ async def find_library_match_extended(
                 SongLibrary.work_number == song_code,
                 SongLibrary.ascap_work_id == song_code,
             ))
-        )).scalar_one_or_none()
+            .order_by(SongLibrary.id.desc())
+        )).scalars().first()
         if row:
             return row, "code"
     if isrc:
         row = (await db.execute(
             select(SongLibrary).where(SongLibrary.isrc == isrc)
-        )).scalar_one_or_none()
+            .order_by(SongLibrary.id.desc())
+        )).scalars().first()
         if row:
             return row, "isrc"
-    if title:
-        rows = (await db.execute(
-            select(SongLibrary).where(SongLibrary.title.ilike(title.strip()))
-        )).scalars().all()
-        no_isrc = [r for r in rows if not r.isrc]
-        if no_isrc:
-            return no_isrc[0], "title"
-        if rows:
-            return rows[0], "title"
-    return None, "none"
+    row = await _lookup_by_title(db, title)
+    return (row, "title") if row else (None, "none")
 
 
 async def apply_library_to_cue(db: AsyncSession, cue: CueEntry, entry: SongLibrary, force: bool = False) -> None:

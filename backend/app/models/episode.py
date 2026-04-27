@@ -25,6 +25,21 @@ class Episode(Base):
     rejection_note: Mapped[str | None] = mapped_column(Text)
     review_note: Mapped[str | None] = mapped_column(Text)
 
+    # Episode-level cue sheet header (independent per episode)
+    cue_serial_title: Mapped[str | None] = mapped_column(String(255))
+    cue_channel: Mapped[str | None] = mapped_column(String(255))
+    cue_serial_type: Mapped[str | None] = mapped_column(String(50))
+    cue_language: Mapped[str | None] = mapped_column(String(100))
+    cue_director: Mapped[str | None] = mapped_column(String(255))
+    cue_genre: Mapped[str | None] = mapped_column(String(100))
+    cue_production_company: Mapped[str | None] = mapped_column(String(255))
+    cue_country: Mapped[str | None] = mapped_column(String(100))
+    cue_actors: Mapped[str | None] = mapped_column(Text)
+    cue_producer: Mapped[str | None] = mapped_column(String(255))
+    cue_production_year: Mapped[int | None] = mapped_column(Integer)
+    cue_bg_music_composer: Mapped[str | None] = mapped_column(String(255))
+    cue_submitted_by: Mapped[str | None] = mapped_column(String(255))
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 

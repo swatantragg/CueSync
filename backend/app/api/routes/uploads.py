@@ -3,6 +3,7 @@ import json
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -10,7 +11,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
 from app.models.cue import Contributor, CueEntry, UsageType
 from app.models.episode import Episode
-from app.models.library import SongLibrary
+from app.models.library import ContributorLibrary, SongLibrary
 from app.models.project import Project
 from app.models.user import User, UserRole
 from app.services.audit import log_activity
@@ -23,6 +24,49 @@ from app.services.library_sync import (
 from app.services.rough_parser import parse_rough_workbook
 
 router = APIRouter()
+
+
+# ── Contributor name-based enrichment (independent of song match) ─────────────
+
+async def _enrich_contrib_by_name(db: AsyncSession, contrib: dict) -> dict:
+    """Fill missing IPI/CAE and society for a contributor by looking up their name.
+    Does NOT override values already present in the contrib dict."""
+    name = (contrib.get("name") or "").strip()
+    if not name or len(name) < 2:
+        return contrib
+    has_ipi = bool(contrib.get("ipi_number") or contrib.get("cae_number"))
+    has_society = bool(contrib.get("society"))
+    if has_ipi and has_society:
+        return contrib  # already complete
+
+    # 1. ContributorLibrary (curated)
+    cl_rows = (await db.execute(
+        select(ContributorLibrary).where(ContributorLibrary.name.ilike(name)).limit(5)
+    )).scalars().all()
+    if cl_rows:
+        best = max(cl_rows, key=lambda r: (bool(r.ipi_number), bool(r.cae_number), bool(r.society)))
+        result = {**contrib}
+        if not has_ipi and (best.ipi_number or best.cae_number):
+            result["ipi_number"] = best.ipi_number or best.cae_number
+        if not has_society and best.society:
+            result["society"] = best.society
+        return result
+
+    # 2. Contributor table (from any cue entry)
+    cue_rows = (await db.execute(
+        select(Contributor).where(Contributor.name.ilike(f"%{name}%")).limit(20)
+    )).scalars().all()
+    if not cue_rows:
+        return contrib
+    best = max(cue_rows, key=lambda r: (bool(r.ipi_number), bool(r.cae_number), bool(r.society)))
+    if not best.ipi_number and not best.cae_number and not best.society:
+        return contrib
+    result = {**contrib}
+    if not has_ipi and (best.ipi_number or best.cae_number):
+        result["ipi_number"] = best.ipi_number or best.cae_number
+    if not has_society and best.society:
+        result["society"] = best.society
+    return result
 
 
 # ── Pydantic schemas for commit payload ───────────────────────────────────────
@@ -124,6 +168,7 @@ async def upload_rough(
             await db.flush()
             for ctb in c["contributors"]:
                 db.add(Contributor(cue_id=cue.id, **ctb))
+            await db.flush()  # flush before library check so contrib count is accurate
             lib = await find_library_match(db, cue.song_title, cue.isrc)
             if lib:
                 await apply_library_to_cue(db, cue, lib)
@@ -197,33 +242,36 @@ async def preview_rough(
                     "contributors":  [],
                 }
 
+                # ── Song-level fields from library (independent of contributors) ──
                 lib_contribs: list[dict] = []
                 if lib:
                     enriched_cue["library_id"] = lib.id
-                    # Always fill from library when match found — authoritative source
-                    if lib.isrc:
+                    # Rough sheet has priority — library fills only what's missing
+                    if not enriched_cue["isrc"] and lib.isrc:
                         enriched_cue["isrc"] = lib.isrc
-                    if lib.singer:
+                    if not enriched_cue["singer"] and lib.singer:
                         enriched_cue["singer"] = lib.singer
-                    if lib.song_code:
+                    if not enriched_cue["song_code"] and lib.song_code:
                         enriched_cue["song_code"] = lib.song_code
                     lib_contribs = parse_contributors(lib)
 
+                # ── Contributor details fetched independently by name ─────────
                 raw_contribs: list[dict] = cue.get("contributors", [])
-                if lib_contribs:
-                    # Library contributors are authoritative — show them first
-                    enriched_cue["contributors"] = [
-                        {**c, "library_match": True} for c in lib_contribs
-                    ]
-                    # Append rough-sheet contributors not already present in library
-                    lib_names = {c.get("name", "").lower() for c in lib_contribs}
-                    for c in raw_contribs:
-                        if c.get("name", "").lower() not in lib_names:
-                            enriched_cue["contributors"].append({**c, "library_match": False})
-                elif raw_contribs:
-                    enriched_cue["contributors"] = [
-                        {**c, "library_match": False} for c in raw_contribs
-                    ]
+
+                # Enrich each raw contributor by name lookup (IPI/CAE/society)
+                enriched_raw: list[dict] = []
+                for rc in raw_contribs:
+                    ec = await _enrich_contrib_by_name(db, rc)
+                    enriched_raw.append({**ec, "library_match": bool(ec.get("ipi_number") and ec.get("ipi_number") != rc.get("ipi_number"))})
+
+                # Add library contributors whose name is absent from the rough sheet
+                raw_names = {(rc.get("name") or "").strip().lower() for rc in raw_contribs}
+                for lc in lib_contribs:
+                    if (lc.get("name") or "").strip().lower() not in raw_names:
+                        enriched_lc = await _enrich_contrib_by_name(db, lc)
+                        enriched_raw.append({**enriched_lc, "library_match": True})
+
+                enriched_cue["contributors"] = enriched_raw
 
                 enriched_cues.append(enriched_cue)
 
@@ -255,92 +303,102 @@ async def commit_rough(
         raise HTTPException(404, "Project not found")
 
     created_eps = []
-    for ep_data in payload.episodes:
-        if ep_data.existing_episode_id:
-            continue  # already in DB — skip
+    try:
+        for ep_data in payload.episodes:
+            if ep_data.existing_episode_id:
+                continue  # already in DB — skip
 
-        existing = (await db.execute(
-            select(Episode).where(
-                Episode.project_id == project_id,
-                Episode.episode_number == ep_data.episode_number,
+            existing = (await db.execute(
+                select(Episode).where(
+                    Episode.project_id == project_id,
+                    Episode.episode_number == ep_data.episode_number,
+                )
+            )).scalar_one_or_none()
+            if existing:
+                continue
+
+            e = Episode(
+                project_id=project_id,
+                episode_number=ep_data.episode_number,
+                title=ep_data.title,
+                air_date=ep_data.air_date,
+                total_duration_sec=ep_data.total_duration_sec,
+                musical_duration_sec=ep_data.musical_duration_sec,
+                bg_instrumental_duration_sec=ep_data.bg_instrumental_duration_sec,
+                bg_vocal_duration_sec=ep_data.bg_vocal_duration_sec,
             )
-        )).scalar_one_or_none()
-        if existing:
-            continue
-
-        e = Episode(
-            project_id=project_id,
-            episode_number=ep_data.episode_number,
-            title=ep_data.title,
-            air_date=ep_data.air_date,
-            total_duration_sec=ep_data.total_duration_sec,
-            musical_duration_sec=ep_data.musical_duration_sec,
-            bg_instrumental_duration_sec=ep_data.bg_instrumental_duration_sec,
-            bg_vocal_duration_sec=ep_data.bg_vocal_duration_sec,
-        )
-        db.add(e)
-        await db.flush()
-
-        for cue_data in ep_data.cues:
-            try:
-                ut = UsageType(cue_data.usage_type)
-            except Exception:
-                ut = UsageType.BACKGROUND
-
-            cue = CueEntry(
-                episode_id=e.id,
-                song_title=cue_data.song_title,
-                usage_type=ut,
-                duration_sec=cue_data.duration_sec or 0,
-                usage_count=cue_data.usage_count or 1,
-                song_code=cue_data.song_code,
-                isrc=cue_data.isrc,
-                singer=cue_data.singer,
-                library_id=cue_data.library_id,
-                order_index=cue_data.order_index,
-            )
-            db.add(cue)
+            db.add(e)
             await db.flush()
 
-            # Fill work_number / ascap_work_id from library (not in commit payload)
-            lib_entry = None
-            if cue_data.library_id:
-                lib_entry = await db.get(SongLibrary, cue_data.library_id)
-            if lib_entry is None:
-                lib_entry, _ = await find_library_match_extended(
-                    db,
-                    title=cue_data.song_title,
-                    isrc=cue_data.isrc,
+            seen_cues: set[tuple] = set()
+            for cue_data in ep_data.cues:
+                dedup_key = (cue_data.song_title.strip().lower(), cue_data.order_index)
+                if dedup_key in seen_cues:
+                    continue
+                seen_cues.add(dedup_key)
+                try:
+                    ut = UsageType(cue_data.usage_type)
+                except Exception:
+                    ut = UsageType.BACKGROUND
+
+                cue = CueEntry(
+                    episode_id=e.id,
+                    song_title=cue_data.song_title,
+                    usage_type=ut,
+                    duration_sec=cue_data.duration_sec or 0,
+                    usage_count=cue_data.usage_count or 1,
                     song_code=cue_data.song_code,
+                    isrc=cue_data.isrc,
+                    singer=cue_data.singer,
+                    library_id=cue_data.library_id,
+                    order_index=cue_data.order_index,
                 )
-            if lib_entry:
-                for field in ("work_number", "ascap_work_id"):
-                    if not getattr(cue, field) and getattr(lib_entry, field):
-                        setattr(cue, field, getattr(lib_entry, field))
-                if not cue.library_id:
-                    cue.library_id = lib_entry.id
+                db.add(cue)
+                await db.flush()
 
-            for ctb in cue_data.contributors:
-                db.add(Contributor(
-                    cue_id=cue.id,
-                    name=ctb.name,
-                    role=ctb.role,
-                    society=ctb.society,
-                    share_percent=ctb.share_percent or 0,
-                    ipi_number=ctb.ipi_number,
-                ))
+                # Fill work_number / ascap_work_id from library (not in commit payload)
+                lib_entry = None
+                if cue_data.library_id:
+                    lib_entry = await db.get(SongLibrary, cue_data.library_id)
+                if lib_entry is None:
+                    lib_entry, _ = await find_library_match_extended(
+                        db,
+                        title=cue_data.song_title,
+                        isrc=cue_data.isrc,
+                        song_code=cue_data.song_code,
+                    )
+                if lib_entry:
+                    for field in ("work_number", "ascap_work_id"):
+                        if not getattr(cue, field) and getattr(lib_entry, field):
+                            setattr(cue, field, getattr(lib_entry, field))
+                    if not cue.library_id:
+                        cue.library_id = lib_entry.id
 
-        created_eps.append(e.id)
+                for ctb in cue_data.contributors:
+                    db.add(Contributor(
+                        cue_id=cue.id,
+                        name=ctb.name,
+                        role=ctb.role,
+                        society=ctb.society,
+                        share_percent=ctb.share_percent or 0,
+                        ipi_number=ctb.ipi_number,
+                    ))
+
+            created_eps.append(e.id)
+            await log_activity(
+                db, current.id, "upload", "episode", e.id,
+                f"Committed rough sheet — Episode {ep_data.episode_number}",
+            )
+
         await log_activity(
-            db, current.id, "upload", "episode", e.id,
-            f"Committed rough sheet — Episode {ep_data.episode_number}",
+            db, current.id, "upload", "project", project_id,
+            f"Committed rough sheet — {len(created_eps)} new episodes",
         )
-
-    await log_activity(
-        db, current.id, "upload", "project", project_id,
-        f"Committed rough sheet — {len(created_eps)} new episodes",
-    )
-    await db.commit()
+        await db.commit()
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        detail = str(exc.orig)[:300] if hasattr(exc, "orig") and exc.orig else str(exc)[:300]
+        raise HTTPException(500, f"Commit failed: {detail}")
     return {"ok": True, "project_id": project_id, "episodes_created": len(created_eps)}
 
 

@@ -12,13 +12,27 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import Base, engine
 
-_CORS_RE = re.compile(r"http://localhost:\d+")
+_CORS_RE = re.compile(r"http://(?:localhost|127\.0\.0\.1)(?::\d+)?")
 
 MIGRATIONS = [
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS country VARCHAR(100)",
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS total_episodes INTEGER",
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS bg_music_composer VARCHAR(255)",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS submitted_by VARCHAR(255)",
     "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS air_date VARCHAR(50)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_serial_title VARCHAR(255)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_channel VARCHAR(255)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_serial_type VARCHAR(50)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_language VARCHAR(100)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_director VARCHAR(255)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_genre VARCHAR(100)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_production_company VARCHAR(255)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_country VARCHAR(100)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_actors TEXT",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_producer VARCHAR(255)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_production_year INTEGER",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_bg_music_composer VARCHAR(255)",
+    "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS cue_submitted_by VARCHAR(255)",
     "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending' NOT NULL",
     "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS rejection_note TEXT",
     "ALTER TABLE episodes ADD COLUMN IF NOT EXISTS review_note TEXT",
@@ -29,6 +43,10 @@ MIGRATIONS = [
     "ALTER TABLE song_library ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
     "ALTER TABLE song_library DROP CONSTRAINT IF EXISTS song_library_title_key",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_song_library_isrc ON song_library(isrc) WHERE isrc IS NOT NULL",
+    "SELECT setval('projects_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM projects), 1))) FROM projects_id_seq",
+    "SELECT setval('episodes_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM episodes), 1))) FROM episodes_id_seq",
+    "SELECT setval('cue_entries_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM cue_entries), 1))) FROM cue_entries_id_seq",
+    "SELECT setval('song_library_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM song_library), 1))) FROM song_library_id_seq",
 ]
 
 

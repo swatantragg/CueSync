@@ -9,6 +9,19 @@ class EpisodeBase(BaseModel):
     musical_duration_sec: int | None = None
     bg_instrumental_duration_sec: int | None = None
     bg_vocal_duration_sec: int | None = None
+    cue_serial_title: str | None = None
+    cue_channel: str | None = None
+    cue_serial_type: str | None = None
+    cue_language: str | None = None
+    cue_director: str | None = None
+    cue_genre: str | None = None
+    cue_production_company: str | None = None
+    cue_country: str | None = None
+    cue_actors: str | None = None
+    cue_producer: str | None = None
+    cue_production_year: int | None = None
+    cue_bg_music_composer: str | None = None
+    cue_submitted_by: str | None = None
 
 
 class EpisodeCreate(EpisodeBase):
