@@ -7,9 +7,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.cue import Contributor, CueEntry
-from app.models.library import SongLibrary
+from app.models.library import ContributorLibrary, SongLibrary
 
 _TITLE_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+# ── IPI/CAE normalization ─────────────────────────────────────────────────────
+
+def normalize_ipi(ipi: str | None) -> str:
+    """Strip leading zeros for comparison. '0001234567' == '1234567' → '1234567'."""
+    if not ipi:
+        return ""
+    return (ipi.strip() or "").lstrip("0") or "0"
+
+
+def pad_ipi(ipi: str | None, length: int = 11) -> str:
+    """Pad IPI/CAE to standard 11-digit CISAC format with leading zeros."""
+    if not ipi:
+        return ""
+    core = (ipi.strip() or "").lstrip("0") or "0"
+    return core.zfill(length)
+
+
+def same_ipi(a: str | None, b: str | None) -> bool:
+    """True if two IPI/CAE numbers refer to the same person (ignoring leading zeros)."""
+    na, nb = normalize_ipi(a), normalize_ipi(b)
+    return bool(na and nb and na == nb and na != "0")
 _TITLE_STOPWORDS = {
     "a", "an", "and", "background", "family", "feat", "featuring", "film",
     "from", "motion", "mp3", "mp4", "music", "of", "official", "original",
@@ -180,19 +202,31 @@ def serialize_contributors(cue: CueEntry) -> str:
     return json.dumps(payload)
 
 
+def dedup_contributors(contribs: list[dict]) -> list[dict]:
+    """Remove duplicate contributors sharing same normalized IPI or same name+role."""
+    seen_ipi: set[str] = set()
+    seen_name_role: set[tuple] = set()
+    unique: list[dict] = []
+    for c in contribs:
+        ipi = c.get("ipi_number") or c.get("cae_number")
+        norm = normalize_ipi(ipi)
+        key = ((c.get("name") or "").strip().lower(), (c.get("role") or "").strip().lower())
+        if norm and norm != "0":
+            if norm in seen_ipi:
+                continue
+            seen_ipi.add(norm)
+        elif key in seen_name_role:
+            continue
+        seen_name_role.add(key)
+        unique.append(c)
+    return unique
+
+
 def parse_contributors(entry: SongLibrary) -> list[dict]:
     if not entry.contributors_json:
         return []
     try:
-        raw = json.loads(entry.contributors_json)
-        seen: set[tuple] = set()
-        unique: list[dict] = []
-        for c in raw:
-            key = (c.get("name", "").strip().lower(), c.get("role", "").strip().lower())
-            if key not in seen:
-                seen.add(key)
-                unique.append(c)
-        return unique
+        return dedup_contributors(json.loads(entry.contributors_json))
     except Exception:
         return []
 
@@ -256,6 +290,287 @@ async def find_library_match_extended(
             return row, "isrc"
     row = await _lookup_by_title(db, title)
     return (row, "title") if row else (None, "none")
+
+
+async def upsert_contributor_library(
+    db: AsyncSession, name: str, role: str, ipi_number: str | None, society: str | None
+) -> None:
+    """Insert or update contributor in library.
+    Dedup strategy: match by normalized IPI first, then by name+role.
+    Pads IPI to 11 digits. Merges alt names into JSON if name differs."""
+    if not name or len(name.strip()) < 2:
+        return
+    try:
+        clean_name = name.strip()
+        padded_ipi = pad_ipi(ipi_number) if ipi_number and ipi_number.strip() else None
+        norm_ipi = normalize_ipi(ipi_number) if ipi_number else ""
+
+        existing: ContributorLibrary | None = None
+
+        # Priority 1: match by normalized IPI (same person, possibly zero-padded differently)
+        if norm_ipi and norm_ipi != "0":
+            all_rows = (await db.execute(select(ContributorLibrary))).scalars().all()
+            for row in all_rows:
+                if same_ipi(row.ipi_number, ipi_number) or same_ipi(row.cae_number, ipi_number):
+                    existing = row
+                    break
+
+        # Priority 2: match by name + role
+        if not existing:
+            existing = (await db.execute(
+                select(ContributorLibrary).where(
+                    ContributorLibrary.name.ilike(clean_name),
+                    ContributorLibrary.role == (role or "Composer"),
+                )
+            )).scalar_one_or_none()
+
+        if existing:
+            # Upgrade IPI to padded format
+            if padded_ipi and not existing.ipi_number:
+                existing.ipi_number = padded_ipi
+            elif padded_ipi and existing.ipi_number and same_ipi(existing.ipi_number, padded_ipi):
+                existing.ipi_number = padded_ipi  # always store padded
+            if society and not existing.society:
+                existing.society = society
+            # Merge name into alt_names if this is a different spelling
+            existing_lower = existing.name.strip().lower()
+            new_lower = clean_name.lower()
+            if new_lower != existing_lower:
+                alt: dict = json.loads(existing.alt_names) if existing.alt_names else {}
+                known = {v.strip().lower() for v in alt.values()} | {existing_lower}
+                if new_lower not in known:
+                    alt[f"name{len(alt) + 2}"] = clean_name
+                    existing.alt_names = json.dumps(alt)
+        else:
+            db.add(ContributorLibrary(
+                name=clean_name,
+                role=role or "Composer",
+                society=society or None,
+                ipi_number=padded_ipi or None,
+            ))
+    except Exception:
+        pass
+
+
+def _merge_song_group(keep: "SongLibrary", losers: list["SongLibrary"]) -> None:
+    """Merge loser rows into keep: fill missing fields, accumulate alt_titles."""
+    seen_titles: set[str] = set()
+    existing_alts: list[str] = json.loads(keep.alt_titles) if keep.alt_titles else []
+    all_titles: list[str] = [keep.title.strip()]
+    seen_titles.add(keep.title.strip().lower())
+    for t in existing_alts:
+        if t.strip().lower() not in seen_titles:
+            all_titles.append(t.strip())
+            seen_titles.add(t.strip().lower())
+    for loser in losers:
+        if loser.title and loser.title.strip().lower() not in seen_titles:
+            all_titles.append(loser.title.strip())
+            seen_titles.add(loser.title.strip().lower())
+        for t in (json.loads(loser.alt_titles) if loser.alt_titles else []):
+            if t.strip().lower() not in seen_titles:
+                all_titles.append(t.strip())
+                seen_titles.add(t.strip().lower())
+        for f in ("isrc", "song_code", "work_number", "ascap_work_id", "singer", "contributors_json"):
+            if not getattr(keep, f) and getattr(loser, f):
+                setattr(keep, f, getattr(loser, f))
+    keep.alt_titles = json.dumps(all_titles) if len(all_titles) > 1 else None
+
+
+async def cleanup_song_duplicates(db: AsyncSession) -> int:
+    """Comprehensive SongLibrary dedup.
+    Phase 1 — same song_code (case-insensitive).
+    Phase 2 — same ISRC (after phase 1).
+    Richest row wins; all alt titles collected in JSON array."""
+    merged = 0
+    deleted_ids: set[int] = set()
+
+    # ── Phase 1: group by song_code ─────────────────────────────────────────────
+    rows = (await db.execute(select(SongLibrary).where(SongLibrary.song_code.isnot(None)))).scalars().all()
+    by_code: dict[str, list[SongLibrary]] = {}
+    for r in rows:
+        key = r.song_code.strip().lower()
+        if key:
+            by_code.setdefault(key, []).append(r)
+
+    for _key, group in by_code.items():
+        if len(group) < 2:
+            continue
+        keep = max(group, key=_entry_richness)
+        losers = [r for r in group if r.id != keep.id]
+        _merge_song_group(keep, losers)
+        for loser in losers:
+            await db.execute(update(CueEntry).where(CueEntry.library_id == loser.id).values(library_id=keep.id))
+            await db.delete(loser)
+            deleted_ids.add(loser.id)
+            merged += 1
+
+    await db.flush()
+
+    # ── Phase 2: group by ISRC ───────────────────────────────────────────────────
+    rows2 = (await db.execute(select(SongLibrary).where(SongLibrary.isrc.isnot(None)))).scalars().all()
+    by_isrc: dict[str, list[SongLibrary]] = {}
+    for r in rows2:
+        if r.id not in deleted_ids:
+            key = r.isrc.strip().upper()
+            if key:
+                by_isrc.setdefault(key, []).append(r)
+
+    for _key, group in by_isrc.items():
+        if len(group) < 2:
+            continue
+        keep = max(group, key=_entry_richness)
+        losers = [r for r in group if r.id != keep.id]
+        _merge_song_group(keep, losers)
+        for loser in losers:
+            await db.execute(update(CueEntry).where(CueEntry.library_id == loser.id).values(library_id=keep.id))
+            await db.delete(loser)
+            deleted_ids.add(loser.id)
+            merged += 1
+
+    await db.flush()
+    return merged
+
+
+def _merge_contrib_group(keep: "ContributorLibrary", losers: list["ContributorLibrary"]) -> None:
+    """Merge loser rows into keep: fill missing fields, merge all names into alt_names JSON."""
+    keep.ipi_number = pad_ipi(keep.ipi_number or keep.cae_number)
+    existing_alt: dict = json.loads(keep.alt_names) if keep.alt_names else {}
+    keep_lower = keep.name.strip().lower()
+    all_known: set[str] = {keep_lower} | {v.strip().lower() for v in existing_alt.values()}
+    next_i = max((int(k.replace("name", "") or 1) for k in existing_alt if k.startswith("name")), default=1) + 1
+    for loser in losers:
+        if not keep.society and loser.society:
+            keep.society = loser.society
+        if not keep.cae_number and loser.cae_number:
+            keep.cae_number = loser.cae_number
+        if not keep.ipi_number and loser.ipi_number:
+            keep.ipi_number = pad_ipi(loser.ipi_number)
+        for name_str in [loser.name] + list((json.loads(loser.alt_names) if loser.alt_names else {}).values()):
+            nl = (name_str or "").strip().lower()
+            if nl and nl not in all_known:
+                existing_alt[f"name{next_i}"] = name_str.strip()
+                all_known.add(nl)
+                next_i += 1
+    if existing_alt:
+        keep.alt_names = json.dumps({"name1": keep.name, **existing_alt})
+
+
+async def cleanup_contributor_duplicates(db: AsyncSession) -> int:
+    """Comprehensive ContributorLibrary dedup.
+    Phase 1 — same normalized IPI or CAE (strips leading zeros, both fields checked).
+    Phase 2 — same name+role with no IPI/CAE (name-only duplicates).
+    Winner: most data (society, cae, longest IPI, longest name). IPI padded to 11 digits."""
+    rows = (await db.execute(select(ContributorLibrary))).scalars().all()
+    merged = 0
+    deleted_ids: set[int] = set()
+
+    # ── Phase 1: group by normalized IPI/CAE ────────────────────────────────────
+    # A row can match via ipi_number OR cae_number — collect all norms per row
+    by_norm: dict[str, list[ContributorLibrary]] = {}
+    for r in rows:
+        norms: set[str] = set()
+        for val in (r.ipi_number, r.cae_number):
+            n = normalize_ipi(val)
+            if n and n != "0":
+                norms.add(n)
+        for n in norms:
+            by_norm.setdefault(n, []).append(r)
+
+    # Deduplicate groups that overlap (a row might appear in multiple norms)
+    processed: set[int] = set()
+    for _norm, group in by_norm.items():
+        group = [r for r in group if r.id not in processed]
+        if len(group) < 2:
+            continue
+        keep = max(group, key=lambda r: (
+            bool(r.society), bool(r.cae_number),
+            len(r.ipi_number or ""), len(r.cae_number or ""), len(r.name or ""),
+        ))
+        losers = [r for r in group if r.id != keep.id]
+        _merge_contrib_group(keep, losers)
+        for loser in losers:
+            await db.delete(loser)
+            deleted_ids.add(loser.id)
+            processed.add(loser.id)
+            merged += 1
+        processed.add(keep.id)
+
+    await db.flush()
+
+    # ── Phase 2: same name+role, no IPI/CAE ─────────────────────────────────────
+    rows2 = (await db.execute(select(ContributorLibrary))).scalars().all()
+    by_name_role: dict[tuple, list[ContributorLibrary]] = {}
+    for r in rows2:
+        if r.id in deleted_ids:
+            continue
+        if r.ipi_number or r.cae_number:
+            continue  # already handled in phase 1
+        key = (r.name.strip().lower(), (r.role or "").strip().lower())
+        by_name_role.setdefault(key, []).append(r)
+
+    for _key, group in by_name_role.items():
+        if len(group) < 2:
+            continue
+        keep = max(group, key=lambda r: (bool(r.society), len(r.name or "")))
+        losers = [r for r in group if r.id != keep.id]
+        _merge_contrib_group(keep, losers)
+        for loser in losers:
+            await db.delete(loser)
+            deleted_ids.add(loser.id)
+            merged += 1
+
+    await db.flush()
+    return merged
+
+
+async def normalize_library_contributors_json(db: AsyncSession) -> int:
+    """Re-save contributors_json for all SongLibrary rows, deduplicating by normalized IPI.
+    Cleans up any dirty data already stored in the DB."""
+    rows = (await db.execute(select(SongLibrary).where(SongLibrary.contributors_json.isnot(None)))).scalars().all()
+    cleaned = 0
+    for row in rows:
+        try:
+            raw = json.loads(row.contributors_json)
+            deduped = dedup_contributors(raw)
+            if len(deduped) < len(raw):
+                row.contributors_json = json.dumps(deduped)
+                cleaned += 1
+        except Exception:
+            pass
+    await db.flush()
+    return cleaned
+
+
+async def cleanup_cue_contributor_duplicates(db: AsyncSession) -> int:
+    """Remove duplicate Contributor rows within each cue where IPI matches (normalized).
+    Keeps the row with the highest share_percent or most data. Run at startup."""
+    all_contribs = (await db.execute(select(Contributor))).scalars().all()
+    by_cue: dict[int, list[Contributor]] = {}
+    for c in all_contribs:
+        by_cue.setdefault(c.cue_id, []).append(c)
+
+    removed = 0
+    for _cue_id, rows in by_cue.items():
+        seen_ipi: set[str] = set()
+        seen_name_role: set[tuple] = set()
+        for row in sorted(rows, key=lambda r: (-(r.share_percent or 0), -(len(r.ipi_number or r.cae_number or "")))):
+            ipi = row.ipi_number or row.cae_number
+            norm = normalize_ipi(ipi)
+            key = ((row.name or "").strip().lower(), (row.role or "").strip().lower())
+            if norm and norm != "0":
+                if norm in seen_ipi:
+                    await db.delete(row)
+                    removed += 1
+                    continue
+                seen_ipi.add(norm)
+            elif key in seen_name_role:
+                await db.delete(row)
+                removed += 1
+                continue
+            seen_name_role.add(key)
+
+    await db.flush()
+    return removed
 
 
 async def apply_library_to_cue(db: AsyncSession, cue: CueEntry, entry: SongLibrary, force: bool = False) -> None:

@@ -17,6 +17,7 @@ class SongLibrary(Base):
     ascap_work_id: Mapped[str | None] = mapped_column(String(50))
     singer: Mapped[str | None] = mapped_column(String(255))
     contributors_json: Mapped[str | None] = mapped_column(Text)
+    alt_titles: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -31,4 +32,5 @@ class ContributorLibrary(Base):
     society: Mapped[str | None] = mapped_column(String(50))
     ipi_number: Mapped[str | None] = mapped_column(String(50))
     cae_number: Mapped[str | None] = mapped_column(String(50))
+    alt_names: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

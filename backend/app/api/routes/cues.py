@@ -9,7 +9,14 @@ from app.models.cue import Contributor, CueEntry
 from app.models.user import User, UserRole
 from app.schemas.cue import CueCreate, CueOut, CueUpdate
 from app.services.audit import log_activity
-from app.services.library_sync import find_library_match, apply_library_to_cue, propagate_cue_to_siblings, reconcile_library
+from app.services.library_sync import (
+    apply_library_to_cue,
+    dedup_contributors,
+    find_library_match,
+    propagate_cue_to_siblings,
+    reconcile_library,
+    upsert_contributor_library,
+)
 
 router = APIRouter()
 
@@ -20,8 +27,8 @@ async def create_cue(episode_id: int, payload: CueCreate, db: AsyncSession = Dep
     cue = CueEntry(episode_id=episode_id, **data)
     db.add(cue)
     await db.flush()
-    for c in payload.contributors:
-        db.add(Contributor(cue_id=cue.id, **c.model_dump()))
+    for cd in dedup_contributors([co.model_dump() for co in payload.contributors]):
+        db.add(Contributor(cue_id=cue.id, **cd))
     await db.flush()
     # Autofill from library or from same-song siblings
     lib = await find_library_match(db, cue.song_title, cue.isrc)
@@ -58,11 +65,15 @@ async def update_cue(cid: int, payload: CueUpdate, db: AsyncSession = Depends(ge
     for old in list(cue.contributors):
         await db.delete(old)
     await db.flush()
-    for c in payload.contributors:
-        db.add(Contributor(cue_id=cue.id, **c.model_dump()))
+    for cd in dedup_contributors([co.model_dump() for co in payload.contributors]):
+        db.add(Contributor(cue_id=cue.id, **cd))
     await db.flush()
     await reconcile_library(db, cue.song_title, cue.isrc)
     await propagate_cue_to_siblings(db, await _get_cue(cue.id, db))
+    # Auto-save contributors to shared library for future autofill suggestions
+    for co in payload.contributors:
+        if co.name and co.ipi_number:
+            await upsert_contributor_library(db, co.name, co.role or "Composer", co.ipi_number, co.society)
     await log_activity(db, current.id, "update", "episode", ep_id, f"Edited song '{payload.song_title}'")
     await db.commit()
     return await _get_cue(cid, db)

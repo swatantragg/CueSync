@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Upload, FileSpreadsheet, ChevronRight, Trash2, ArrowLeft, Check, XCircle, MessageSquare, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Upload, FileSpreadsheet, ChevronRight, Trash2, ArrowLeft, Check, XCircle, MessageSquare, X, Search } from "lucide-react";
+import { showAlert, showConfirm } from "../components/Dialog";
 import { C, FONTS } from "../styles/palette";
 import Header from "../components/Header";
 import MetaCard from "../components/MetaCard";
@@ -20,6 +21,7 @@ export default function SerialPage() {
   const [reviewModal, setReviewModal] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
 
   const reload = async () => {
     if (!activeProject) return;
@@ -89,12 +91,16 @@ export default function SerialPage() {
 
   const handleApprove = async (ep) => {
     try { await api.approveEpisode(ep.id); await reload(); }
-    catch (ex) { alert(ex.message); }
+    catch (ex) { await showAlert(ex.message, { title: "Approve Failed", variant: "error" }); }
   };
 
   const handleDeleteSelected = async () => {
     if (!selected.size) return;
-    if (!confirm(`Delete ${selected.size} episode${selected.size > 1 ? "s" : ""}?`)) return;
+    const ok = await showConfirm(
+      `${selected.size} episode${selected.size > 1 ? "s" : ""} will be permanently deleted.`,
+      { title: `Delete ${selected.size} Episode${selected.size > 1 ? "s" : ""}`, confirmLabel: "Delete", variant: "danger", detail: "All songs and cue data inside will be lost." }
+    );
+    if (!ok) return;
     setDeleting(true);
     const ids = [...selected];
     const errors = [];
@@ -105,10 +111,20 @@ export default function SerialPage() {
     setSelected(new Set());
     setDeleting(false);
     await reload();
-    if (errors.length) alert(`${errors.length} deletion(s) failed:\n${errors.join("\n")}`);
+    if (errors.length) await showAlert(`${errors.length} deletion(s) failed:\n${errors.join("\n")}`, { title: "Partial Failure", variant: "warn" });
   };
 
-  const pageEps = proj.episodes.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const filteredEps = useMemo(() => {
+    const q = searchQ.trim().toLowerCase();
+    if (!q) return proj.episodes;
+    return proj.episodes.filter((e) =>
+      String(e.number).includes(q) ||
+      (e.title || "").toLowerCase().includes(q) ||
+      (e.airDate || "").toLowerCase().includes(q)
+    );
+  }, [proj.episodes, searchQ]);
+
+  const pageEps = filteredEps.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const pageIds = pageEps.map((e) => e.id);
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const toggleOne = (id) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -122,7 +138,7 @@ export default function SerialPage() {
       else await api.suggestEpisode(ep.id, note.trim());
       await reload();
       setReviewModal(null);
-    } catch (ex) { alert(ex.message); }
+    } catch (ex) { await showAlert(ex.message, { title: "Action Failed", variant: "error" }); }
   };
 
   return (
@@ -234,16 +250,36 @@ export default function SerialPage() {
                     <FileSpreadsheet className="w-4 h-4" />Choose .xlsx
                   </>
                 )}
-                <input type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={handleImport} disabled={busy} />
+                <input type="file" accept=".xlsx,.xls" multiple className="sr-only" onChange={handleImport} disabled={busy} />
               </label>
             </div>
           </div>
         )}
 
         <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-          <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
-            <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>Episodes ({proj.episodes.length})</h3>
-            <div className="flex items-center gap-3">
+          <div className="px-6 py-4 border-b flex flex-wrap items-center gap-3 justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
+            <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>
+              Episodes ({filteredEps.length}{searchQ ? ` of ${proj.episodes.length}` : ""})
+            </h3>
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: C.sub }} />
+                <input
+                  type="text"
+                  value={searchQ}
+                  onChange={(e) => { setSearchQ(e.target.value); setPage(1); }}
+                  placeholder="Search by ep. number or title…"
+                  className="pl-8 pr-3 py-1.5 text-xs rounded-lg border focus:outline-none"
+                  style={{ borderColor: C.mint1 + "44", background: C.white, color: C.dark, width: 230 }}
+                />
+                {searchQ && (
+                  <button onClick={() => setSearchQ("")} className="absolute right-2 top-1/2 -translate-y-1/2 hover:opacity-70" style={{ color: C.sub }}>
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
               {selected.size > 0 && (
                 <button
                   onClick={handleDeleteSelected}
@@ -259,8 +295,8 @@ export default function SerialPage() {
                   {proj.episodes.filter((e) => e.status === "submitted" || e.status === "edited").length} pending review
                 </span>
               )}
-              {proj.episodes.length > PAGE_SIZE && (() => {
-                const totalPages = Math.ceil(proj.episodes.length / PAGE_SIZE);
+              {filteredEps.length > PAGE_SIZE && (() => {
+                const totalPages = Math.ceil(filteredEps.length / PAGE_SIZE);
                 return (
                   <div className="flex items-center gap-1 text-xs" style={{ color: C.sub }}>
                     <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
@@ -292,8 +328,12 @@ export default function SerialPage() {
               </tr>
             </thead>
             <tbody>
-              {proj.episodes.length === 0 && (
-                <tr><td colSpan={9} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>No episodes yet.</td></tr>
+              {filteredEps.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>
+                    {searchQ ? `No episodes match "${searchQ}".` : "No episodes yet."}
+                  </td>
+                </tr>
               )}
               {pageEps.map((ep) => {
                 const lastEdit = ep.editHistory?.[ep.editHistory.length - 1];
@@ -317,9 +357,13 @@ export default function SerialPage() {
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={async () => {
-                            if (!confirm(`Delete episode ${ep.number}?`)) return;
+                            const ok = await showConfirm(
+                              `Episode ${String(ep.number).padStart(2, "0")}${ep.title ? ` — "${ep.title}"` : ""} will be permanently deleted.`,
+                              { title: "Delete Episode", confirmLabel: "Delete", variant: "danger", detail: "All songs and cue data inside will be lost." }
+                            );
+                            if (!ok) return;
                             try { await api.deleteEpisode(ep.id); await reload(); }
-                            catch (ex) { alert(ex.message); }
+                            catch (ex) { await showAlert(ex.message, { title: "Delete Failed", variant: "error" }); }
                           }}
                           className="p-1.5 rounded-lg hover:bg-red-50"
                           title="Delete episode"
@@ -367,13 +411,13 @@ export default function SerialPage() {
           </table>
 
           {/* Bottom pagination */}
-          {proj.episodes.length > PAGE_SIZE && (() => {
-            const totalPages = Math.ceil(proj.episodes.length / PAGE_SIZE);
+          {filteredEps.length > PAGE_SIZE && (() => {
+            const totalPages = Math.ceil(filteredEps.length / PAGE_SIZE);
             const start = (page - 1) * PAGE_SIZE + 1;
-            const end = Math.min(page * PAGE_SIZE, proj.episodes.length);
+            const end = Math.min(page * PAGE_SIZE, filteredEps.length);
             return (
               <div className="px-5 py-3 border-t flex items-center justify-between text-xs" style={{ borderColor: C.mint4, color: C.sub }}>
-                <span>Showing {start}–{end} of {proj.episodes.length} episodes</span>
+                <span>Showing {start}–{end} of {filteredEps.length}{searchQ ? ` filtered` : ""} episodes</span>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setPage(1)} disabled={page === 1}
                     className="px-2 py-1 rounded disabled:opacity-30 hover:opacity-70"

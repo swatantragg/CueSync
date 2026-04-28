@@ -17,6 +17,7 @@ from app.models.user import User, UserRole
 from app.services.audit import log_activity
 from app.services.library_sync import (
     apply_library_to_cue,
+    dedup_contributors,
     find_library_match,
     find_library_match_extended,
     parse_contributors,
@@ -255,21 +256,24 @@ async def preview_rough(
                         enriched_cue["song_code"] = lib.song_code
                     lib_contribs = parse_contributors(lib)
 
-                # ── Contributor details fetched independently by name ─────────
+                # ── Contributor strategy: DB title match → use DB contributors only ──
                 raw_contribs: list[dict] = cue.get("contributors", [])
 
-                # Enrich each raw contributor by name lookup (IPI/CAE/society)
-                enriched_raw: list[dict] = []
-                for rc in raw_contribs:
-                    ec = await _enrich_contrib_by_name(db, rc)
-                    enriched_raw.append({**ec, "library_match": bool(ec.get("ipi_number") and ec.get("ipi_number") != rc.get("ipi_number"))})
-
-                # Add library contributors whose name is absent from the rough sheet
-                raw_names = {(rc.get("name") or "").strip().lower() for rc in raw_contribs}
-                for lc in lib_contribs:
-                    if (lc.get("name") or "").strip().lower() not in raw_names:
+                if lib and lib_contribs:
+                    # DB match found: use library contributors as the authoritative source
+                    enriched_raw: list[dict] = []
+                    for lc in lib_contribs:
                         enriched_lc = await _enrich_contrib_by_name(db, lc)
                         enriched_raw.append({**enriched_lc, "library_match": True})
+                else:
+                    # No DB match: enrich rough sheet contributors by name lookup only
+                    enriched_raw = []
+                    for rc in raw_contribs:
+                        ec = await _enrich_contrib_by_name(db, rc)
+                        enriched_raw.append({
+                            **ec,
+                            "library_match": bool(ec.get("ipi_number") and ec.get("ipi_number") != rc.get("ipi_number")),
+                        })
 
                 enriched_cue["contributors"] = enriched_raw
 
@@ -374,15 +378,11 @@ async def commit_rough(
                     if not cue.library_id:
                         cue.library_id = lib_entry.id
 
-                for ctb in cue_data.contributors:
-                    db.add(Contributor(
-                        cue_id=cue.id,
-                        name=ctb.name,
-                        role=ctb.role,
-                        society=ctb.society,
-                        share_percent=ctb.share_percent or 0,
-                        ipi_number=ctb.ipi_number,
-                    ))
+                for ctb in dedup_contributors([{
+                    "name": c.name, "role": c.role, "society": c.society,
+                    "share_percent": c.share_percent or 0, "ipi_number": c.ipi_number,
+                } for c in cue_data.contributors]):
+                    db.add(Contributor(cue_id=cue.id, **ctb))
 
             created_eps.append(e.id)
             await log_activity(

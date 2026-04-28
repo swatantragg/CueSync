@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, ChevronRight, Tv, Trash2, ChevronLeft } from "lucide-react";
+import { Plus, ChevronRight, Tv, Trash2, ChevronLeft, Search, ShieldOff, X } from "lucide-react";
+import { showAlert, showConfirm } from "../components/Dialog";
 import { C, FONTS } from "../styles/palette";
 import Header from "../components/Header";
 import NewSerialModal from "../components/NewSerialModal";
@@ -8,12 +9,44 @@ import { api } from "../utils/api";
 
 const PAGE_SIZE = 10;
 
+function PrivilegeModal({ onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
+      <div className="rounded-2xl p-6 w-full max-w-sm shadow-2xl" style={{ background: C.dark }}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2.5">
+            <ShieldOff className="w-5 h-5" style={{ color: C.danger }} />
+            <div className="font-semibold text-base" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>
+              Insufficient Privilege
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:opacity-70" style={{ color: C.muted }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-sm mb-5" style={{ color: C.muted }}>
+          Editors cannot delete serials. Only admins can delete a serial and all its episodes. You can delete individual episodes from inside the serial.
+        </p>
+        <button
+          onClick={onClose}
+          className="w-full py-2 rounded-xl text-sm font-medium hover:opacity-90"
+          style={{ background: C.mint1, color: C.dark }}
+        >
+          Got it
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function WorkspacePage() {
   const { projects, setProjects, isAdmin, setActiveProjectId, setScreen } = useApp();
   const [showNew, setShowNew] = useState(false);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [showPrivModal, setShowPrivModal] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
 
   useEffect(() => {
     api.projects().then((list) => {
@@ -36,43 +69,80 @@ export default function WorkspacePage() {
 
   const handleDelete = async (e, id) => {
     e.stopPropagation();
-    if (!confirm("Delete this serial and all its episodes?")) return;
-    try { await api.deleteProject(id); setProjects((prev) => prev.filter((p) => p.id !== id)); setSelected((s) => { const n = new Set(s); n.delete(id); return n; }); }
-    catch (ex) { alert(ex.message); }
+    if (!isAdmin) { setShowPrivModal(true); return; }
+    const serial = projects.find((p) => p.id === id);
+    const ok = await showConfirm(
+      `"${serial?.title || "this serial"}" and all its episodes will be permanently deleted.`,
+      { title: "Delete Serial", confirmLabel: "Delete", variant: "danger", detail: "This cannot be undone." }
+    );
+    if (!ok) return;
+    try {
+      await api.deleteProject(id);
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+      setSelected((s) => { const n = new Set(s); n.delete(id); return n; });
+    } catch (ex) { await showAlert(ex.message, { title: "Delete Failed", variant: "error" }); }
   };
 
   const handleDeleteSelected = async () => {
     if (!selected.size) return;
-    if (!confirm(`Delete ${selected.size} serial${selected.size > 1 ? "s" : ""} and all their episodes?`)) return;
+    if (!isAdmin) { setShowPrivModal(true); return; }
+    const ok = await showConfirm(
+      `${selected.size} serial${selected.size > 1 ? "s" : ""} and all their episodes will be permanently deleted.`,
+      { title: `Delete ${selected.size} Serial${selected.size > 1 ? "s" : ""}`, confirmLabel: "Delete All", variant: "danger", detail: "This cannot be undone." }
+    );
+    if (!ok) return;
     setDeleting(true);
     const ids = [...selected];
+    const successIds = new Set();
     const errors = [];
     for (const id of ids) {
-      try { await api.deleteProject(id); }
+      try { await api.deleteProject(id); successIds.add(id); }
       catch (ex) { errors.push(ex.message); }
     }
-    setProjects((prev) => prev.filter((p) => !ids.includes(p.id) || errors.length));
-    setProjects((prev) => prev.filter((p) => !selected.has(p.id)));
-    setSelected(new Set());
+    setProjects((prev) => prev.filter((p) => !successIds.has(p.id)));
+    setSelected((prev) => { const n = new Set(prev); successIds.forEach((id) => n.delete(id)); return n; });
     setDeleting(false);
-    if (errors.length) alert(`${errors.length} deletion(s) failed:\n${errors.join("\n")}`);
+    if (errors.length) await showAlert(`${errors.length} deletion(s) failed:\n${errors.join("\n")}`, { title: "Partial Failure", variant: "warn" });
   };
 
-  const totalPages = Math.max(1, Math.ceil(projects.length / PAGE_SIZE));
+  // Filter by search query
+  const filtered = useMemo(() => {
+    const q = searchQ.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter((p) =>
+      (p.title || "").toLowerCase().includes(q) ||
+      (p.type || "").toLowerCase().includes(q) ||
+      (p.language || "").toLowerCase().includes(q) ||
+      (p.genre || "").toLowerCase().includes(q) ||
+      (p.productionCompany || "").toLowerCase().includes(q) ||
+      (p.channel || "").toLowerCase().includes(q)
+    );
+  }, [projects, searchQ]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
   const pageItems = useMemo(
-    () => projects.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE),
-    [projects, pageSafe]
+    () => filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE),
+    [filtered, pageSafe]
   );
 
   const pageIds = pageItems.map((p) => p.id);
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const toggleOne = (id) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleAll = () => setSelected(allPageSelected ? new Set([...selected].filter((id) => !pageIds.includes(id))) : new Set([...selected, ...pageIds]));
+  const toggleAll = () => setSelected(allPageSelected
+    ? new Set([...selected].filter((id) => !pageIds.includes(id)))
+    : new Set([...selected, ...pageIds])
+  );
+
+  // Reset to page 1 when search changes
+  useEffect(() => { setPage(1); }, [searchQ]);
 
   return (
     <div className="min-h-screen" style={{ background: C.light, fontFamily: FONTS.sans, color: C.dark }}>
       <Header />
+
+      {showPrivModal && <PrivilegeModal onClose={() => setShowPrivModal(false)} />}
+
       <main className="max-w-7xl mx-auto px-6 py-10">
         <div className="flex items-end justify-between mb-10">
           <div>
@@ -88,10 +158,30 @@ export default function WorkspacePage() {
         </div>
 
         <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-          <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
-            <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>Serials ({projects.length})</h3>
-            <div className="flex items-center gap-3">
-              {selected.size > 0 && (
+          <div className="px-6 py-4 border-b flex flex-wrap items-center gap-3 justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
+            <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>
+              Serials ({filtered.length}{searchQ ? ` of ${projects.length}` : ""})
+            </h3>
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: C.sub }} />
+                <input
+                  type="text"
+                  value={searchQ}
+                  onChange={(e) => setSearchQ(e.target.value)}
+                  placeholder="Search serials…"
+                  className="pl-8 pr-3 py-1.5 text-xs rounded-lg border focus:outline-none"
+                  style={{ borderColor: C.mint1 + "44", background: C.white, color: C.dark, width: 190 }}
+                />
+                {searchQ && (
+                  <button onClick={() => setSearchQ("")} className="absolute right-2 top-1/2 -translate-y-1/2 hover:opacity-70" style={{ color: C.sub }}>
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {selected.size > 0 && isAdmin && (
                 <button
                   onClick={handleDeleteSelected}
                   disabled={deleting}
@@ -101,9 +191,19 @@ export default function WorkspacePage() {
                   <Trash2 className="w-3.5 h-3.5" />{deleting ? "Deleting…" : `Delete ${selected.size} selected`}
                 </button>
               )}
+              {selected.size > 0 && !isAdmin && (
+                <button
+                  onClick={() => setShowPrivModal(true)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium"
+                  style={{ background: "#FFEBEE", color: C.danger, border: `1px solid #EF9A9A` }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />Delete {selected.size} selected
+                </button>
+              )}
               <span className="text-xs" style={{ color: C.sub }}>Page {pageSafe} of {totalPages}</span>
             </div>
           </div>
+
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-[10px] uppercase tracking-wider" style={{ borderColor: C.mint4, color: C.sub, background: C.mint4 + "33" }}>
@@ -120,7 +220,11 @@ export default function WorkspacePage() {
             </thead>
             <tbody>
               {pageItems.length === 0 && (
-                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>No serials yet.</td></tr>
+                <tr>
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>
+                    {searchQ ? `No serials match "${searchQ}".` : "No serials yet."}
+                  </td>
+                </tr>
               )}
               {pageItems.map((p) => {
                 const approved = p.episodes.filter((e) => e.status === "approved").length;
@@ -161,11 +265,13 @@ export default function WorkspacePage() {
                     </td>
                     <td className="px-5 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={(e) => handleDelete(e, p.id)}
-                          className="p-1.5 rounded-lg hover:bg-red-50"
-                          title="Delete serial"
-                        ><Trash2 className="w-4 h-4" style={{ color: C.danger }} /></button>
+                        {isAdmin && (
+                          <button
+                            onClick={(e) => handleDelete(e, p.id)}
+                            className="p-1.5 rounded-lg hover:bg-red-50"
+                            title="Delete serial"
+                          ><Trash2 className="w-4 h-4" style={{ color: C.danger }} /></button>
+                        )}
                         <button
                           onClick={() => { setActiveProjectId(p.id); setScreen("serial"); }}
                           className="text-xs uppercase tracking-wider flex items-center gap-1 font-medium hover:gap-2 transition-all"
@@ -180,6 +286,7 @@ export default function WorkspacePage() {
               })}
             </tbody>
           </table>
+
           {totalPages > 1 && (
             <div className="px-5 py-3 border-t flex items-center justify-between text-xs" style={{ borderColor: C.mint4, background: C.mint4 + "22", color: C.sub }}>
               <button
