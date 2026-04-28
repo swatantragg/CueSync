@@ -96,6 +96,7 @@ if ! "$VENV_ALEMBIC" upgrade head; then
   _warn "Alembic migrations failed. Continuing with dev server startup."
 fi
 
+
 # ── Launch ────────────────────────────────────────────────────────────────────
 if [ "$PROD" -eq 1 ]; then
   WORKERS="${WEB_CONCURRENCY:-$(( $(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 2) * 2 + 1 ))}"

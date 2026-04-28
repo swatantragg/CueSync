@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { XCircle, CheckCircle2, History, Send, Check, Package, ChevronLeft, ChevronRight, Save, ArrowLeft, MessageSquare, List, Copy } from "lucide-react";
+import { XCircle, CheckCircle2, History, Send, Check, Package, ChevronLeft, ChevronRight, Save, ArrowLeft, MessageSquare, List, Copy, Plus } from "lucide-react";
+import { showAlert } from "../components/Dialog";
 import { api } from "../utils/api";
 import { C, FONTS } from "../styles/palette";
 import Header from "../components/Header";
@@ -14,6 +15,85 @@ import { uid } from "../utils/uid";
 import { now } from "../utils/format";
 import { useApp } from "../context/AppContext";
 import { STATUS } from "../constants/status";
+
+function CopyEpisodesModal({ episodes, currentEpId, onCopy, onClose }) {
+  const [checked, setChecked] = useState(new Set());
+  const toggle = (id) => setChecked((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const targets = episodes.filter((e) => e.id !== currentEpId);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
+      <div
+        className="rounded-2xl shadow-2xl flex flex-col"
+        style={{ background: C.dark, border: `1px solid ${C.mid}`, width: 340, maxHeight: 520 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: C.mid }}>
+          <div>
+            <div className="font-semibold text-base" style={{ color: C.mint1, fontFamily: FONTS.serif }}>Copy Cue Details</div>
+            <div className="text-[10px] mt-0.5" style={{ color: C.muted }}>Select episodes to copy to</div>
+          </div>
+          <button onClick={onClose} style={{ color: C.muted }} className="hover:opacity-70"><XCircle className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto py-2" style={{ maxHeight: 360 }}>
+          {targets.map((e) => (
+            <label
+              key={e.id}
+              className="flex items-center gap-3 px-5 py-2.5 cursor-pointer hover:opacity-70 transition-opacity"
+            >
+              <input
+                type="checkbox"
+                checked={checked.has(e.id)}
+                onChange={() => toggle(e.id)}
+                style={{ accentColor: C.mint1 }}
+              />
+              <span className="font-mono text-xs" style={{ color: C.mint1, minWidth: 28 }}>
+                {String(e.number).padStart(2, "0")}
+              </span>
+              <span className="text-xs flex-1 truncate" style={{ color: C.mint4 }}>
+                {e.airDate || e.title || `Episode ${e.number}`}
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="px-5 py-4 border-t shrink-0" style={{ borderColor: C.mid }}>
+          <button
+            disabled={checked.size === 0}
+            onClick={() => { onCopy([...checked]); onClose(); }}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 hover:opacity-80 transition"
+            style={{ background: C.mint1, color: C.dark }}
+          >
+            Copy to {checked.size > 0 ? `${checked.size} episode${checked.size > 1 ? "s" : ""}` : "Selected"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CopyToast({ episodes, onDismiss }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 3500);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+  return (
+    <div
+      className="fixed bottom-6 right-6 z-50 rounded-2xl shadow-2xl px-5 py-4 flex items-start gap-3"
+      style={{ background: C.dark, border: `1px solid ${C.mint1}55`, maxWidth: 300 }}
+    >
+      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" style={{ color: C.mint1 }} />
+      <div>
+        <div className="text-xs font-semibold mb-1" style={{ color: C.mint1 }}>Cue details copied</div>
+        <div className="text-[10px]" style={{ color: C.muted }}>
+          Ep {episodes.map((n) => String(n).padStart(2, "0")).join(", Ep ")}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function EpNavRow({ id, className, style, prevEp, nextEp, epIdx, sortedEps, currentEpId, showEpPicker, setShowEpPicker, onPrev, onNext, onPick }) {
   const pickerKey = `${id}-picker`;
@@ -137,6 +217,8 @@ export default function EpisodePage() {
   const [loading, setLoading] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [showEpPicker, setShowEpPicker] = useState(null);
+  const [showCopyModal, setShowCopyModal] = useState(false);
+  const [copyToast, setCopyToast] = useState(null); // array of episode numbers
   // saves: key → { timer: id|null, fn: () => Promise }
   // flying: Set of in-flight Promises (may reject — errors propagate to flushAll)
   const saves = useRef(new Map());
@@ -322,6 +404,81 @@ export default function EpisodePage() {
     if (updated) saveEpisode(updated);
   };
 
+  const addSong = async () => {
+    try {
+      await flushAll();
+      await api.createCue(ep.id, {
+        song_title: "",
+        usage_type: "background",
+        duration_sec: 0,
+        usage_count: 1,
+        order_index: ep.cues.length,
+        contributors: [],
+      });
+      await refreshEpisode();
+    } catch (e) { await showAlert(e?.message || String(e), { title: "Failed to Add Song", variant: "error" }); }
+  };
+
+  const applyLibraryMatch = (cid, libEntry) => {
+    if (!libEntry) return;
+    const contribs = (libEntry.contributors || []).map((c) => ({
+      id: uid(), name: c.name || "", role: c.role || "Composer",
+      society: c.society || "", share: Number(c.share_percent) || 0, ipi: c.ipi_number || "",
+    }));
+    let updated;
+    updateEpisode(proj.id, ep.id, (e) => {
+      updated = {
+        ...e,
+        cues: e.cues.map((c) => {
+          if (c.id !== cid) return c;
+          return {
+            ...c,
+            ...(libEntry.isrc ? { isrc: libEntry.isrc } : {}),
+            ...(libEntry.song_code ? { songCode: libEntry.song_code } : {}),
+            ...(libEntry.singer ? { singer: libEntry.singer } : {}),
+            ...(libEntry.work_number ? { workNumber: libEntry.work_number } : {}),
+            ...(libEntry.ascap_work_id ? { ascapWorkId: libEntry.ascap_work_id } : {}),
+            contributors: contribs.length > 0 ? contribs : c.contributors,
+          };
+        }),
+      };
+      return updated;
+    });
+    if (updated) {
+      const updatedCue = updated.cues.find((c) => c.id === cid);
+      if (updatedCue) saveCue(updatedCue);
+    }
+  };
+
+  const copyToEpisodes = async (targetEids) => {
+    const cd = ep.cueDetails || {};
+    const cuePayload = {
+      cue_serial_title: cd.serialTitle || null, cue_channel: cd.channel || null,
+      cue_serial_type: cd.serialType || null, cue_language: cd.language || null,
+      cue_director: cd.director || null, cue_genre: cd.genre || null,
+      cue_production_company: cd.productionCompany || null, cue_country: cd.country || null,
+      cue_actors: cd.actors || null, cue_producer: cd.producer || null,
+      cue_production_year: cd.year ? Number(cd.year) : null,
+      cue_bg_music_composer: cd.bgMusicComposer || null, cue_submitted_by: cd.submittedBy || null,
+    };
+    const copiedNums = [];
+    try {
+      const epKey = `ep:${ep.id}`;
+      const pending = saves.current.get(epKey);
+      if (pending?.timer) clearTimeout(pending.timer);
+      saves.current.delete(epKey);
+      await api.updateEpisode(ep.id, buildEpisodePayload(ep));
+      await Promise.all(targetEids.map(async (tid) => {
+        const target = sortedEps.find((e) => e.id === tid);
+        if (!target) return;
+        await api.updateEpisode(tid, { ...buildEpisodePayload(target), ...cuePayload });
+        updateEpisode(proj.id, tid, (e) => ({ ...e, cueDetails: { ...cd } }));
+        copiedNums.push(target.number);
+      }));
+      setCopyToast(copiedNums.sort((a, b) => a - b));
+    } catch (e) { await showAlert(e?.message || String(e), { title: "Copy Failed", variant: "error" }); }
+  };
+
   const copyToNextEpisode = async () => {
     if (!nextEp) return;
     try {
@@ -352,7 +509,7 @@ export default function EpisodePage() {
       });
       updateEpisode(proj.id, nextEp.id, (e) => ({ ...e, cueDetails: { ...cd } }));
       setSavedAt(`Copied to Ep ${String(nextEp.number).padStart(2, "0")}`);
-    } catch (e) { alert("Copy failed: " + (e?.message || e)); }
+    } catch (e) { await showAlert(e?.message || String(e), { title: "Copy Failed", variant: "error" }); }
   };
   const editEp = (k, v) => {
     let updated;
@@ -374,7 +531,7 @@ export default function EpisodePage() {
       await flushAll();
       await refreshEpisode();
       setSavedAt(new Date().toLocaleTimeString());
-    } catch (e) { console.error(e); alert("Save failed: " + (e?.message || e)); }
+    } catch (e) { console.error(e); await showAlert(e?.message || String(e), { title: "Save Failed", variant: "error" }); }
     finally { setSaving(false); }
   };
 
@@ -480,7 +637,7 @@ export default function EpisodePage() {
         })),
       });
       await refreshEpisode();
-    } catch (e) { alert("Duplicate failed: " + e.message); }
+    } catch (e) { await showAlert(e.message, { title: "Duplicate Failed", variant: "error" }); }
   };
   const removeSong = (cid) => {
     updateEpisode(proj.id, ep.id, (e) => ({ ...e, cues: e.cues.filter((c) => c.id !== cid) }));
@@ -494,14 +651,14 @@ export default function EpisodePage() {
       await refreshEpisode();
       setNotifications((prev) => [...prev, { id: uid(), type: "submission", serial: proj.title, epNum: ep.number, message: `Episode ${ep.number} submitted for review.`, from: currentUser.name, at: now(), read: false }]);
       if (nextEp) setTimeout(() => setActiveEpisodeId(nextEp.id), 400);
-    } catch (e) { alert("Submit failed: " + e.message); }
+    } catch (e) { await showAlert(e.message, { title: "Submit Failed", variant: "error" }); }
   };
   const handleApprove = async () => {
     try {
       await api.approveEpisode(ep.id);
       await refreshEpisode();
       setNotifications((prev) => [...prev, { id: uid(), type: "approval", serial: proj.title, epNum: ep.number, message: `Episode ${ep.number} has been approved. Cue sheets are ready for export.`, from: currentUser.name, at: now(), read: false }]);
-    } catch (e) { alert("Approve failed: " + e.message); }
+    } catch (e) { await showAlert(e.message, { title: "Approve Failed", variant: "error" }); }
   };
   const handleReject = async () => {
     if (!adminReviewNote.trim()) return;
@@ -510,7 +667,7 @@ export default function EpisodePage() {
       await refreshEpisode();
       setNotifications((prev) => [...prev, { id: uid(), type: "rejection", serial: proj.title, epNum: ep.number, message: adminReviewNote, from: currentUser.name, at: now(), read: false }]);
       setAdminReviewNote("");
-    } catch (e) { alert("Reject failed: " + e.message); }
+    } catch (e) { await showAlert(e.message, { title: "Reject Failed", variant: "error" }); }
   };
   const handleSaveToLibrary = async (cid) => {
     const cue = ep.cues.find((c) => c.id === cid);
@@ -531,7 +688,7 @@ export default function EpisodePage() {
         })),
       });
       await refreshEpisode();
-    } catch (e) { alert("Save to library failed: " + e.message); }
+    } catch (e) { await showAlert(e.message, { title: "Library Save Failed", variant: "error" }); }
   };
 
   const handleSuggest = async () => {
@@ -541,7 +698,7 @@ export default function EpisodePage() {
       await refreshEpisode();
       setNotifications((prev) => [...prev, { id: uid(), type: "suggestion", serial: proj.title, epNum: ep.number, message: suggestNote, from: currentUser.name, at: now(), read: false }]);
       setSuggestNote("");
-    } catch (e) { alert("Suggestion failed: " + e.message); }
+    } catch (e) { await showAlert(e.message, { title: "Suggestion Failed", variant: "error" }); }
   };
 
   return (
@@ -658,17 +815,16 @@ export default function EpisodePage() {
           </div>
           ); })()}
         </div>
-        {nextEp && !isAdmin && (
+        {sortedEps.length > 1 && !isAdmin && (
           <div className="flex justify-end mb-6">
             <button
-              onClick={copyToNextEpisode}
+              onClick={() => setShowCopyModal(true)}
               className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl font-medium hover:opacity-90 transition"
               style={{ background: C.dark, color: C.mint4 }}
-              title={`Copy all cue details to Episode ${nextEp.number}`}
+              title="Copy cue details to multiple episodes"
             >
               <Copy className="w-3.5 h-3.5" />
-              Copy to Ep {String(nextEp.number).padStart(2, "0")}
-              <ChevronRight className="w-3.5 h-3.5" />
+              Copy Cue Details
             </button>
           </div>
         )}
@@ -684,8 +840,17 @@ export default function EpisodePage() {
           </div>
         </div>
 
-        <div className="mb-3">
+        <div className="mb-3 flex items-center justify-between">
           <SectionTitle title={`Song Details (${ep.cues.length})`} />
+          {!isAdmin && (
+            <button
+              onClick={addSong}
+              className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl font-medium hover:opacity-90 transition"
+              style={{ background: C.ok, color: C.white }}
+            >
+              <Plus className="w-3.5 h-3.5" />Add Song
+            </button>
+          )}
         </div>
         <div className="space-y-6 mb-8">
           {ep.cues.map((cue, idx) => (
@@ -703,10 +868,7 @@ export default function EpisodePage() {
               onRemove={removeSong}
               otherEpisodes={sortedEps.filter((e) => e.id !== ep.id)}
               onSaveToLibrary={handleSaveToLibrary}
-              onCopyTo={async (cid, targetEid) => {
-                try { await api.copyCue(cid, targetEid); alert(`Copied to Ep ${sortedEps.find((e) => e.id === targetEid)?.number}`); }
-                catch (ex) { alert(ex.message); }
-              }}
+              onApplyLibraryMatch={applyLibraryMatch}
             />
           ))}
         </div>
@@ -836,6 +998,18 @@ export default function EpisodePage() {
           onPick={async (e) => { await flushAll(); setActiveEpisodeId(e.id); setShowEpPicker(null); }}
         />
       </main>
+
+      {showCopyModal && (
+        <CopyEpisodesModal
+          episodes={sortedEps}
+          currentEpId={ep.id}
+          onCopy={copyToEpisodes}
+          onClose={() => setShowCopyModal(false)}
+        />
+      )}
+      {copyToast && (
+        <CopyToast episodes={copyToast} onDismiss={() => setCopyToast(null)} />
+      )}
     </div>
   );
 }

@@ -7,10 +7,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import Base, engine
+from app.services.library_sync import (
+    cleanup_contributor_duplicates,
+    cleanup_cue_contributor_duplicates,
+    cleanup_song_duplicates,
+    normalize_library_contributors_json,
+)
 
 _CORS_RE = re.compile(r"http://(?:localhost|127\.0\.0\.1)(?::\d+)?")
 
@@ -41,6 +48,8 @@ MIGRATIONS = [
     "ALTER TABLE song_library ADD COLUMN IF NOT EXISTS singer VARCHAR(255)",
     "ALTER TABLE song_library ADD COLUMN IF NOT EXISTS contributors_json TEXT",
     "ALTER TABLE song_library ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
+    "ALTER TABLE song_library ADD COLUMN IF NOT EXISTS alt_titles TEXT",
+    "ALTER TABLE contributor_library ADD COLUMN IF NOT EXISTS alt_names TEXT",
     "ALTER TABLE song_library DROP CONSTRAINT IF EXISTS song_library_title_key",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_song_library_isrc ON song_library(isrc) WHERE isrc IS NOT NULL",
     "SELECT setval('projects_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM projects), 1))) FROM projects_id_seq",
@@ -61,6 +70,16 @@ async def lifespan(app: FastAPI):
                 except Exception as me:
                     print(f"[migration] skipped: {me}")
         print("[startup] DB connected, tables ensured")
+        try:
+            async with AsyncSession(engine) as db:
+                async with db.begin():
+                    s = await cleanup_song_duplicates(db)
+                    c = await cleanup_contributor_duplicates(db)
+                    cu = await cleanup_cue_contributor_duplicates(db)
+                    lj = await normalize_library_contributors_json(db)
+                    print(f"[startup] dedup: {s} songs, {c} contributors, {cu} cue-contribs, {lj} library-json rows cleaned")
+        except Exception as de:
+            print(f"[startup] dedup skipped: {de}")
     except Exception as e:
         print(f"[startup] DB unavailable — API will run without DB. Error: {e}")
     yield

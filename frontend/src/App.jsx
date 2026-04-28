@@ -1,5 +1,6 @@
 import GoogleFonts from "./styles/fonts";
 import { AppProvider, useApp } from "./context/AppContext";
+import { DialogRoot } from "./components/Dialog";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import WorkspacePage from "./pages/WorkspacePage";
@@ -21,6 +22,7 @@ export default function App() {
     <AppProvider>
       <GoogleFonts />
       <Router />
+      <DialogRoot />
     </AppProvider>
   );
 }
