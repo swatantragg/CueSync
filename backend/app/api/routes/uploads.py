@@ -19,8 +19,9 @@ from app.services.library_sync import (
     apply_library_to_cue,
     dedup_contributors,
     find_library_match,
-    find_library_match_extended,
+    find_strict_library_match,
     parse_contributors,
+    resolve_contributor_name,
 )
 from app.services.rough_parser import parse_rough_workbook
 
@@ -30,43 +31,53 @@ router = APIRouter()
 # ── Contributor name-based enrichment (independent of song match) ─────────────
 
 async def _enrich_contrib_by_name(db: AsyncSession, contrib: dict) -> dict:
-    """Fill missing IPI/CAE and society for a contributor by looking up their name.
-    Does NOT override values already present in the contrib dict."""
+    """Fill missing IPI/CAE and society; resolve PP → PA name via member directory."""
     name = (contrib.get("name") or "").strip()
     if not name or len(name) < 2:
         return contrib
-    has_ipi = bool(contrib.get("ipi_number") or contrib.get("cae_number"))
-    has_society = bool(contrib.get("society"))
-    if has_ipi and has_society:
-        return contrib  # already complete
 
-    # 1. ContributorLibrary (curated)
+    result = {**contrib}
+
+    # Priority 0: member directory — resolves PP/PG → PA and fills IPI
+    member = await resolve_contributor_name(db, name)
+    if member:
+        result["name"] = member["pa_name"]  # always use real/registered name
+        if not result.get("ipi_number"):
+            result["ipi_number"] = member["ipi_number"] or result.get("ipi_number")
+        if not result.get("society"):
+            result["society"] = "IPRS"
+        if not result.get("role") or result.get("role") == "Composer":
+            result["role"] = member["role"]
+        return result
+
+    has_ipi = bool(result.get("ipi_number") or result.get("cae_number"))
+    has_society = bool(result.get("society"))
+    if has_ipi and has_society:
+        return result
+
+    # Priority 1: ContributorLibrary (curated past entries)
     cl_rows = (await db.execute(
         select(ContributorLibrary).where(ContributorLibrary.name.ilike(name)).limit(5)
     )).scalars().all()
     if cl_rows:
         best = max(cl_rows, key=lambda r: (bool(r.ipi_number), bool(r.cae_number), bool(r.society)))
-        result = {**contrib}
         if not has_ipi and (best.ipi_number or best.cae_number):
             result["ipi_number"] = best.ipi_number or best.cae_number
         if not has_society and best.society:
             result["society"] = best.society
         return result
 
-    # 2. Contributor table (from any cue entry)
+    # Priority 2: Contributor table (from any cue entry)
     cue_rows = (await db.execute(
         select(Contributor).where(Contributor.name.ilike(f"%{name}%")).limit(20)
     )).scalars().all()
-    if not cue_rows:
-        return contrib
-    best = max(cue_rows, key=lambda r: (bool(r.ipi_number), bool(r.cae_number), bool(r.society)))
-    if not best.ipi_number and not best.cae_number and not best.society:
-        return contrib
-    result = {**contrib}
-    if not has_ipi and (best.ipi_number or best.cae_number):
-        result["ipi_number"] = best.ipi_number or best.cae_number
-    if not has_society and best.society:
-        result["society"] = best.society
+    if cue_rows:
+        best = max(cue_rows, key=lambda r: (bool(r.ipi_number), bool(r.cae_number), bool(r.society)))
+        if not has_ipi and (best.ipi_number or best.cae_number):
+            result["ipi_number"] = best.ipi_number or best.cae_number
+        if not has_society and best.society:
+            result["society"] = best.society
+
     return result
 
 
@@ -221,9 +232,8 @@ async def preview_rough(
 
             enriched_cues = []
             for cue in ep["cues"]:
-                lib, match_type = await find_library_match_extended(
+                lib, match_type = await find_strict_library_match(
                     db,
-                    title=cue["song_title"],
                     isrc=cue.get("isrc"),
                     song_code=cue.get("song_code"),
                 )
@@ -243,37 +253,25 @@ async def preview_rough(
                     "contributors":  [],
                 }
 
-                # ── Song-level fields from library (independent of contributors) ──
-                lib_contribs: list[dict] = []
+                # ── Song-level fields from library (fills only missing fields) ──
                 if lib:
                     enriched_cue["library_id"] = lib.id
-                    # Rough sheet has priority — library fills only what's missing
                     if not enriched_cue["isrc"] and lib.isrc:
                         enriched_cue["isrc"] = lib.isrc
                     if not enriched_cue["singer"] and lib.singer:
                         enriched_cue["singer"] = lib.singer
                     if not enriched_cue["song_code"] and lib.song_code:
                         enriched_cue["song_code"] = lib.song_code
-                    lib_contribs = parse_contributors(lib)
 
-                # ── Contributor strategy: DB title match → use DB contributors only ──
+                # ── Contributors: always use rough sheet, enrich by name lookup ──
                 raw_contribs: list[dict] = cue.get("contributors", [])
-
-                if lib and lib_contribs:
-                    # DB match found: use library contributors as the authoritative source
-                    enriched_raw: list[dict] = []
-                    for lc in lib_contribs:
-                        enriched_lc = await _enrich_contrib_by_name(db, lc)
-                        enriched_raw.append({**enriched_lc, "library_match": True})
-                else:
-                    # No DB match: enrich rough sheet contributors by name lookup only
-                    enriched_raw = []
-                    for rc in raw_contribs:
-                        ec = await _enrich_contrib_by_name(db, rc)
-                        enriched_raw.append({
-                            **ec,
-                            "library_match": bool(ec.get("ipi_number") and ec.get("ipi_number") != rc.get("ipi_number")),
-                        })
+                enriched_raw: list[dict] = []
+                for rc in raw_contribs:
+                    ec = await _enrich_contrib_by_name(db, rc)
+                    enriched_raw.append({
+                        **ec,
+                        "library_match": bool(ec.get("ipi_number") and ec.get("ipi_number") != rc.get("ipi_number")),
+                    })
 
                 enriched_cue["contributors"] = enriched_raw
 
@@ -365,9 +363,8 @@ async def commit_rough(
                 if cue_data.library_id:
                     lib_entry = await db.get(SongLibrary, cue_data.library_id)
                 if lib_entry is None:
-                    lib_entry, _ = await find_library_match_extended(
+                    lib_entry, _ = await find_strict_library_match(
                         db,
-                        title=cue_data.song_title,
                         isrc=cue_data.isrc,
                         song_code=cue_data.song_code,
                     )

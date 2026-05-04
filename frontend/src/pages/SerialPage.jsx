@@ -10,7 +10,8 @@ import { api } from "../utils/api";
 import { useApp } from "../context/AppContext";
 
 export default function SerialPage() {
-  const { activeProject, isAdmin, updateProject, setActiveEpisodeId, setScreen, goHome } = useApp();
+  const { activeProject, isAdmin, isReviewer, updateProject, setActiveEpisodeId, setScreen, goHome } = useApp();
+  const canReviewRole = isAdmin || isReviewer;
   const [busy, setBusy] = useState(false);
   const [importProgress, setImportProgress] = useState(null);
   const [err, setErr] = useState("");
@@ -220,7 +221,7 @@ export default function SerialPage() {
           </div>
         )}
 
-        {!isAdmin && (
+        {!canReviewRole && (
           <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: C.mint1 + "66", background: C.mint4 + "88" }}>
             <div className="px-6 py-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -290,7 +291,7 @@ export default function SerialPage() {
                   <Trash2 className="w-3.5 h-3.5" />{deleting ? "Deleting…" : `Delete ${selected.size} selected`}
                 </button>
               )}
-              {isAdmin && proj.episodes.filter((e) => e.status === "submitted" || e.status === "edited").length > 0 && (
+              {canReviewRole && proj.episodes.filter((e) => e.status === "submitted" || e.status === "edited").length > 0 && (
                 <span className="text-xs px-2.5 py-1 rounded-lg font-medium" style={{ background: "#F3E5F5", color: "#7B1FA2" }}>
                   {proj.episodes.filter((e) => e.status === "submitted" || e.status === "edited").length} pending review
                 </span>
@@ -337,7 +338,7 @@ export default function SerialPage() {
               )}
               {pageEps.map((ep) => {
                 const lastEdit = ep.editHistory?.[ep.editHistory.length - 1];
-                const canReview = isAdmin && (ep.status === "submitted" || ep.status === "edited");
+                const canReview = canReviewRole && (ep.status === "submitted" || ep.status === "edited");
                 const isSelected = selected.has(ep.id);
                 return (
                   <tr
@@ -397,7 +398,7 @@ export default function SerialPage() {
                           className="text-xs uppercase tracking-wider flex items-center gap-1 font-medium hover:gap-2 transition-all ml-1"
                           style={{ color: C.dark }}
                         >
-                          {isAdmin ? "Review" : "Open"} <ChevronRight className="w-3.5 h-3.5" />
+                          {canReviewRole ? "Review" : "Open"} <ChevronRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
