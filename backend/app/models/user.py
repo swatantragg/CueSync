@@ -9,6 +9,8 @@ from app.core.database import Base
 
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
+    WORK_DELEGATOR = "work_delegator"
+    REVIEWER = "reviewer"
     EDITOR = "editor"
     VIEWER = "viewer"
 

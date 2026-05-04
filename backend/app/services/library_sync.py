@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.cue import Contributor, CueEntry
-from app.models.library import ContributorLibrary, SongLibrary
+from app.models.library import ContributorLibrary, MemberDirectory, SongLibrary
 
 _TITLE_TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -269,7 +269,8 @@ async def find_library_match_extended(
     song_code: str | None,
 ) -> tuple["SongLibrary | None", str]:
     """Find best library match. Returns (match, match_type).
-    Priority: song_code > isrc > title."""
+    Priority: song_code > isrc > title (fuzzy — use only for interactive search).
+    DO NOT use this for automated upload matching — use find_strict_library_match instead."""
     if song_code:
         row = (await db.execute(
             select(SongLibrary).where(or_(
@@ -290,6 +291,98 @@ async def find_library_match_extended(
             return row, "isrc"
     row = await _lookup_by_title(db, title)
     return (row, "title") if row else (None, "none")
+
+
+async def find_strict_library_match(
+    db: AsyncSession,
+    isrc: str | None,
+    song_code: str | None,
+) -> tuple["SongLibrary | None", str]:
+    """Exact-only match: song_code or ISRC. NEVER falls back to fuzzy title.
+    Use this for all automated upload/commit paths to prevent wrong song matches."""
+    if song_code and song_code.strip():
+        row = (await db.execute(
+            select(SongLibrary).where(or_(
+                SongLibrary.song_code == song_code.strip(),
+                SongLibrary.work_number == song_code.strip(),
+                SongLibrary.ascap_work_id == song_code.strip(),
+            )).order_by(SongLibrary.id.desc())
+        )).scalars().first()
+        if row:
+            return row, "code"
+    if isrc and isrc.strip():
+        row = (await db.execute(
+            select(SongLibrary).where(SongLibrary.isrc == isrc.strip())
+            .order_by(SongLibrary.id.desc())
+        )).scalars().first()
+        if row:
+            return row, "isrc"
+    return None, "none"
+
+
+async def upsert_cue_to_library(db: AsyncSession, cue: CueEntry) -> SongLibrary | None:
+    """Auto-save a cue's song to the library when user saves.
+    - If already linked: update the library entry with latest cue data.
+    - If not linked: try strict match (code/ISRC), create new entry if not found.
+    Contributors JSON is refreshed from current cue contributors.
+    Returns the library entry."""
+    # Reload with contributors
+    cue_with_contribs = (await db.execute(
+        select(CueEntry).where(CueEntry.id == cue.id).options(selectinload(CueEntry.contributors))
+    )).scalar_one_or_none()
+    if not cue_with_contribs:
+        return None
+    cue = cue_with_contribs
+
+    if not cue.song_title or cue.song_title.strip().lower() in ("", "unknown"):
+        return None
+
+    contribs_json = serialize_contributors(cue) if cue.contributors else None
+
+    # Already linked to library — update it with fresh data
+    if cue.library_id:
+        entry = await db.get(SongLibrary, cue.library_id)
+        if entry:
+            for field, val in [
+                ("isrc", cue.isrc), ("song_code", cue.song_code),
+                ("work_number", cue.work_number), ("ascap_work_id", cue.ascap_work_id),
+                ("singer", cue.singer),
+            ]:
+                if val:
+                    setattr(entry, field, val)
+            if contribs_json:
+                entry.contributors_json = contribs_json
+            return entry
+
+    # Not linked — try strict match first
+    existing, _ = await find_strict_library_match(db, cue.isrc, cue.song_code)
+    if existing:
+        cue.library_id = existing.id
+        for field, val in [
+            ("isrc", cue.isrc), ("song_code", cue.song_code),
+            ("work_number", cue.work_number), ("ascap_work_id", cue.ascap_work_id),
+            ("singer", cue.singer),
+        ]:
+            if val and not getattr(existing, field):
+                setattr(existing, field, val)
+        if contribs_json and not existing.contributors_json:
+            existing.contributors_json = contribs_json
+        return existing
+
+    # Not in library at all — create new entry
+    entry = SongLibrary(
+        title=cue.song_title.strip(),
+        isrc=cue.isrc,
+        song_code=cue.song_code,
+        work_number=cue.work_number,
+        ascap_work_id=cue.ascap_work_id,
+        singer=cue.singer,
+        contributors_json=contribs_json,
+    )
+    db.add(entry)
+    await db.flush()
+    cue.library_id = entry.id
+    return entry
 
 
 async def upsert_contributor_library(
@@ -593,3 +686,83 @@ async def apply_library_to_cue(db: AsyncSession, cue: CueEntry, entry: SongLibra
                 share_percent=float(c.get("share_percent") or 0),
                 ipi_number=c.get("ipi_number"), cae_number=c.get("cae_number"),
             ))
+
+
+# ── Member Directory (IPRS PA/PP lookup) ──────────────────────────────────
+
+def _norm_name(name: str) -> str:
+    """Normalize name for fuzzy comparison."""
+    s = (name or "").strip().lower()
+    s = re.sub(r"[,.\-_]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+async def lookup_member(db: AsyncSession, name: str) -> MemberDirectory | None:
+    """Find a MemberDirectory row where name matches PA name or any PP/PG name.
+    Returns the row (which always has the canonical PA name)."""
+    if not name or len(name.strip()) < 2:
+        return None
+    n = name.strip()
+    norm = _norm_name(n)
+
+    # Exact PA match (case-insensitive)
+    row = (await db.execute(
+        select(MemberDirectory).where(MemberDirectory.pa_name.ilike(n))
+    )).scalars().first()
+    if row:
+        return row
+
+    # Partial PA match (contains)
+    rows = (await db.execute(
+        select(MemberDirectory).where(MemberDirectory.pa_name.ilike(f"%{n}%")).limit(20)
+    )).scalars().all()
+    for r in rows:
+        if _norm_name(r.pa_name) == norm:
+            return r
+
+    # PP/PG match: scan pp_names_json (PostgreSQL JSON containment not available,
+    # use LIKE on the raw JSON text which is fast enough for <20k rows)
+    pp_rows = (await db.execute(
+        select(MemberDirectory).where(
+            MemberDirectory.pp_names_json.ilike(f"%{n}%")
+        ).limit(50)
+    )).scalars().all()
+    for r in pp_rows:
+        try:
+            pp_list = json.loads(r.pp_names_json or "[]")
+        except Exception:
+            continue
+        for pp in pp_list:
+            if _norm_name(pp) == norm:
+                return r
+
+    return None
+
+
+async def resolve_contributor_name(db: AsyncSession, name: str) -> dict | None:
+    """Given any name (PA or PP), return dict with canonical pa_name, ipi_number, role.
+    Returns None if not found in member directory."""
+    member = await lookup_member(db, name)
+    if not member:
+        return None
+    return {
+        "pa_name": member.pa_name,
+        "ipi_number": member.ipi_number or None,
+        "role": member.role,
+    }
+
+
+async def search_members(db: AsyncSession, q: str, limit: int = 25) -> list[MemberDirectory]:
+    """Search member directory by PA name or PP names."""
+    if not q or len(q.strip()) < 1:
+        return []
+    q = q.strip()
+    rows = (await db.execute(
+        select(MemberDirectory).where(
+            or_(
+                MemberDirectory.pa_name.ilike(f"%{q}%"),
+                MemberDirectory.pp_names_json.ilike(f"%{q}%"),
+            )
+        ).limit(limit)
+    )).scalars().all()
+    return rows

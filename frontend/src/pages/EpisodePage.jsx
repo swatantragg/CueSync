@@ -208,7 +208,8 @@ function EpPickerDropdown({ sortedEps, currentEpId, onPick }) {
 }
 
 export default function EpisodePage() {
-  const { activeProject, activeEpisode, currentUser, isAdmin, updateProject, updateEpisode, setActiveEpisodeId, setNotifications, setScreen } = useApp();
+  const { activeProject, activeEpisode, currentUser, isAdmin, isReviewer, updateProject, updateEpisode, setActiveEpisodeId, setNotifications, setScreen } = useApp();
+  const canReviewRole = isAdmin || isReviewer;
   const [adminReviewNote, setAdminReviewNote] = useState("");
   const [suggestNote, setSuggestNote] = useState("");
   const [activity, setActivity] = useState([]);
@@ -815,7 +816,7 @@ export default function EpisodePage() {
           </div>
           ); })()}
         </div>
-        {sortedEps.length > 1 && !isAdmin && (
+        {sortedEps.length > 1 && !canReviewRole && (
           <div className="flex justify-end mb-6">
             <button
               onClick={() => setShowCopyModal(true)}
@@ -842,7 +843,7 @@ export default function EpisodePage() {
 
         <div className="mb-3 flex items-center justify-between">
           <SectionTitle title={`Song Details (${ep.cues.length})`} />
-          {!isAdmin && (
+          {!canReviewRole && (
             <button
               onClick={addSong}
               className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl font-medium hover:opacity-90 transition"
@@ -858,7 +859,7 @@ export default function EpisodePage() {
               key={cue.id}
               cue={cue}
               idx={idx}
-              isAdmin={isAdmin}
+              isAdmin={canReviewRole}
               onUpdate={updateCue}
               onContribUpdate={updateContrib}
               onContribAdd={addContrib}
@@ -873,11 +874,11 @@ export default function EpisodePage() {
           ))}
         </div>
 
-        {!isAdmin && (ep.status === "in_progress" || ep.status === "pending" || ep.status === "rejected" || ep.status === "edited") && (
+        {!canReviewRole && (ep.status === "in_progress" || ep.status === "pending" || ep.status === "rejected" || ep.status === "edited") && (
           <div className="rounded-2xl border p-6 mb-6 flex items-center justify-between" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
             <div>
               <div className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>Ready to submit?</div>
-              <div className="text-xs mt-1" style={{ color: C.sub }}>Once submitted, the admin will review and approve or request changes.</div>
+              <div className="text-xs mt-1" style={{ color: C.sub }}>Once submitted, a reviewer will approve or request changes.</div>
             </div>
             <div className="flex items-center gap-3">
               {savedAt && <span className="text-xs" style={{ color: C.sub }}>Saved {savedAt}</span>}
@@ -901,26 +902,26 @@ export default function EpisodePage() {
           </div>
         )}
 
-        {ep.status === "submitted" && !isAdmin && (
+        {ep.status === "submitted" && !canReviewRole && (
           <div className="rounded-2xl border p-6 mb-6 text-center" style={{ background: "#F3E5F5", borderColor: "#CE93D8" }}>
             <Send className="w-6 h-6 mx-auto mb-2" style={{ color: "#7B1FA2" }} />
-            <div className="font-semibold" style={{ color: "#7B1FA2" }}>Submitted — awaiting admin review</div>
-            <div className="text-xs mt-1" style={{ color: "#9C27B0" }}>You'll be notified once the admin approves or requests changes.</div>
+            <div className="font-semibold" style={{ color: "#7B1FA2" }}>Submitted — awaiting review</div>
+            <div className="text-xs mt-1" style={{ color: "#9C27B0" }}>You'll be notified once a reviewer approves or requests changes.</div>
           </div>
         )}
 
-        {ep.status === "approved" && !isAdmin && (
+        {ep.status === "approved" && !canReviewRole && (
           <div className="rounded-2xl border p-6 mb-6 text-center" style={{ background: "#E8F5E9", borderColor: "#A5D6A7" }}>
             <CheckCircle2 className="w-6 h-6 mx-auto mb-2" style={{ color: C.ok }} />
-            <div className="font-semibold" style={{ color: C.ok }}>Approved by admin</div>
-            <div className="text-xs mt-1" style={{ color: C.mid }}>Cue sheets are ready for export (admin-only).</div>
+            <div className="font-semibold" style={{ color: C.ok }}>Approved</div>
+            <div className="text-xs mt-1" style={{ color: C.mid }}>Cue sheets are ready for export.</div>
           </div>
         )}
 
-        {isAdmin && (ep.status === "submitted" || ep.status === "edited") && (
+        {canReviewRole && (ep.status === "submitted" || ep.status === "edited") && (
           <div className="rounded-2xl overflow-hidden mb-6" style={{ background: C.dark }}>
             <div className="px-6 py-5 border-b" style={{ borderColor: C.mid }}>
-              <div className="font-semibold text-xl" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>Admin Review</div>
+              <div className="font-semibold text-xl" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>Review</div>
               <div className="text-xs mt-1" style={{ color: C.mint1 + "88" }}>Approve to enable export, reject with a note, or suggest changes without rejecting.</div>
             </div>
             <div className="p-6 space-y-5">
@@ -961,7 +962,7 @@ export default function EpisodePage() {
           </div>
         )}
 
-        {isAdmin && ep.status === "approved" && (
+        {canReviewRole && ep.status === "approved" && (
           <div className="rounded-2xl overflow-hidden mb-6" style={{ background: C.dark }}>
             <div className="px-6 py-5 flex items-center justify-between border-b" style={{ borderColor: C.mid }}>
               <div className="flex items-center gap-3">

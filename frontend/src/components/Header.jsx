@@ -6,9 +6,9 @@ import Notifications from "./Notifications";
 import HealthBadge from "./HealthBadge";
 
 export default function Header() {
-  const { currentUser, isAdmin, activeProject, activeEpisode, notifications, goHome, logout, setActiveEpisodeId, setScreen } = useApp();
+  const { currentUser, role, isAdmin, activeProject, activeEpisode, unreadCount, goHome, logout, setActiveEpisodeId, setScreen } = useApp();
   const [showNotifs, setShowNotifs] = useState(false);
-  const unread = notifications.filter((n) => !n.read).length;
+  const roleLabel = { admin: "Admin", work_delegator: "Work Delegator", reviewer: "Reviewer", editor: "Editor", viewer: "Viewer" }[role] || role;
 
   return (
     <header className="sticky top-0 z-30 border-b" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
@@ -19,7 +19,7 @@ export default function Header() {
           </div>
           <div>
             <div className="text-lg leading-none font-semibold" style={{ fontFamily: FONTS.serif, color: C.dark }}>CueSync</div>
-            <div className="text-[9px] uppercase tracking-widest mt-0.5" style={{ color: C.sub }}>v3 · {isAdmin ? "Admin" : "User"}</div>
+            <div className="text-[9px] uppercase tracking-widest mt-0.5" style={{ color: C.sub }}>v3 · {roleLabel}</div>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -27,9 +27,9 @@ export default function Header() {
           <div className="relative">
             <button onClick={() => setShowNotifs(!showNotifs)} className="relative p-2 rounded-xl hover:bg-gray-100 transition">
               <Bell className="w-5 h-5" style={{ color: C.sub }} />
-              {unread > 0 && (
+              {unreadCount > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white" style={{ background: C.danger }}>
-                  {unread}
+                  {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}
             </button>
@@ -40,8 +40,8 @@ export default function Header() {
               {currentUser.avatar}
             </div>
             <div>
-              <div className="text-xs font-medium" style={{ color: C.dark }}>{currentUser.name}</div>
-              <div className="text-[9px] uppercase tracking-wider" style={{ color: C.sub }}>{currentUser.role}</div>
+              <div className="text-xs font-medium" style={{ color: C.dark }}>{currentUser.full_name || currentUser.name}</div>
+              <div className="text-[9px] uppercase tracking-wider" style={{ color: C.sub }}>{roleLabel}</div>
             </div>
           </div>
           <button onClick={logout} className="text-xs flex items-center gap-1 hover:opacity-70" style={{ color: C.sub }}>

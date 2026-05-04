@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
 from app.models.cue import Contributor, CueEntry
-from app.models.library import ContributorLibrary, SongLibrary
+from app.models.library import ContributorLibrary, MemberDirectory, SongLibrary
 from app.models.user import User, UserRole
 from app.schemas.cue import LibraryUpsertIn
 from app.services.library_sync import (
@@ -19,7 +19,9 @@ from app.services.library_sync import (
     pad_ipi,
     parse_contributors,
     reconcile_library,
+    resolve_contributor_name,
     same_ipi,
+    search_members,
     upsert_contributor_library,
 )
 
@@ -161,6 +163,30 @@ async def search_contributors(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    results = []
+
+    # Search member directory first (PA + PP names) — returns canonical PA entries
+    if q and len(q.strip()) >= 2:
+        member_rows = await search_members(db, q.strip(), limit=25)
+        for m in member_rows:
+            try:
+                pp_names = json.loads(m.pp_names_json or "[]")
+            except Exception:
+                pp_names = []
+            ipi_val = pad_ipi(m.ipi_number) if m.ipi_number else None
+            results.append({
+                "id": m.id,
+                "name": m.pa_name,
+                "role": m.role,
+                "society": "IPRS",
+                "ipi_number": ipi_val,
+                "cae_number": None,
+                "alt_names": {},
+                "all_names": [m.pa_name] + pp_names,
+                "from_member_directory": True,
+            })
+
+    # Also search contributor_library (curated past entries)
     stmt = select(ContributorLibrary)
     filters = []
     if q:
@@ -169,7 +195,6 @@ async def search_contributors(
             ContributorLibrary.ipi_number.ilike(f"%{q}%"),
         ))
     if ipi:
-        # Normalize: strip leading zeros so "0001234" matches "1234" and "00001234"
         norm = normalize_ipi(ipi)
         if norm and norm != "0":
             filters.append(or_(
@@ -180,14 +205,18 @@ async def search_contributors(
         stmt = stmt.where(or_(*filters))
     if role:
         stmt = stmt.where(ContributorLibrary.role == role)
-    rows = (await db.execute(stmt.limit(50))).scalars().all()
-
-    # Post-filter: if IPI was given, keep only exact normalized matches
+    lib_rows = (await db.execute(stmt.limit(25))).scalars().all()
     if ipi:
         norm = normalize_ipi(ipi)
-        rows = [r for r in rows if same_ipi(r.ipi_number, ipi) or same_ipi(r.cae_number, ipi)] or rows
+        lib_rows = [r for r in lib_rows if same_ipi(r.ipi_number, ipi) or same_ipi(r.cae_number, ipi)] or lib_rows
 
-    return [_contrib_payload(r) for r in rows[:25]]
+    # Merge: skip ContributorLibrary entries already covered by member directory
+    member_pa_names = {r["name"].strip().lower() for r in results}
+    for r in lib_rows:
+        if r.name.strip().lower() not in member_pa_names:
+            results.append(_contrib_payload(r))
+
+    return results[:25]
 
 
 @router.get("/contributors/lookup")
@@ -200,6 +229,21 @@ async def lookup_contributor(
         return None
     n = name.strip()
 
+    # Priority 1: member directory (PA/PP lookup → always returns PA name + IPI)
+    member = await resolve_contributor_name(db, n)
+    if member:
+        ipi = pad_ipi(member["ipi_number"]) if member.get("ipi_number") else None
+        return {
+            "name": member["pa_name"],
+            "role": member["role"],
+            "society": "IPRS",
+            "ipi_number": ipi,
+            "all_names": [member["pa_name"]],
+            "alt_names": {},
+            "from_member_directory": True,
+        }
+
+    # Priority 2: contributor_library (curated past entries)
     lib_rows = (await db.execute(
         select(ContributorLibrary).where(ContributorLibrary.name.ilike(n)).limit(5)
     )).scalars().all()
@@ -212,6 +256,7 @@ async def lookup_contributor(
         p = _contrib_payload(best)
         return {**p, "ipi_number": p["ipi_number"]}
 
+    # Priority 3: cue contributor table
     cue_rows = (await db.execute(
         select(Contributor).where(Contributor.name.ilike(f"%{n}%")).limit(20)
     )).scalars().all()
@@ -229,4 +274,50 @@ async def lookup_contributor(
     return {
         "name": best.name, "role": best.role, "society": best.society,
         "ipi_number": ipi, "all_names": [best.name], "alt_names": {},
+    }
+
+
+# ── Member directory endpoints ─────────────────────────────────────────────
+
+def _member_payload(row: MemberDirectory) -> dict:
+    try:
+        pp_names = json.loads(row.pp_names_json or "[]")
+    except Exception:
+        pp_names = []
+    return {
+        "id": row.id,
+        "base_no": row.base_no,
+        "pa_name": row.pa_name,
+        "ipi_number": pad_ipi(row.ipi_number) if row.ipi_number else None,
+        "role": row.role,
+        "pp_names": pp_names,
+        "all_names": [row.pa_name] + pp_names,
+    }
+
+
+@router.get("/members")
+async def search_member_directory(
+    q: str = Query("", min_length=1),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    rows = await search_members(db, q, limit=25)
+    return [_member_payload(r) for r in rows]
+
+
+@router.get("/members/lookup")
+async def lookup_member_by_name(
+    name: str = Query("", min_length=2),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    result = await resolve_contributor_name(db, name)
+    if not result:
+        return None
+    ipi = pad_ipi(result["ipi_number"]) if result.get("ipi_number") else None
+    return {
+        "pa_name": result["pa_name"],
+        "ipi_number": ipi,
+        "role": result["role"],
+        "society": "IPRS",
     }

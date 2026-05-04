@@ -16,6 +16,7 @@ from app.services.library_sync import (
     propagate_cue_to_siblings,
     reconcile_library,
     upsert_contributor_library,
+    upsert_cue_to_library,
 )
 
 router = APIRouter()
@@ -70,7 +71,8 @@ async def update_cue(cid: int, payload: CueUpdate, db: AsyncSession = Depends(ge
     await db.flush()
     await reconcile_library(db, cue.song_title, cue.isrc)
     await propagate_cue_to_siblings(db, await _get_cue(cue.id, db))
-    # Auto-save contributors to shared library for future autofill suggestions
+    # Auto-save song + contributors to library on every user save
+    await upsert_cue_to_library(db, await _get_cue(cue.id, db))
     for co in payload.contributors:
         if co.name and co.ipi_number:
             await upsert_contributor_library(db, co.name, co.role or "Composer", co.ipi_number, co.society)

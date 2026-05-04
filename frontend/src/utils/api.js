@@ -76,6 +76,8 @@ export const api = {
   searchSongs: (q = "", songCode = "", isrc = "") => request(`/api/library/songs?q=${encodeURIComponent(q)}&song_code=${encodeURIComponent(songCode)}&isrc=${encodeURIComponent(isrc)}`),
   lookupContributor: (name) => request(`/api/library/contributors/lookup?name=${encodeURIComponent(name || "")}`),
   searchContributors: (q = "", ipi = "") => request(`/api/library/contributors?q=${encodeURIComponent(q)}&ipi=${encodeURIComponent(ipi)}`),
+  searchMembers: (q) => request(`/api/library/members?q=${encodeURIComponent(q || "")}`),
+  lookupMember: (name) => request(`/api/library/members/lookup?name=${encodeURIComponent(name || "")}`),
   cleanupLibrary: () => request("/api/library/cleanup", { method: "POST" }),
   submitEpisode: (eid) => request(`/api/episodes/${eid}/submit`, { method: "POST" }),
   approveEpisode: (eid) => request(`/api/episodes/${eid}/approve`, { method: "POST" }),
@@ -129,4 +131,32 @@ export const api = {
   },
   commitRough: (pid, payload) =>
     request(`/api/uploads/rough/project/${pid}/commit`, { method: "POST", body: payload }),
+
+  // ── Users ───────────────────────────────────────────────────────────────────
+  listUsers: () => request("/api/users/"),
+  listEditors: () => request("/api/users/editors"),
+  updateUserRole: (uid, role) => request(`/api/users/${uid}/role`, { method: "PUT", body: { role } }),
+  toggleUserActive: (uid, is_active) => request(`/api/users/${uid}/active`, { method: "PUT", body: { is_active } }),
+  deleteUser: (uid) => request(`/api/users/${uid}`, { method: "DELETE" }),
+
+  // ── Delegations ─────────────────────────────────────────────────────────────
+  listDelegations: () => request("/api/delegations/"),
+  getDelegation: (id) => request(`/api/delegations/${id}`),
+  createDelegation: (payload) => request("/api/delegations/", { method: "POST", body: payload }),
+  updateDelegation: (id, payload) => request(`/api/delegations/${id}`, { method: "PUT", body: payload }),
+  deleteDelegation: (id) => request(`/api/delegations/${id}`, { method: "DELETE" }),
+  suggestProjects: (q) => request(`/api/delegations/projects/suggest?q=${encodeURIComponent(q || "")}`),
+  editorActivity: (uid) => request(`/api/delegations/activity/editor/${uid}`),
+
+  // ── Notifications ───────────────────────────────────────────────────────────
+  listNotifications: () => request("/api/notifications/"),
+  unreadCount: () => request("/api/notifications/unread-count"),
+  markNotifRead: (id) => request(`/api/notifications/${id}/read`, { method: "POST" }),
+  markAllRead: () => request("/api/notifications/read-all", { method: "POST" }),
+
+  // ── Stats & Review ──────────────────────────────────────────────────────────
+  projectStats: () => request("/api/projects/stats/overview"),
+  searchByBgComposer: (q) => request(`/api/projects/search/bg-composer?q=${encodeURIComponent(q || "")}`),
+  submittedEpisodes: () => request("/api/activity/submitted-episodes"),
+  editorActivityLog: (uid) => request(`/api/activity/editor/${uid}`),
 };

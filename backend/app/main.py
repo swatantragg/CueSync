@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import Base, engine
+import app.models.work_delegation  # noqa: F401 — ensure table is registered
+import app.models.notification      # noqa: F401 — ensure table is registered
 from app.services.library_sync import (
     cleanup_contributor_duplicates,
     cleanup_cue_contributor_duplicates,
@@ -50,6 +52,9 @@ MIGRATIONS = [
     "ALTER TABLE song_library ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
     "ALTER TABLE song_library ADD COLUMN IF NOT EXISTS alt_titles TEXT",
     "ALTER TABLE contributor_library ADD COLUMN IF NOT EXISTS alt_names TEXT",
+    # member_directory is created by create_all; these guard against partial states
+    "CREATE INDEX IF NOT EXISTS ix_member_pa_name ON member_directory(pa_name)",
+    "CREATE INDEX IF NOT EXISTS ix_member_ipi ON member_directory(ipi_number)",
     "ALTER TABLE song_library DROP CONSTRAINT IF EXISTS song_library_title_key",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_song_library_isrc ON song_library(isrc) WHERE isrc IS NOT NULL",
     "SELECT setval('projects_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM projects), 1))) FROM projects_id_seq",
@@ -59,9 +64,22 @@ MIGRATIONS = [
 ]
 
 
+ENUM_VALUES = ["WORK_DELEGATOR", "REVIEWER"]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
+        # ALTER TYPE ADD VALUE cannot run inside a transaction — use AUTOCOMMIT engine
+        ac_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
+        for val in ENUM_VALUES:
+            try:
+                async with ac_engine.connect() as conn:
+                    await conn.execute(text(f"ALTER TYPE userrole ADD VALUE IF NOT EXISTS '{val}'"))
+                print(f"[enum-migration] ensured userrole value: {val}")
+            except Exception as me:
+                print(f"[enum-migration] skipped '{val}': {me}")
+
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             for sql in MIGRATIONS:
