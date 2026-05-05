@@ -8,6 +8,10 @@ from app.core.database import Base
 
 
 class UsageType(str, enum.Enum):
+    BI = "bi"
+    BV = "bv"
+    FI = "fi"
+    FV = "fv"
     THEME = "theme"
     BACKGROUND = "background"
     VISUAL = "visual"
@@ -23,7 +27,7 @@ class CueEntry(Base):
     episode_id: Mapped[int] = mapped_column(ForeignKey("episodes.id", ondelete="CASCADE"), index=True, nullable=False)
 
     song_title: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
-    usage_type: Mapped[UsageType] = mapped_column(Enum(UsageType), default=UsageType.BACKGROUND)
+    usage_type: Mapped[UsageType] = mapped_column(Enum(UsageType), default=UsageType.BI)
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False)
     usage_count: Mapped[int] = mapped_column(Integer, default=1)
 

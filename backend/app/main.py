@@ -64,7 +64,8 @@ MIGRATIONS = [
 ]
 
 
-ENUM_VALUES = ["WORK_DELEGATOR", "REVIEWER"]
+USER_ROLE_ENUM_VALUES = ["WORK_DELEGATOR", "REVIEWER"]
+USAGE_TYPE_ENUM_VALUES = ["BI", "BV", "FI", "FV"]
 
 
 @asynccontextmanager
@@ -72,11 +73,18 @@ async def lifespan(app: FastAPI):
     try:
         # ALTER TYPE ADD VALUE cannot run inside a transaction — use AUTOCOMMIT engine
         ac_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
-        for val in ENUM_VALUES:
+        for val in USER_ROLE_ENUM_VALUES:
             try:
                 async with ac_engine.connect() as conn:
                     await conn.execute(text(f"ALTER TYPE userrole ADD VALUE IF NOT EXISTS '{val}'"))
                 print(f"[enum-migration] ensured userrole value: {val}")
+            except Exception as me:
+                print(f"[enum-migration] skipped '{val}': {me}")
+        for val in USAGE_TYPE_ENUM_VALUES:
+            try:
+                async with ac_engine.connect() as conn:
+                    await conn.execute(text(f"ALTER TYPE usagetype ADD VALUE IF NOT EXISTS '{val}'"))
+                print(f"[enum-migration] ensured usagetype value: {val}")
             except Exception as me:
                 print(f"[enum-migration] skipped '{val}': {me}")
 

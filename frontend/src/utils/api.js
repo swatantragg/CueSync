@@ -159,4 +159,22 @@ export const api = {
   searchByBgComposer: (q) => request(`/api/projects/search/bg-composer?q=${encodeURIComponent(q || "")}`),
   submittedEpisodes: () => request("/api/activity/submitted-episodes"),
   editorActivityLog: (uid) => request(`/api/activity/editor/${uid}`),
+
+  // ── Reviewer serial view ────────────────────────────────────────────────────
+  reviewerSerials: () => request("/api/activity/reviewer-serials"),
+  reviewerSerialEpisodes: (pid) => request(`/api/activity/reviewer-serials/${pid}`),
+
+  downloadBulkExport: async (projectId, society, fromEp, toEp, filename) => {
+    const t = tokenStore.get();
+    const url = apiUrl(
+      `/api/exports/bulk/project/${projectId}?society=${society}&from_ep=${fromEp}&to_ep=${toEp}`
+    );
+    const res = await fetch(url, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+  },
 };

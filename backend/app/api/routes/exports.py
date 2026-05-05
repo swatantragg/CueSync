@@ -3,7 +3,7 @@ import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,6 +14,7 @@ from app.models.episode import Episode
 from app.models.project import Project
 from app.models.user import User
 from app.services.exporters import build_export
+from app.services.exporters.iprs import build_iprs_bulk
 
 router = APIRouter()
 
@@ -31,7 +32,10 @@ async def export_episode(
     if not ep:
         raise HTTPException(404)
     proj = await db.get(Project, ep.project_id)
-    data = build_export(society, proj, ep)
+    total_ep_count = (await db.execute(
+        select(func.count()).select_from(Episode).where(Episode.project_id == proj.id)
+    )).scalar() or 0
+    data = build_export(society, proj, ep, total_ep_count=total_ep_count)
     fname = f"{proj.title}_EP{ep.episode_number}_{society.upper()}.xlsx"
     return StreamingResponse(
         io.BytesIO(data),
@@ -59,6 +63,17 @@ async def bulk_export(
             Episode.episode_number <= to_ep,
         ).options(selectinload(Episode.cues).selectinload(CueEntry.contributors)).order_by(Episode.episode_number)
     )).scalars().all()
+    total_ep_count = (await db.execute(
+        select(func.count()).select_from(Episode).where(Episode.project_id == project_id)
+    )).scalar() or 0
+    if society == "iprs":
+        data = build_iprs_bulk(proj, eps, total_ep_count=total_ep_count)
+        fname = f"{proj.title}_IPRS_EP{from_ep}-{to_ep}.xlsx"
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for ep in eps:

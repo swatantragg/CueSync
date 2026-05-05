@@ -46,6 +46,13 @@ export default function SerialPage() {
   if (!activeProject) return null;
   const proj = activeProject;
 
+  const fmtDur = (sec) => {
+    if (!sec) return "—";
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  };
+
   const handleImport = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -350,7 +357,7 @@ export default function SerialPage() {
                     <td className="px-5 py-3 font-mono text-sm">{String(ep.number).padStart(2, "0")}</td>
                     <td className="px-5 py-3 text-xs font-medium" style={{ color: C.dark }}>{ep.title || "—"}</td>
                     <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{ep.airDate || "—"}</td>
-                    <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{ep.totalDuration}</td>
+                    <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{fmtDur(ep.totalDuration)}</td>
                     <td className="px-5 py-3" style={{ color: C.sub }}>{ep.cues.length}</td>
                     <td className="px-5 py-3"><StatusBadge status={ep.status} /></td>
                     <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>{lastEdit ? `${lastEdit.name} · ${lastEdit.at}` : "—"}</td>

@@ -10,11 +10,12 @@ from app.models.cue import Contributor, CueEntry
 from app.models.library import ContributorLibrary, MemberDirectory, SongLibrary
 from app.models.user import User, UserRole
 from app.schemas.cue import LibraryUpsertIn
+from app.services.cue_rules import apply_share_rules
 from app.services.library_sync import (
     cleanup_contributor_duplicates,
     cleanup_song_duplicates,
     dedup_contributors,
-    find_library_match,
+    find_autofill_library_match,
     normalize_ipi,
     pad_ipi,
     parse_contributors,
@@ -95,7 +96,7 @@ async def lookup_song(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    match = await find_library_match(db, title or None, isrc or None)
+    match = await find_autofill_library_match(db, title or None, isrc or None, None)
     return _lib_payload(match) if match else None
 
 
@@ -108,7 +109,7 @@ async def upsert_song(payload: LibraryUpsertIn, db: AsyncSession = Depends(get_d
         if not payload.isrc:
             entry = (await db.execute(select(SongLibrary).where(SongLibrary.title.ilike(payload.title.strip())))).scalar_one_or_none()
 
-    contributors_json = json.dumps(dedup_contributors([c.model_dump() for c in payload.contributors]))
+    contributors_json = json.dumps(apply_share_rules(dedup_contributors([c.model_dump() for c in payload.contributors])))
 
     if entry:
         entry.title = payload.title.strip()

@@ -2,6 +2,8 @@ import re
 from io import BytesIO
 from openpyxl import load_workbook
 
+from app.services.cue_rules import apply_share_rules, role_key, usage_value_from_code
+
 CODE_MAP = {
     "BI": "Background Instrumental",
     "BV": "Background Vocal",
@@ -14,18 +16,18 @@ CODE_MAP = {
 
 USAGE_TO_ENUM = {
     # IPRS codes
-    "Background Instrumental": "instrumental",
-    "Background Vocal":        "vocal",
-    "Featured Vocal":          "vocal",
-    "Featured Instrumental":   "instrumental",
+    "Background Instrumental": "bi",
+    "Background Vocal":        "bv",
+    "Featured Vocal":          "fv",
+    "Featured Instrumental":   "fi",
     "Opening / Title":         "theme",
     "Visual Instrumental":     "visual",
     "Visual Vocal":            "visual",
     # VSG / plain-text usage labels
     "Opening Theme":           "theme",
-    "Background Music":        "instrumental",
+    "Background Music":        "bi",
     "Visual":                  "visual",
-    "Featured":                "vocal",
+    "Featured":                "fv",
     "End Title":               "theme",
     "Logo":                    "theme",
 }
@@ -69,19 +71,21 @@ def _dur_to_sec(v):
         return 0
 
 
-def _vsg_usage(label: str) -> str:
-    l = label.strip().lower()
+def _vsg_usage(label: str, title: str = "") -> str:
+    l = f"{label} {title}".strip().lower()
     if "opening" in l or "title" in l or "logo" in l or "end title" in l:
         return "theme"
+    if "feature" in l or "featured" in l:
+        return "fv" if "vocal" in l or "song" in l else "fi"
+    if "background" in l or "backgrou" in l or re.search(r"\bbg\b", l):
+        return "bv" if "vocal" in l else "bi"
     if "vocal" in l:
-        return "vocal"
-    if "instrumental" in l or "background music" in l or "background" in l:
-        return "instrumental"
+        return "bv"
+    if "instrumental" in l or "background music" in l:
+        return "bi"
     if "visual" in l:
         return "visual"
-    if "featured" in l:
-        return "vocal"
-    return "background"
+    return "bi"
 
 
 def _ep_num_from_name(name: str) -> int | None:
@@ -173,11 +177,12 @@ def _parse_vsg_sheet(rows: list, sheet_or_filename: str, hdr_idx: int) -> tuple[
         if title_cell:
             # New song — first row for a song has "First name"/"Last name"/"Role" labels
             if current:
+                current["contributors"] = apply_share_rules(current["contributors"])
                 cues.append(current)
             order += 1
             current = {
                 "song_title":  title_cell,
-                "usage_type":  _vsg_usage(usage_str),
+                "usage_type":  _vsg_usage(usage_str, title_cell),
                 "usage_label": usage_str,
                 "duration_sec": _dur_to_sec(dur_cell),
                 "usage_count": 1,
@@ -190,7 +195,7 @@ def _parse_vsg_sheet(rows: list, sheet_or_filename: str, hdr_idx: int) -> tuple[
         elif current and first and first.lower() not in ("first name", ""):
             # Contributor row
             name = (first + (" " + last if last else "")).strip()
-            role = VSG_ROLE_MAP.get(role_raw, role_raw.title() or "Composer")
+            role = role_key(VSG_ROLE_MAP.get(role_raw, role_raw.title() or "Composer"))
             if name:
                 current["contributors"].append({
                     "name":          name,
@@ -201,6 +206,7 @@ def _parse_vsg_sheet(rows: list, sheet_or_filename: str, hdr_idx: int) -> tuple[
                 })
 
     if current:
+        current["contributors"] = apply_share_rules(current["contributors"])
         cues.append(current)
 
     ep = {
@@ -298,12 +304,13 @@ def _parse_iprs_sheet(rows: list, sheet_name: str, project_meta: dict, episodes:
             name   = _s(row[6])
             if title:
                 if current:
+                    current["contributors"] = apply_share_rules(current["contributors"])
                     ep["cues"].append(current)
                 order += 1
                 usage = CODE_MAP.get(code.upper(), code or "Background Instrumental")
                 current = {
                     "song_title":  title,
-                    "usage_type":  USAGE_TO_ENUM.get(usage, "background"),
+                    "usage_type":  USAGE_TO_ENUM.get(usage, usage_value_from_code(code or usage)),
                     "usage_label": usage,
                     "usage_count": int(row[2]) if isinstance(row[2], (int, float)) else 1,
                     "song_code":   _s(row[3]) or None,
@@ -314,12 +321,13 @@ def _parse_iprs_sheet(rows: list, sheet_name: str, project_meta: dict, episodes:
             if current and name and role_c:
                 current["contributors"].append({
                     "name":          name,
-                    "role":          ROLE_MAP.get(role_c.upper(), role_c),
+                    "role":          role_key(ROLE_MAP.get(role_c.upper(), role_c)),
                     "society":       _s(row[7]) or None,
                     "share_percent": float(row[8]) if isinstance(row[8], (int, float)) else 0,
                     "ipi_number":    _s(row[9]) or None,
                 })
         if current:
+            current["contributors"] = apply_share_rules(current["contributors"])
             ep["cues"].append(current)
 
     if ep["episode_number"]:
