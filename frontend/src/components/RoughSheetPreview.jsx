@@ -5,12 +5,14 @@ import {
 } from "lucide-react";
 import { C, FONTS } from "../styles/palette";
 import { api } from "../utils/api";
+import { applyShareRules } from "../utils/cueRules";
 
 const USAGE_OPTIONS = [
+  { value: "bi",           label: "BI - BG Instrumental" },
+  { value: "bv",           label: "BV - BG Vocal" },
+  { value: "fi",           label: "FI - Feature Instrumental" },
+  { value: "fv",           label: "FV - Feature Vocal" },
   { value: "theme",        label: "Theme" },
-  { value: "background",   label: "Background" },
-  { value: "vocal",        label: "Vocal" },
-  { value: "instrumental", label: "Instrumental" },
   { value: "visual",       label: "Visual" },
   { value: "other",        label: "Other" },
 ];
@@ -66,7 +68,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
       cues: ep.cues.map(cue => ({
         ...cue,
         _open: false,
-        contributors: cue.contributors.map(c => ({ ...c })),
+        contributors: applyShareRules(cue.contributors.map(c => ({ ...c, share: Number(c.share_percent) || 0 }))),
       })),
     }))
   );
@@ -90,7 +92,9 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
       ...e,
       cues: e.cues.map((c, j) => j !== ci ? c : {
         ...c,
-        contributors: c.contributors.map((ct, k) => k !== cIdx ? ct : { ...ct, ...patch }),
+        contributors: patch.role
+          ? applyShareRules(c.contributors.map((ct, k) => k !== cIdx ? ct : { ...ct, ...patch }))
+          : c.contributors.map((ct, k) => k !== cIdx ? ct : { ...ct, ...patch }),
       }),
     }));
 
@@ -99,9 +103,9 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
       ...e,
       cues: e.cues.map((c, j) => j !== ci ? c : {
         ...c,
-        contributors: [...c.contributors, {
+        contributors: applyShareRules([...c.contributors, {
           name: "", role: "Composer", society: "", share_percent: 0, ipi_number: "", library_match: false,
-        }],
+        }]),
       }),
     }));
 
@@ -110,7 +114,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
       ...e,
       cues: e.cues.map((c, j) => j !== ci ? c : {
         ...c,
-        contributors: c.contributors.filter((_, k) => k !== cIdx),
+        contributors: applyShareRules(c.contributors.filter((_, k) => k !== cIdx)),
       }),
     }));
 
@@ -144,7 +148,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
               name:          c.name,
               role:          c.role || "Composer",
               society:       c.society || null,
-              share_percent: Number(c.share_percent) || 0,
+              share_percent: Number(c.share_percent ?? c.share) || 0,
               ipi_number:    c.ipi_number || null,
             })),
           })),

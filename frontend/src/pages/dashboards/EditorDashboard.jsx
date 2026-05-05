@@ -13,7 +13,26 @@ const STATUS_STYLE = {
 };
 
 function MyWorkTab() {
-  const { currentUser, setActiveProjectId, setScreen } = useApp();
+  const { currentUser, setActiveProjectId, setScreen, setProjects } = useApp();
+
+  const openSerial = async (projectId) => {
+    try {
+      const p = await api.getProject(projectId);
+      setProjects((prev) => {
+        const mapped = {
+          ...p, year: p.production_year, productionCompany: p.production_company,
+          channel: p.channel_name, countryOfOrigin: p.country,
+          backgroundMusicComposer: p.bg_music_composer,
+          episodes: prev.find((x) => x.id === p.id)?.episodes || [],
+        };
+        return prev.some((x) => x.id === p.id)
+          ? prev.map((x) => x.id === p.id ? { ...x, ...mapped } : x)
+          : [...prev, mapped];
+      });
+    } catch (_) {}
+    setActiveProjectId(projectId);
+    setScreen("serial");
+  };
   const [delegations, setDelegations] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -80,7 +99,7 @@ function MyWorkTab() {
                 {Object.entries(STATUS_STYLE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
               {d.project_id && (
-                <button onClick={() => { setActiveProjectId(d.project_id); setScreen("serial"); }}
+                <button onClick={() => openSerial(d.project_id)}
                   className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-90"
                   style={{ background: C.dark, color: C.mint4 }}>
                   Open Serial →
@@ -97,7 +116,26 @@ function MyWorkTab() {
 function ReviewFeedbackTab() {
   const [episodes, setEpisodes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { setActiveProjectId, setScreen } = useApp();
+  const { setActiveProjectId, setScreen, setProjects } = useApp();
+
+  const openSerial = async (projectId) => {
+    try {
+      const p = await api.getProject(projectId);
+      setProjects((prev) => {
+        const mapped = {
+          ...p, year: p.production_year, productionCompany: p.production_company,
+          channel: p.channel_name, countryOfOrigin: p.country,
+          backgroundMusicComposer: p.bg_music_composer,
+          episodes: prev.find((x) => x.id === p.id)?.episodes || [],
+        };
+        return prev.some((x) => x.id === p.id)
+          ? prev.map((x) => x.id === p.id ? { ...x, ...mapped } : x)
+          : [...prev, mapped];
+      });
+    } catch (_) {}
+    setActiveProjectId(projectId);
+    setScreen("serial");
+  };
 
   useEffect(() => {
     // Load projects and their episodes to find rejected/suggested ones
@@ -158,7 +196,7 @@ function ReviewFeedbackTab() {
                   )}
                 </div>
               </div>
-              <button onClick={() => { setActiveProjectId(ep.project_id); setScreen("serial"); }}
+              <button onClick={() => openSerial(ep.project_id)}
                 className="text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 hover:opacity-90"
                 style={{ background: C.dark, color: C.mint4 }}>
                 Open →

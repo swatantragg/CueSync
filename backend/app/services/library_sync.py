@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.cue import Contributor, CueEntry
 from app.models.library import ContributorLibrary, MemberDirectory, SongLibrary
+from app.services.cue_rules import apply_share_rules, computed_share
 
 _TITLE_TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -157,6 +158,29 @@ def _pick_best_title_match(rows: list[SongLibrary], title: str | None) -> SongLi
     return best
 
 
+def _title_variants(row: SongLibrary) -> list[str]:
+    variants = [row.title]
+    if row.alt_titles:
+        try:
+            variants.extend(json.loads(row.alt_titles))
+        except Exception:
+            pass
+    return [v for v in variants if v]
+
+
+def _pick_exact_title_match(rows: list[SongLibrary], title: str | None) -> SongLibrary | None:
+    needle = _norm_title(title)
+    if not needle:
+        return None
+    matches = [
+        row for row in rows
+        if any(_norm_title(candidate) == needle for candidate in _title_variants(row))
+    ]
+    if not matches:
+        return None
+    return max(matches, key=lambda row: (*_entry_richness(row), row.id))
+
+
 async def _lookup_by_title(db: AsyncSession, title: str | None) -> SongLibrary | None:
     if not title:
         return None
@@ -190,16 +214,81 @@ async def find_library_match(db: AsyncSession, title: str | None, isrc: str | No
     return await _lookup_by_title(db, title)
 
 
+async def find_autofill_library_match(
+    db: AsyncSession,
+    title: str | None,
+    isrc: str | None,
+    song_code: str | None,
+) -> SongLibrary | None:
+    """Find a library row for automatic filling.
+    Uses strict identifiers first, then exact normalized title. Avoids fuzzy matches."""
+    strict_match, _ = await find_strict_library_match(db, isrc, song_code)
+    if strict_match:
+        return strict_match
+    clean_title = (title or "").strip()
+    if not clean_title:
+        return None
+
+    rows = (await db.execute(
+        select(SongLibrary).where(or_(
+            SongLibrary.title.ilike(clean_title),
+            SongLibrary.alt_titles.ilike(f"%{clean_title}%"),
+        ))
+    )).scalars().all()
+    exact = _pick_exact_title_match(rows, title)
+    if exact:
+        return exact
+
+    terms = _match_terms(title)
+    if not terms:
+        return None
+    rows = (await db.execute(
+        select(SongLibrary)
+        .where(or_(*[
+            clause
+            for term in terms
+            for clause in (
+                SongLibrary.title.ilike(f"%{term}%"),
+                SongLibrary.alt_titles.ilike(f"%{term}%"),
+            )
+        ]))
+        .limit(200)
+    )).scalars().all()
+    return _pick_exact_title_match(rows, title)
+
+
 def serialize_contributors(cue: CueEntry) -> str:
     payload = [
         {
             "name": c.name, "role": c.role, "society": c.society,
-            "share_percent": float(c.share_percent or 0),
+            "share_percent": computed_share(c, cue.contributors or []),
             "ipi_number": c.ipi_number, "cae_number": c.cae_number,
         }
         for c in (cue.contributors or [])
     ]
     return json.dumps(payload)
+
+
+def _clean_id(value: str | None) -> str:
+    return (value or "").strip()
+
+
+def _library_link_matches_cue(entry: SongLibrary, cue: CueEntry) -> bool:
+    for field in ("isrc", "song_code", "work_number", "ascap_work_id"):
+        cue_val = _clean_id(getattr(cue, field))
+        entry_val = _clean_id(getattr(entry, field))
+        if cue_val and entry_val and cue_val.lower() != entry_val.lower():
+            return False
+
+    cue_title = _norm_title(cue.song_title)
+    entry_title = _norm_title(entry.title)
+    if cue_title and entry_title and cue_title != entry_title:
+        cue_has_ids = any(_clean_id(getattr(cue, f)) for f in ("isrc", "song_code", "work_number", "ascap_work_id"))
+        entry_has_ids = any(_clean_id(getattr(entry, f)) for f in ("isrc", "song_code", "work_number", "ascap_work_id"))
+        if not cue_has_ids or not entry_has_ids:
+            return False
+
+    return True
 
 
 def dedup_contributors(contribs: list[dict]) -> list[dict]:
@@ -232,15 +321,25 @@ def parse_contributors(entry: SongLibrary) -> list[dict]:
 
 
 async def propagate_cue_to_siblings(db: AsyncSession, source: CueEntry) -> int:
-    """Copy scalar fields + contributors from `source` to same-title/same-ISRC cues
-    across the whole DB where that data is missing. Idempotent. Returns count affected."""
-    if not source.song_title and not source.isrc:
+    """Copy missing fields only when cues share strict song identifiers."""
+    identity_filters = []
+    if _clean_id(source.isrc):
+        identity_filters.append(func.lower(CueEntry.isrc) == source.isrc.strip().lower())
+    for source_field in ("song_code", "work_number", "ascap_work_id"):
+        value = _clean_id(getattr(source, source_field))
+        if value:
+            identity_filters.append(or_(
+                func.lower(CueEntry.song_code) == value.lower(),
+                func.lower(CueEntry.work_number) == value.lower(),
+                func.lower(CueEntry.ascap_work_id) == value.lower(),
+            ))
+    if not identity_filters:
         return 0
-    stmt = select(CueEntry).where(CueEntry.id != source.id).options(selectinload(CueEntry.contributors))
-    if source.isrc:
-        stmt = stmt.where(CueEntry.isrc == source.isrc)
-    else:
-        stmt = stmt.where(CueEntry.song_title.ilike(source.song_title.strip()), CueEntry.isrc.is_(None))
+    stmt = (
+        select(CueEntry)
+        .where(CueEntry.id != source.id, or_(*identity_filters))
+        .options(selectinload(CueEntry.contributors))
+    )
     siblings = (await db.execute(stmt)).scalars().all()
     src_contribs = source.contributors or []
     count = 0
@@ -339,10 +438,10 @@ async def upsert_cue_to_library(db: AsyncSession, cue: CueEntry) -> SongLibrary 
 
     contribs_json = serialize_contributors(cue) if cue.contributors else None
 
-    # Already linked to library — update it with fresh data
+    # Already linked to library — update it only if the link still matches this cue.
     if cue.library_id:
         entry = await db.get(SongLibrary, cue.library_id)
-        if entry:
+        if entry and _library_link_matches_cue(entry, cue):
             for field, val in [
                 ("isrc", cue.isrc), ("song_code", cue.song_code),
                 ("work_number", cue.work_number), ("ascap_work_id", cue.ascap_work_id),
@@ -353,6 +452,7 @@ async def upsert_cue_to_library(db: AsyncSession, cue: CueEntry) -> SongLibrary 
             if contribs_json:
                 entry.contributors_json = contribs_json
             return entry
+        cue.library_id = None
 
     # Not linked — try strict match first
     existing, _ = await find_strict_library_match(db, cue.isrc, cue.song_code)
@@ -678,7 +778,7 @@ async def apply_library_to_cue(db: AsyncSession, cue: CueEntry, entry: SongLibra
         select(func.count(Contributor.id)).where(Contributor.cue_id == cue.id)
     )).scalar() or 0
     if contrib_count == 0:
-        for c in parse_contributors(entry):
+        for c in apply_share_rules(parse_contributors(entry)):
             db.add(Contributor(
                 cue_id=cue.id,
                 name=c.get("name", ""), role=c.get("role", "Composer"),

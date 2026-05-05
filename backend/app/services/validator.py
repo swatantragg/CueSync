@@ -1,4 +1,5 @@
 from app.models.episode import Episode
+from app.services.cue_rules import computed_share, role_key
 
 IPRS_REQUIRED = ["isrc"]
 PRS_REQUIRED = ["work_number"]
@@ -8,12 +9,16 @@ ASCAP_REQUIRED = ["ascap_work_id"]
 def validate_episode(ep: Episode) -> dict:
     issues: list[dict] = []
     for cue in ep.cues:
-        role_groups: dict[str, float] = {}
-        for c in cue.contributors:
-            role_groups[c.role] = role_groups.get(c.role, 0) + float(c.share_percent or 0)
-        for role, total in role_groups.items():
-            if round(total, 2) != 100.0:
-                issues.append({"cue_id": cue.id, "type": "share_mismatch", "role": role, "total": total})
+        contributors = cue.contributors or []
+        total_share = sum(computed_share(c, contributors) for c in contributors)
+        if contributors and abs(total_share - 100) > 0.02:
+            issues.append({"cue_id": cue.id, "type": "share_mismatch", "total": round(total_share, 2)})
+        if contributors and not any(role_key(c.role) in {"Composer", "CA"} for c in contributors):
+            issues.append({"cue_id": cue.id, "type": "missing_share_role", "role": "Composer"})
+        if contributors and not any(role_key(c.role) in {"Author", "CA"} for c in contributors):
+            issues.append({"cue_id": cue.id, "type": "missing_share_role", "role": "Author"})
+        if contributors and not any(role_key(c.role) == "Publisher" for c in contributors):
+            issues.append({"cue_id": cue.id, "type": "missing_share_role", "role": "Publisher"})
         for f in IPRS_REQUIRED:
             if not getattr(cue, f):
                 issues.append({"cue_id": cue.id, "type": "missing_iprs", "field": f})

@@ -9,6 +9,15 @@ import InpSm from "./InpSm";
 import { api } from "../utils/api";
 
 const CONTRIB_ROLES = ["CA", "Composer", "Author", "Publisher", "Performer", "Arranger"];
+const USAGE_OPTIONS = [
+  ["bi", "BI - BG Instrumental"],
+  ["bv", "BV - BG Vocal"],
+  ["fi", "FI - Feature Instrumental"],
+  ["fv", "FV - Feature Vocal"],
+  ["theme", "Theme"],
+  ["visual", "Visual"],
+  ["other", "Other"],
+];
 // Display sort order: CA → Composer → Author → Publisher → Arranger → Performer
 const ROLE_ORDER = { CA: 0, Composer: 1, Author: 2, Publisher: 3, Arranger: 4, Performer: 99 };
 
@@ -28,6 +37,28 @@ function RoleSelect({ value, onChange, readOnly }) {
     >
       {CONTRIB_ROLES.map((r) => (
         <option key={r} value={r}>{r}</option>
+      ))}
+    </select>
+  );
+}
+
+function UsageSelect({ value, onChange, readOnly }) {
+  const normalized = { background: "bi", instrumental: "bi", vocal: "bv" }[value] || value || "bi";
+  return (
+    <select
+      value={normalized}
+      onChange={(e) => onChange?.(e.target.value)}
+      disabled={readOnly}
+      className="w-full border rounded-lg px-2 py-2 text-sm focus:outline-none"
+      style={{
+        borderColor: C.mint1 + "44",
+        background: readOnly ? "#f9fafb" : C.white,
+        color: C.dark,
+        fontFamily: FONTS.sans,
+      }}
+    >
+      {USAGE_OPTIONS.map(([v, label]) => (
+        <option key={v} value={v}>{label}</option>
       ))}
     </select>
   );
@@ -111,6 +142,24 @@ function SongDropdown({ suggestions, onSelect, onClose }) {
   );
 }
 
+const _toSec = (v) => {
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return v;
+  const s = String(v).trim();
+  const m = s.match(/^(\d+):(\d+)(?::(\d+))?$/);
+  if (m) return (+m[1]) * (m[3] ? 3600 : 60) + (+m[2]) * (m[3] ? 60 : 1) + (+m[3] || 0);
+  const n = Number(s);
+  return isNaN(n) ? null : n;
+};
+const _secToMinSec = (val) => {
+  if (val == null || val === "") return "";
+  const s = typeof val === "number" ? val : _toSec(val);
+  if (s == null) return typeof val === "string" ? val : "";
+  const m = Math.floor(s / 60);
+  const sec = Math.round(s % 60);
+  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+};
+
 export default function CueCard({
   cue, idx, isAdmin,
   onUpdate, onContribUpdate, onContribAdd, onContribRemove, onContribsRemove,
@@ -129,7 +178,7 @@ export default function CueCard({
   const sum = cue.contributors.reduce(
     (a, x) => a + (x.role === "Performer" ? 0 : Number(x.share || 0)), 0
   );
-  const ok = sum === 100;
+  const ok = Math.abs(sum - 100) < 0.02;
 
   const sortedContribs = [...cue.contributors].sort(
     (a, b) => (ROLE_ORDER[a.role] ?? 5) - (ROLE_ORDER[b.role] ?? 5)
@@ -234,7 +283,6 @@ export default function CueCard({
 
   const handleRoleChange = (coId, newRole) => {
     onContribUpdate(cue.id, coId, "role", newRole);
-    if (newRole === "Performer") onContribUpdate(cue.id, coId, "share", 0);
   };
 
   return (
@@ -298,10 +346,10 @@ export default function CueCard({
             <Inp value={cue.songTitle} onChange={(v) => onUpdate(cue.id, "songTitle", v)} onBlur={handleSongTitleBlur} readOnly={false} />
           </Fld>
           <Fld label="Usage Type" tag="auto">
-            <Inp value={cue.usageType} onChange={(v) => onUpdate(cue.id, "usageType", v)} readOnly={false} />
+            <UsageSelect value={cue.usageType} onChange={(v) => onUpdate(cue.id, "usageType", v)} readOnly={false} />
           </Fld>
           <Fld label="Duration" tag="auto">
-            <Inp value={cue.duration} onChange={(v) => onUpdate(cue.id, "duration", v)} readOnly={false} mono />
+            <Inp value={typeof cue.duration === "number" ? _secToMinSec(cue.duration) : (cue.duration ?? "")} onChange={(v) => onUpdate(cue.id, "duration", v)} readOnly={false} mono />
           </Fld>
           <Fld label="Usages" tag="auto">
             <Inp value={cue.usages} onChange={(v) => onUpdate(cue.id, "usages", parseInt(v) || 1)} readOnly={false} mono />

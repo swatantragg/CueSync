@@ -21,7 +21,7 @@ class ContributorOut(ContributorIn):
 
 class CueBase(BaseModel):
     song_title: str
-    usage_type: UsageType = UsageType.BACKGROUND
+    usage_type: UsageType = UsageType.BI
     duration_sec: int
     usage_count: int = 1
     isrc: str | None = None

@@ -1,3 +1,4 @@
+from app.services.cue_rules import computed_share, role_label, sorted_cues, usage_code
 from app.services.exporters._common import fmt_dur, new_wb, save_bytes, set_row
 
 
@@ -12,19 +13,20 @@ def build_prs(project, episode) -> bytes:
     set_row(ws, 3, headers, bold=True, fill=True)
 
     r = 4
-    for idx, cue in enumerate(episode.cues, 1):
+    for idx, cue in enumerate(sorted_cues(episode.cues), 1):
         first = True
+        contributors = cue.contributors or []
         for c in cue.contributors or [None]:
             set_row(ws, r, [
                 idx if first else "",
                 cue.work_number if first else "",
                 cue.song_title if first else "",
                 fmt_dur(cue.duration_sec) if first else "",
-                cue.usage_type.value if first else "",
+                usage_code(cue.usage_type, cue.song_title) if first else "",
                 c.name if c else "",
-                c.role if c else "",
+                role_label(c.role) if c else "",
                 c.cae_number if c else "",
-                float(c.share_percent) if c else "",
+                computed_share(c, contributors) if c else "",
                 c.society if c else "",
             ])
             r += 1

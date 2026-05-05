@@ -8,11 +8,12 @@ from app.core.deps import get_current_user, require_roles
 from app.models.cue import Contributor, CueEntry
 from app.models.user import User, UserRole
 from app.schemas.cue import CueCreate, CueOut, CueUpdate
+from app.services.cue_rules import apply_share_rules, usage_code as get_char_code
 from app.services.audit import log_activity
 from app.services.library_sync import (
     apply_library_to_cue,
     dedup_contributors,
-    find_library_match,
+    find_autofill_library_match,
     propagate_cue_to_siblings,
     reconcile_library,
     upsert_contributor_library,
@@ -28,11 +29,11 @@ async def create_cue(episode_id: int, payload: CueCreate, db: AsyncSession = Dep
     cue = CueEntry(episode_id=episode_id, **data)
     db.add(cue)
     await db.flush()
-    for cd in dedup_contributors([co.model_dump() for co in payload.contributors]):
+    char_code = get_char_code(payload.usage_type, payload.song_title)
+    for cd in apply_share_rules(dedup_contributors([co.model_dump() for co in payload.contributors]), char_code=char_code):
         db.add(Contributor(cue_id=cue.id, **cd))
     await db.flush()
-    # Autofill from library or from same-song siblings
-    lib = await find_library_match(db, cue.song_title, cue.isrc)
+    lib = await find_autofill_library_match(db, cue.song_title, cue.isrc, cue.song_code)
     if lib:
         await apply_library_to_cue(db, cue, lib)
     await propagate_cue_to_siblings(db, await _get_cue(cue.id, db))
@@ -66,7 +67,12 @@ async def update_cue(cid: int, payload: CueUpdate, db: AsyncSession = Depends(ge
     for old in list(cue.contributors):
         await db.delete(old)
     await db.flush()
-    for cd in dedup_contributors([co.model_dump() for co in payload.contributors]):
+    char_code = get_char_code(payload.usage_type, payload.song_title)
+    for cd in apply_share_rules(
+        dedup_contributors([co.model_dump() for co in payload.contributors]),
+        char_code=char_code,
+        preserve_manual=True,
+    ):
         db.add(Contributor(cue_id=cue.id, **cd))
     await db.flush()
     await reconcile_library(db, cue.song_title, cue.isrc)

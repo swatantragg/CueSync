@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
 from app.models.audit import AuditLog
+from app.models.cue import CueEntry
 from app.models.episode import Episode
 from app.models.project import Project
 from app.models.user import User, UserRole
+
+_REVIEWER_ROLES = (UserRole.ADMIN, UserRole.REVIEWER)
 
 router = APIRouter()
 
@@ -69,6 +72,74 @@ async def submitted_episodes(
         "project_title": projects[ep.project_id].title if ep.project_id in projects else None,
         "air_date": ep.air_date,
     } for ep in rows]
+
+
+@router.get("/reviewer-serials")
+async def reviewer_serials(
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """All projects that have at least one submitted or approved episode, with counts."""
+    if current.role not in _REVIEWER_ROLES:
+        raise HTTPException(403)
+    projects = (await db.execute(select(Project).order_by(Project.title))).scalars().all()
+    result = []
+    for proj in projects:
+        eps = (await db.execute(
+            select(Episode).where(Episode.project_id == proj.id)
+        )).scalars().all()
+        submitted = sum(1 for e in eps if e.status == "submitted")
+        approved  = sum(1 for e in eps if e.status == "approved")
+        if submitted == 0 and approved == 0:
+            continue
+        result.append({
+            "project_id":      proj.id,
+            "project_title":   proj.title,
+            "total_episodes":  len(eps),
+            "submitted_count": submitted,
+            "approved_count":  approved,
+        })
+    return result
+
+
+@router.get("/reviewer-serials/{project_id}")
+async def reviewer_serial_episodes(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """All episodes for a project, visible to reviewer for status/download management."""
+    if current.role not in _REVIEWER_ROLES:
+        raise HTTPException(403)
+    proj = await db.get(Project, project_id)
+    if not proj:
+        raise HTTPException(404)
+    eps = (await db.execute(
+        select(Episode).where(Episode.project_id == project_id).order_by(Episode.episode_number)
+    )).scalars().all()
+    ep_ids = [ep.id for ep in eps]
+    song_counts: dict[int, int] = {}
+    if ep_ids:
+        rows = (await db.execute(
+            select(CueEntry.episode_id, func.count(CueEntry.id).label("cnt"))
+            .where(CueEntry.episode_id.in_(ep_ids))
+            .group_by(CueEntry.episode_id)
+        )).all()
+        song_counts = {r.episode_id: r.cnt for r in rows}
+    return {
+        "project_id":    proj.id,
+        "project_title": proj.title,
+        "channel":       proj.channel_name or "",
+        "episodes": [{
+            "id":                ep.id,
+            "episode_number":    ep.episode_number,
+            "title":             ep.title or "",
+            "status":            ep.status,
+            "air_date":          str(ep.air_date) if ep.air_date else None,
+            "total_duration_sec": ep.total_duration_sec,
+            "song_count":        song_counts.get(ep.id, 0),
+        } for ep in eps],
+    }
 
 
 @router.get("/editor/{user_id}", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.WORK_DELEGATOR))])

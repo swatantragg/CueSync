@@ -14,13 +14,13 @@ from app.models.episode import Episode
 from app.models.library import ContributorLibrary, SongLibrary
 from app.models.project import Project
 from app.models.user import User, UserRole
+from app.services.cue_rules import apply_share_rules, usage_code as get_char_code
 from app.services.audit import log_activity
 from app.services.library_sync import (
     apply_library_to_cue,
     dedup_contributors,
-    find_library_match,
+    find_autofill_library_match,
     find_strict_library_match,
-    parse_contributors,
     resolve_contributor_name,
 )
 from app.services.rough_parser import parse_rough_workbook
@@ -93,7 +93,7 @@ class ContributorIn(BaseModel):
 
 class CueIn(BaseModel):
     song_title: str
-    usage_type: str = "background"
+    usage_type: str = "bi"
     duration_sec: int = 0
     usage_count: int = 1
     song_code: str | None = None
@@ -166,7 +166,7 @@ async def upload_rough(
             try:
                 ut = UsageType(c["usage_type"])
             except Exception:
-                ut = UsageType.BACKGROUND
+                ut = UsageType.BI
             cue = CueEntry(
                 episode_id=e.id,
                 song_title=c["song_title"],
@@ -181,7 +181,7 @@ async def upload_rough(
             for ctb in c["contributors"]:
                 db.add(Contributor(cue_id=cue.id, **ctb))
             await db.flush()  # flush before library check so contrib count is accurate
-            lib = await find_library_match(db, cue.song_title, cue.isrc)
+            lib = await find_autofill_library_match(db, cue.song_title, cue.isrc, cue.song_code)
             if lib:
                 await apply_library_to_cue(db, cue, lib)
         created_eps.append(e.id)
@@ -237,6 +237,14 @@ async def preview_rough(
                     isrc=cue.get("isrc"),
                     song_code=cue.get("song_code"),
                 )
+                if not lib:
+                    lib = await find_autofill_library_match(
+                        db,
+                        title=cue.get("song_title"),
+                        isrc=cue.get("isrc"),
+                        song_code=cue.get("song_code"),
+                    )
+                    match_type = "title" if lib else "none"
 
                 enriched_cue: dict = {
                     "song_title":    cue["song_title"],
@@ -273,7 +281,8 @@ async def preview_rough(
                         "library_match": bool(ec.get("ipi_number") and ec.get("ipi_number") != rc.get("ipi_number")),
                     })
 
-                enriched_cue["contributors"] = enriched_raw
+                preview_char_code = get_char_code(cue.get("usage_type"), cue.get("song_title"))
+                enriched_cue["contributors"] = apply_share_rules(enriched_raw, char_code=preview_char_code)
 
                 enriched_cues.append(enriched_cue)
 
@@ -341,7 +350,7 @@ async def commit_rough(
                 try:
                     ut = UsageType(cue_data.usage_type)
                 except Exception:
-                    ut = UsageType.BACKGROUND
+                    ut = UsageType.BI
 
                 cue = CueEntry(
                     episode_id=e.id,
@@ -363,8 +372,9 @@ async def commit_rough(
                 if cue_data.library_id:
                     lib_entry = await db.get(SongLibrary, cue_data.library_id)
                 if lib_entry is None:
-                    lib_entry, _ = await find_strict_library_match(
+                    lib_entry = await find_autofill_library_match(
                         db,
+                        title=cue_data.song_title,
                         isrc=cue_data.isrc,
                         song_code=cue_data.song_code,
                     )
@@ -375,10 +385,15 @@ async def commit_rough(
                     if not cue.library_id:
                         cue.library_id = lib_entry.id
 
-                for ctb in dedup_contributors([{
-                    "name": c.name, "role": c.role, "society": c.society,
-                    "share_percent": c.share_percent or 0, "ipi_number": c.ipi_number,
-                } for c in cue_data.contributors]):
+                cue_char_code = get_char_code(cue_data.usage_type, cue_data.song_title)
+                for ctb in apply_share_rules(
+                    dedup_contributors([{
+                        "name": c.name, "role": c.role, "society": c.society,
+                        "share_percent": c.share_percent or 0, "ipi_number": c.ipi_number,
+                    } for c in cue_data.contributors]),
+                    char_code=cue_char_code,
+                    preserve_manual=True,
+                ):
                     db.add(Contributor(cue_id=cue.id, **ctb))
 
             created_eps.append(e.id)
@@ -402,17 +417,25 @@ async def commit_rough(
 # ── Internal helper ───────────────────────────────────────────────────────────
 
 async def _autofill_from_neighbors(db: AsyncSession, project_id: int):
+    def identity_keys(cue: CueEntry) -> list[tuple[str, str]]:
+        keys: list[tuple[str, str]] = []
+        if cue.isrc and cue.isrc.strip():
+            keys.append(("isrc", cue.isrc.strip().lower()))
+        for field in ("song_code", "work_number", "ascap_work_id"):
+            value = (getattr(cue, field) or "").strip()
+            if value:
+                keys.append(("code", value.lower()))
+        return keys
+
     all_cues = (await db.execute(
         select(CueEntry).options(selectinload(CueEntry.contributors))
     )).scalars().all()
 
-    library: dict[str, CueEntry] = {}
+    library: dict[tuple[str, str], CueEntry] = {}
     for c in all_cues:
-        key = (c.song_title or "").strip().lower()
-        if not key:
-            continue
-        if key not in library and c.contributors:
-            library[key] = c
+        for key in identity_keys(c):
+            if key not in library and c.contributors:
+                library[key] = c
 
     target_eps = (await db.execute(
         select(Episode).where(Episode.project_id == project_id)
@@ -420,8 +443,7 @@ async def _autofill_from_neighbors(db: AsyncSession, project_id: int):
     )).scalars().all()
     for ep in target_eps:
         for cue in ep.cues:
-            key = (cue.song_title or "").strip().lower()
-            src = library.get(key)
+            src = next((library[k] for k in identity_keys(cue) if k in library), None)
             if not src or src.id == cue.id:
                 continue
             if not cue.contributors and src.contributors:

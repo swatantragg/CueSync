@@ -1,9 +1,10 @@
+from app.services.cue_rules import computed_share, role_label, sorted_cues, usage_code
 from app.services.exporters._common import fmt_dur, new_wb, save_bytes, set_row
 
 
 def _flatten(contribs) -> str:
     return "; ".join(
-        f"{c.name} ({c.role}, {float(c.share_percent):.2f}%)" + (f" IPI:{c.ipi_number}" if c.ipi_number else "")
+        f"{c.name} ({role_label(c.role)}, {computed_share(c, contribs):.2f}%)" + (f" IPI:{c.ipi_number}" if c.ipi_number else "")
         for c in contribs
     )
 
@@ -18,12 +19,12 @@ def build_ascap(project, episode) -> bytes:
     headers = ["Cue #", "ASCAP Work ID", "Song Title", "Usage", "Duration", "Usages", "Contributors (flat)", "Validation"]
     set_row(ws, 3, headers, bold=True, fill=True)
 
-    for idx, cue in enumerate(episode.cues, 1):
+    for idx, cue in enumerate(sorted_cues(episode.cues), 1):
         set_row(ws, 3 + idx, [
             idx,
             cue.ascap_work_id or "",
             cue.song_title,
-            cue.usage_type.value,
+            usage_code(cue.usage_type, cue.song_title),
             fmt_dur(cue.duration_sec),
             cue.usage_count,
             _flatten(cue.contributors),

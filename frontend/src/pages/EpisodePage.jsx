@@ -15,6 +15,7 @@ import { uid } from "../utils/uid";
 import { now } from "../utils/format";
 import { useApp } from "../context/AppContext";
 import { STATUS } from "../constants/status";
+import { applyShareRules } from "../utils/cueRules";
 
 function CopyEpisodesModal({ episodes, currentEpId, onCopy, onClose }) {
   const [checked, setChecked] = useState(new Set());
@@ -221,9 +222,14 @@ export default function EpisodePage() {
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [copyToast, setCopyToast] = useState(null); // array of episode numbers
   // saves: key → { timer: id|null, fn: () => Promise }
-  // flying: Set of in-flight Promises (may reject — errors propagate to flushAll)
+  // flying: Map<key, in-flight Promise> — keyed same as saves so saves chain in order
   const saves = useRef(new Map());
-  const flying = useRef(new Set());
+  const flying = useRef(new Map());
+  const latestEpisodeRef = useRef(activeEpisode);
+
+  useEffect(() => {
+    latestEpisodeRef.current = activeEpisode;
+  }, [activeEpisode]);
 
   const schedule = (key, fn) => {
     const prev = saves.current.get(key);
@@ -234,32 +240,36 @@ export default function EpisodePage() {
         const entry = saves.current.get(key);
         if (!entry) return;
         saves.current.delete(key);
-        let p;
-        // p may reject — keep it rejecting so flushAll can detect failures
-        p = entry.fn().finally(() => flying.current.delete(p));
-        // suppress unhandled-rejection warning; log + re-queue (skip 401 — token expired, re-queue is futile)
+        // Chain after any in-flight save for the same key so newer data always wins
+        const prevFlight = flying.current.get(key);
+        const p = (prevFlight ? prevFlight.catch(() => {}) : Promise.resolve())
+          .then(() => entry.fn())
+          .finally(() => { if (flying.current.get(key) === p) flying.current.delete(key); });
+        // suppress unhandled-rejection; log + re-queue (skip 401 — token expired)
         p.catch((e) => {
           console.error("[auto-save]", key, e);
           const is401 = e?.message === "Invalid token" || String(e?.message).includes("401");
-          if (!is401 && !saves.current.has(key)) saves.current.set(key, { fn: entry.fn, timer: null });
+          if (!is401 && !saves.current.has(key) && !flying.current.has(key)) saves.current.set(key, { fn: entry.fn, timer: null });
         });
-        flying.current.add(p);
+        flying.current.set(key, p);
       }, 0),
     });
   };
 
   const flushAll = async () => {
-    // Drain all pending (cancel timers, run immediately)
+    // Drain all pending (cancel timers, run immediately, chained after any in-flight for same key)
     const pending = [...saves.current.entries()];
     for (const [, { timer }] of pending) if (timer) clearTimeout(timer);
     saves.current.clear();
-    for (const [, { fn }] of pending) {
-      let p;
-      p = fn().finally(() => flying.current.delete(p));
-      flying.current.add(p);
+    for (const [key, { fn }] of pending) {
+      const prevFlight = flying.current.get(key);
+      const p = (prevFlight ? prevFlight.catch(() => {}) : Promise.resolve())
+        .then(() => fn())
+        .finally(() => { if (flying.current.get(key) === p) flying.current.delete(key); });
+      flying.current.set(key, p);
     }
     // Wait for ALL in-flight (timer-started + just-started above)
-    const results = await Promise.allSettled([...flying.current]);
+    const results = await Promise.allSettled([...flying.current.values()]);
     const failures = results.filter((r) => r.status === "rejected");
     if (failures.length) {
       throw new Error(failures.map((r) => r.reason?.message || "Save failed").join("; "));
@@ -293,8 +303,9 @@ export default function EpisodePage() {
       }));
       const epKey = `ep:${activeEpisode.id}`;
       const hasPendingSave = saves.current.has(epKey);
-      updateEpisode(activeProject.id, activeEpisode.id, (e) => ({
-        ...e,
+      const currentEp = latestEpisodeRef.current || activeEpisode;
+      const refreshedEpisode = {
+        ...currentEp,
         number: epRow.episode_number, title: epRow.title, airDate: epRow.air_date,
         totalDuration: epRow.total_duration_sec, musicalDuration: epRow.musical_duration_sec,
         bg_instrumental_duration_sec: epRow.bg_instrumental_duration_sec,
@@ -303,7 +314,7 @@ export default function EpisodePage() {
         rejectionNote: epRow.rejection_note,
         reviewNote: epRow.review_note,
         // keep in-memory cueDetails if a save is pending (user is typing) — DB may be stale
-        cueDetails: hasPendingSave ? (e.cueDetails || {}) : {
+        cueDetails: hasPendingSave ? (currentEp.cueDetails || {}) : {
           serialTitle: epRow.cue_serial_title ?? null,
           channel: epRow.cue_channel ?? null,
           serialType: epRow.cue_serial_type ?? null,
@@ -328,7 +339,9 @@ export default function EpisodePage() {
             share: Number(ct.share_percent), ipi: ct.ipi_number || ct.cae_number,
           })),
         })),
-      }));
+      };
+      latestEpisodeRef.current = refreshedEpisode;
+      updateEpisode(activeProject.id, activeEpisode.id, () => refreshedEpisode);
       await refreshActivity(activeEpisode.id);
     } catch (e) { console.error("episode refresh failed", e); }
     finally { setLoading(false); }
@@ -347,6 +360,14 @@ export default function EpisodePage() {
   const prevEp = epIdx > 0 ? sortedEps[epIdx - 1] : null;
   const nextEp = epIdx >= 0 && epIdx < sortedEps.length - 1 ? sortedEps[epIdx + 1] : null;
 
+  const replaceCurrentEpisode = (producer) => {
+    const base = latestEpisodeRef.current || ep;
+    const next = producer(base);
+    latestEpisodeRef.current = next;
+    updateEpisode(proj.id, next.id, () => next);
+    return next;
+  };
+
   const toSec = (v) => {
     if (v == null || v === "") return null;
     if (typeof v === "number") return v;
@@ -355,6 +376,15 @@ export default function EpisodePage() {
     if (m) return (+m[1]) * (m[3] ? 3600 : 60) + (+m[2]) * (m[3] ? 60 : 1) + (+m[3] || 0);
     const n = Number(s);
     return isNaN(n) ? null : n;
+  };
+
+  const secToMinSec = (val) => {
+    if (val == null || val === "") return "";
+    const s = typeof val === "number" ? val : toSec(val);
+    if (s == null) return typeof val === "string" ? val : "";
+    const m = Math.floor(s / 60);
+    const sec = Math.round(s % 60);
+    return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   };
 
   const calcMusicalDuration = (e) =>
@@ -383,9 +413,8 @@ export default function EpisodePage() {
     };
   };
 
-  const saveEpisode = (e) => schedule(`ep:${e.id}`, () => api.updateEpisode(e.id, buildEpisodePayload(e)));
-  const saveCue = (cue) => schedule(`cue:${cue.id}`, () => api.updateCue(cue.id, {
-    song_title: cue.songTitle || "", usage_type: cue.usageType || "background",
+  const buildCuePayload = (cue) => ({
+    song_title: cue.songTitle || "", usage_type: cue.usageType || "bi",
     duration_sec: toSec(cue.duration) || 0, usage_count: Number(cue.usages) || 1,
     song_code: cue.songCode || null, isrc: cue.isrc || null,
     work_number: cue.workNumber || null, ascap_work_id: cue.ascapWorkId || null,
@@ -395,14 +424,24 @@ export default function EpisodePage() {
       name: ct.name || "", role: ct.role || "Composer", society: ct.society || null,
       share_percent: Number(ct.share) || 0, ipi_number: ct.ipi || null,
     })),
-  }));
+  });
+
+  const saveEpisode = (e) => schedule(`ep:${e.id}`, () => api.updateEpisode(e.id, buildEpisodePayload(e)));
+  const saveCue = (cue) => schedule(`cue:${cue.id}`, () => api.updateCue(cue.id, buildCuePayload(cue)));
+
+  const persistCurrentSnapshot = async () => {
+    await flushAll().catch(() => {}); // stale/failed auto-saves don't block submit; explicit saves below handle current state
+    const snapshot = latestEpisodeRef.current || ep;
+    await api.updateEpisode(snapshot.id, buildEpisodePayload(snapshot));
+    for (const cue of snapshot.cues || []) {
+      await api.updateCue(cue.id, buildCuePayload(cue));
+    }
+    return snapshot;
+  };
+
   const editEpCue = (k, v) => {
-    let updated;
-    updateEpisode(proj.id, ep.id, (e) => {
-      updated = { ...e, cueDetails: { ...(e.cueDetails || {}), [k]: v } };
-      return updated;
-    });
-    if (updated) saveEpisode(updated);
+    const updated = replaceCurrentEpisode((e) => ({ ...e, cueDetails: { ...(e.cueDetails || {}), [k]: v } }));
+    saveEpisode(updated);
   };
 
   const addSong = async () => {
@@ -410,7 +449,7 @@ export default function EpisodePage() {
       await flushAll();
       await api.createCue(ep.id, {
         song_title: "",
-        usage_type: "background",
+        usage_type: "bi",
         duration_sec: 0,
         usage_count: 1,
         order_index: ep.cues.length,
@@ -422,33 +461,27 @@ export default function EpisodePage() {
 
   const applyLibraryMatch = (cid, libEntry) => {
     if (!libEntry) return;
-    const contribs = (libEntry.contributors || []).map((c) => ({
+    const contribs = applyShareRules((libEntry.contributors || []).map((c) => ({
       id: uid(), name: c.name || "", role: c.role || "Composer",
       society: c.society || "", share: Number(c.share_percent) || 0, ipi: c.ipi_number || "",
+    })));
+    const updated = replaceCurrentEpisode((e) => ({
+      ...e,
+      cues: e.cues.map((c) => {
+        if (c.id !== cid) return c;
+        return {
+          ...c,
+          ...(libEntry.isrc ? { isrc: libEntry.isrc } : {}),
+          ...(libEntry.song_code ? { songCode: libEntry.song_code } : {}),
+          ...(libEntry.singer ? { singer: libEntry.singer } : {}),
+          ...(libEntry.work_number ? { workNumber: libEntry.work_number } : {}),
+          ...(libEntry.ascap_work_id ? { ascapWorkId: libEntry.ascap_work_id } : {}),
+          contributors: contribs.length > 0 ? contribs : c.contributors,
+        };
+      }),
     }));
-    let updated;
-    updateEpisode(proj.id, ep.id, (e) => {
-      updated = {
-        ...e,
-        cues: e.cues.map((c) => {
-          if (c.id !== cid) return c;
-          return {
-            ...c,
-            ...(libEntry.isrc ? { isrc: libEntry.isrc } : {}),
-            ...(libEntry.song_code ? { songCode: libEntry.song_code } : {}),
-            ...(libEntry.singer ? { singer: libEntry.singer } : {}),
-            ...(libEntry.work_number ? { workNumber: libEntry.work_number } : {}),
-            ...(libEntry.ascap_work_id ? { ascapWorkId: libEntry.ascap_work_id } : {}),
-            contributors: contribs.length > 0 ? contribs : c.contributors,
-          };
-        }),
-      };
-      return updated;
-    });
-    if (updated) {
-      const updatedCue = updated.cues.find((c) => c.id === cid);
-      if (updatedCue) saveCue(updatedCue);
-    }
+    const updatedCue = updated.cues.find((c) => c.id === cid);
+    if (updatedCue) saveCue(updatedCue);
   };
 
   const copyToEpisodes = async (targetEids) => {
@@ -513,9 +546,8 @@ export default function EpisodePage() {
     } catch (e) { await showAlert(e?.message || String(e), { title: "Copy Failed", variant: "error" }); }
   };
   const editEp = (k, v) => {
-    let updated;
-    updateEpisode(proj.id, ep.id, (e) => { updated = { ...e, [k]: v }; return updated; });
-    if (updated) saveEpisode(updated);
+    const updated = replaceCurrentEpisode((e) => ({ ...e, [k]: v }));
+    saveEpisode(updated);
   };
   const uploader = USERS_DB.find((u) => u.id === ep.uploadedBy);
   const uploadRow = [...activity].reverse().find((r) => r.action === "upload");
@@ -529,7 +561,7 @@ export default function EpisodePage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await flushAll();
+      await persistCurrentSnapshot();
       await refreshEpisode();
       setSavedAt(new Date().toLocaleTimeString());
     } catch (e) { console.error(e); await showAlert(e?.message || String(e), { title: "Save Failed", variant: "error" }); }
@@ -538,7 +570,7 @@ export default function EpisodePage() {
 
   const shareCheck = (c) => {
     const s = c.contributors.reduce((a, x) => a + Number(x.share || 0), 0);
-    return { ok: s === 100, sum: s };
+    return { ok: Math.abs(s - 100) < 0.02, sum: Math.round(s * 100) / 100 };
   };
   const allValid = ep.cues.every((c) => shareCheck(c).ok);
 
@@ -546,26 +578,24 @@ export default function EpisodePage() {
     updateEpisode(proj.id, ep.id, (e) => ({ ...e, editHistory: [...e.editHistory, { userId: currentUser.id, name: currentUser.name, action, at: now() }] }));
   };
   const updateCue = (cid, k, v) => {
-    let updated, newEp;
-    updateEpisode(proj.id, ep.id, (e) => {
-      newEp = {
-        ...e,
-        status: e.status === "pending" || e.status === "rejected" ? "in_progress" : e.status,
-        cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, [k]: v }; return updated; } return c; }),
-      };
-      return newEp;
-    });
+    let updated;
+    const newEp = replaceCurrentEpisode((e) => ({
+      ...e,
+      status: e.status === "pending" || e.status === "rejected" ? "in_progress" : e.status,
+      cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, [k]: v }; return updated; } return c; }),
+    }));
     if (updated) saveCue(updated);
     if (newEp && k === "duration") saveEpisode(newEp);
   };
   const updateContrib = (cid, coid, k, v) => {
     let updated;
-    updateEpisode(proj.id, ep.id, (e) => ({
+    replaceCurrentEpisode((e) => ({
       ...e,
       status: e.status === "pending" || e.status === "rejected" ? "in_progress" : e.status,
       cues: e.cues.map((c) => {
         if (c.id !== cid) return c;
-        updated = { ...c, contributors: c.contributors.map((co) => (co.id === coid ? { ...co, [k]: v } : co)) };
+        const contributors = c.contributors.map((co) => (co.id === coid ? { ...co, [k]: v } : co));
+        updated = { ...c, contributors: k === "role" ? applyShareRules(contributors) : contributors };
         return updated;
       }),
     }));
@@ -573,7 +603,7 @@ export default function EpisodePage() {
   };
   const addContrib = (cid, afterId) => {
     let updated;
-    updateEpisode(proj.id, ep.id, (e) => ({
+    replaceCurrentEpisode((e) => ({
       ...e,
       cues: e.cues.map((c) => {
         if (c.id !== cid) return c;
@@ -587,7 +617,7 @@ export default function EpisodePage() {
         } else {
           newContribs = [...c.contributors, newCo];
         }
-        updated = { ...c, contributors: newContribs };
+        updated = { ...c, contributors: applyShareRules(newContribs) };
         return updated;
       }),
     }));
@@ -595,20 +625,20 @@ export default function EpisodePage() {
   };
   const removeContrib = (cid, coid) => {
     let updated;
-    updateEpisode(proj.id, ep.id, (e) => ({
+    replaceCurrentEpisode((e) => ({
       ...e,
-      cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, contributors: c.contributors.filter((co) => co.id !== coid) }; return updated; } return c; }),
+      cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, contributors: applyShareRules(c.contributors.filter((co) => co.id !== coid)) }; return updated; } return c; }),
     }));
     if (updated) saveCue(updated);
   };
   const removeContribs = (cid, coIds) => {
     const idSet = new Set(coIds);
     let updated;
-    updateEpisode(proj.id, ep.id, (e) => ({
+    replaceCurrentEpisode((e) => ({
       ...e,
       cues: e.cues.map((c) => {
         if (c.id !== cid) return c;
-        updated = { ...c, contributors: c.contributors.filter((co) => !idSet.has(co.id)) };
+        updated = { ...c, contributors: applyShareRules(c.contributors.filter((co) => !idSet.has(co.id))) };
         return updated;
       }),
     }));
@@ -621,7 +651,7 @@ export default function EpisodePage() {
       await flushAll();
       await api.createCue(ep.id, {
         song_title: cue.songTitle || "",
-        usage_type: cue.usageType || "background",
+        usage_type: cue.usageType || "bi",
         duration_sec: toSec(cue.duration) || 0,
         usage_count: Number(cue.usages) || 1,
         song_code: cue.songCode || null,
@@ -641,17 +671,16 @@ export default function EpisodePage() {
     } catch (e) { await showAlert(e.message, { title: "Duplicate Failed", variant: "error" }); }
   };
   const removeSong = (cid) => {
-    updateEpisode(proj.id, ep.id, (e) => ({ ...e, cues: e.cues.filter((c) => c.id !== cid) }));
+    replaceCurrentEpisode((e) => ({ ...e, cues: e.cues.filter((c) => c.id !== cid) }));
     addEditEntry("Removed a song");
     api.deleteCue(cid).catch(() => {});
   };
   const handleSubmit = async () => {
     try {
-      await flushAll();
-      await api.submitEpisode(ep.id);
+      const submittedSnapshot = await persistCurrentSnapshot();
+      await api.submitEpisode(submittedSnapshot.id);
       await refreshEpisode();
-      setNotifications((prev) => [...prev, { id: uid(), type: "submission", serial: proj.title, epNum: ep.number, message: `Episode ${ep.number} submitted for review.`, from: currentUser.name, at: now(), read: false }]);
-      if (nextEp) setTimeout(() => setActiveEpisodeId(nextEp.id), 400);
+      setNotifications((prev) => [...prev, { id: uid(), type: "submission", serial: proj.title, epNum: submittedSnapshot.number, message: `Episode ${submittedSnapshot.number} submitted for review.`, from: currentUser.name, at: now(), read: false }]);
     } catch (e) { await showAlert(e.message, { title: "Submit Failed", variant: "error" }); }
   };
   const handleApprove = async () => {
@@ -712,7 +741,7 @@ export default function EpisodePage() {
         </div>
       )}
       <main className="max-w-7xl mx-auto px-6 py-10">
-        <button onClick={async () => { await flushAll(); setActiveEpisodeId(null); setScreen("serial"); }} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}>
+        <button onClick={async () => { await flushAll().catch(() => {}); setActiveEpisodeId(null); setScreen("serial"); }} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}>
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Episodes
         </button>
         <div className="flex items-start justify-between mb-6">
@@ -770,9 +799,9 @@ export default function EpisodePage() {
           prevEp={prevEp} nextEp={nextEp} epIdx={epIdx}
           sortedEps={sortedEps} currentEpId={ep.id}
           showEpPicker={showEpPicker} setShowEpPicker={setShowEpPicker}
-          onPrev={async () => { if (prevEp) { await flushAll(); setActiveEpisodeId(prevEp.id); } }}
-          onNext={async () => { if (nextEp) { await flushAll(); setActiveEpisodeId(nextEp.id); } }}
-          onPick={async (e) => { await flushAll(); setActiveEpisodeId(e.id); setShowEpPicker(null); }}
+          onPrev={async () => { if (prevEp) { await flushAll().catch(() => {}); setActiveEpisodeId(prevEp.id); } }}
+          onNext={async () => { if (nextEp) { await flushAll().catch(() => {}); setActiveEpisodeId(nextEp.id); } }}
+          onPick={async (e) => { await flushAll().catch(() => {}); setActiveEpisodeId(e.id); setShowEpPicker(null); }}
         />
 
         {ep.status === "rejected" && ep.rejectionNote && (
@@ -836,8 +865,8 @@ export default function EpisodePage() {
             <Fld label="Episode #" tag="auto"><Inp value={ep.number} onChange={(v) => editEp("number", Number(v) || ep.number)} /></Fld>
             <Fld label="Episode Title" tag="auto"><Inp value={ep.title} onChange={(v) => editEp("title", v)} /></Fld>
             <Fld label="Air Date" tag="auto"><Inp value={ep.airDate} onChange={(v) => editEp("airDate", v)} /></Fld>
-            <Fld label="Total Duration" tag="auto"><Inp value={ep.totalDuration} onChange={(v) => editEp("totalDuration", v)} mono /></Fld>
-            <Fld label="Musical Duration" tag="auto"><Inp value={ep.cues.reduce((s, c) => s + (toSec(c.duration) || 0), 0)} readOnly mono /></Fld>
+            <Fld label="Total Duration" tag="auto"><Inp value={typeof ep.totalDuration === "number" ? secToMinSec(ep.totalDuration) : (ep.totalDuration ?? "")} onChange={(v) => editEp("totalDuration", v)} mono /></Fld>
+            <Fld label="Musical Duration" tag="auto"><Inp value={secToMinSec(ep.cues.reduce((s, c) => s + (toSec(c.duration) || 0), 0))} readOnly mono /></Fld>
           </div>
         </div>
 
@@ -994,9 +1023,9 @@ export default function EpisodePage() {
           prevEp={prevEp} nextEp={nextEp} epIdx={epIdx}
           sortedEps={sortedEps} currentEpId={ep.id}
           showEpPicker={showEpPicker} setShowEpPicker={setShowEpPicker}
-          onPrev={async () => { if (prevEp) { await flushAll(); setActiveEpisodeId(prevEp.id); } }}
-          onNext={async () => { if (nextEp) { await flushAll(); setActiveEpisodeId(nextEp.id); } }}
-          onPick={async (e) => { await flushAll(); setActiveEpisodeId(e.id); setShowEpPicker(null); }}
+          onPrev={async () => { if (prevEp) { await flushAll().catch(() => {}); setActiveEpisodeId(prevEp.id); } }}
+          onNext={async () => { if (nextEp) { await flushAll().catch(() => {}); setActiveEpisodeId(nextEp.id); } }}
+          onPick={async (e) => { await flushAll().catch(() => {}); setActiveEpisodeId(e.id); setShowEpPicker(null); }}
         />
       </main>
 
