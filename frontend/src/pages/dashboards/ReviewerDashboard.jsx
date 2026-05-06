@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle2, XCircle, MessageSquare, Download, Search, X,
   Layers, ChevronDown, FileDown, ChevronLeft, ChevronRight,
@@ -82,6 +82,16 @@ function Paginator({ page, total, onChange }) {
 function EpDownloadBtn({ episode, projectTitle }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy]  = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
 
   const download = async (soc) => {
     setOpen(false); setBusy(true);
@@ -96,7 +106,7 @@ function EpDownloadBtn({ episode, projectTitle }) {
   };
 
   return (
-    <div className="relative inline-block">
+    <div className="relative inline-block" ref={wrapRef}>
       <button onClick={() => setOpen((o) => !o)} disabled={busy}
         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
         style={{ background: "#E8F5E9", color: "#2E7D32" }}>
@@ -104,17 +114,14 @@ function EpDownloadBtn({ episode, projectTitle }) {
         <ChevronDown className="w-3 h-3" />
       </button>
       {open && (
-        <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-1 z-30 rounded-xl shadow-xl overflow-hidden min-w-[90px]"
-            style={{ background: C.white, border: `1px solid ${C.mint1}44` }}>
-            {["IPRS", "PRS", "ASCAP"].map((s) => (
-              <button key={s} onClick={() => download(s.toLowerCase())}
-                className="block w-full text-left px-4 py-2 text-xs hover:opacity-70"
-                style={{ color: C.dark }}>{s}</button>
-            ))}
-          </div>
-        </>
+        <div className="absolute right-0 mt-1 z-30 rounded-xl shadow-xl overflow-hidden min-w-[90px]"
+          style={{ background: C.white, border: `1px solid ${C.mint1}44` }}>
+          {["IPRS", "PRS", "ASCAP"].map((s) => (
+            <button key={s} onMouseDown={() => download(s.toLowerCase())}
+              className="block w-full text-left px-4 py-2 text-xs hover:opacity-70"
+              style={{ color: C.dark }}>{s}</button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -253,37 +260,35 @@ function EpisodeTable({ episodes, projectTitle, projectId, onReview, onRefresh, 
 
 // ── Bulk download bar ─────────────────────────────────────────────────────────
 function BulkDownloadBar({ serial }) {
-  const [society, setSociety] = useState("iprs");
-  const [fromEp,  setFromEp]  = useState("");
-  const [toEp,    setToEp]    = useState("");
-  const [busy,    setBusy]    = useState(false);
+  const [fromEp, setFromEp] = useState("");
+  const [toEp,   setToEp]   = useState("");
+  const [busy,   setBusy]   = useState(null); // null | "iprs" | "prs" | "ascap"
 
-  const go = async () => {
+  const go = async (society) => {
     const from = parseInt(fromEp, 10);
     const to   = parseInt(toEp,   10);
     if (!from || !to || from > to) {
       await showAlert("Enter a valid episode range (From ≤ To).", { variant: "warn" }); return;
     }
-    setBusy(true);
+    setBusy(society);
     try {
       const fname = `${serial.project_title}_${society.toUpperCase()}_EP${from}-${to}.xlsx`;
       await api.downloadBulkExport(serial.project_id, society, from, to, fname);
     } catch (ex) {
       await showAlert(ex.message, { title: "Download Failed", variant: "error" });
-    } finally { setBusy(false); }
+    } finally { setBusy(null); }
   };
+
+  const societies = [
+    { key: "iprs",  label: "IPRS" },
+    { key: "prs",   label: "PRS"  },
+    { key: "ascap", label: "ASCAP" },
+  ];
 
   return (
     <div className="flex items-center gap-3 flex-wrap p-3 rounded-xl"
       style={{ background: C.mint4 + "22", border: `1px solid ${C.mint1}33` }}>
       <span className="text-xs font-semibold" style={{ color: C.dark }}>Bulk Download</span>
-      <select value={society} onChange={(e) => setSociety(e.target.value)}
-        className="px-2 py-1.5 rounded-lg text-xs focus:outline-none"
-        style={{ background: C.white, color: C.dark, border: `1px solid ${C.mint1}44` }}>
-        <option value="iprs">IPRS</option>
-        <option value="prs">PRS</option>
-        <option value="ascap">ASCAP</option>
-      </select>
       <div className="flex items-center gap-1.5">
         <span className="text-xs" style={{ color: C.sub }}>Ep from</span>
         <input type="number" value={fromEp} onChange={(e) => setFromEp(e.target.value)}
@@ -296,11 +301,16 @@ function BulkDownloadBar({ serial }) {
           className="w-16 px-2 py-1.5 rounded-lg text-xs focus:outline-none text-center"
           style={{ background: C.white, color: C.dark, border: `1px solid ${C.mint1}44` }} />
       </div>
-      <button onClick={go} disabled={busy}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
-        style={{ background: C.dark, color: C.mint4 }}>
-        <FileDown className="w-3.5 h-3.5" />{busy ? "Downloading…" : `Download ${society.toUpperCase()}`}
-      </button>
+      <div className="flex items-center gap-2">
+        {societies.map(({ key, label }) => (
+          <button key={key} onClick={() => go(key)} disabled={busy !== null}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
+            style={{ background: C.dark, color: C.mint4 }}>
+            <FileDown className="w-3.5 h-3.5" />
+            {busy === key ? "Downloading…" : `Download ${label}`}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
