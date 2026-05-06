@@ -12,6 +12,8 @@ class UsageType(str, enum.Enum):
     BV = "bv"
     FI = "fi"
     FV = "fv"
+    OI = "oi"
+    CI = "ci"
     THEME = "theme"
     BACKGROUND = "background"
     VISUAL = "visual"

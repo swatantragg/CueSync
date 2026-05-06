@@ -78,6 +78,13 @@ def _apply_block_borders(ws, r0: int, r1: int, c0: int, c1: int) -> None:
             ws.cell(row=row, column=col).border = _block_border(row, col, r0, r1, c0, c1)
 
 
+def _iprs_society(s: str | None) -> str:
+    v = (s or "IPRS").strip().upper()
+    if v in ("NS", "NON SOCIETY", "NON-SOCIETY") or v.startswith("NON"):
+        return "NS"
+    return s or "IPRS"
+
+
 def _sorted_contribs(contribs: list) -> list:
     _order = {"Composer": 0, "CA": 0, "Author": 1, "Publisher": 2}
     return sorted(contribs, key=lambda c: _order.get(role_key(c.role), 3))
@@ -270,7 +277,7 @@ def _fill_iprs_sheet(ws, project, episode, total_ep_count: int | None = None) ->
                 fmt_dur(cue.duration_sec)                               if first else None,  # 6 F
                 iprs_role_code(contrib.role)                            if contrib else None, # 7 G
                 contrib.name                                            if contrib else None, # 8 H
-                (contrib.society or "IPRS")                             if contrib else None, # 9 I
+                _iprs_society(contrib.society)                          if contrib else None, # 9 I
                 share_str,                                                                    # 10 J
                 str(contrib.ipi_number or contrib.cae_number or "")    if contrib else None, # 11 K
                 cue.singer                                              if first else None,   # 12 L (not merged)
@@ -293,7 +300,7 @@ def _fill_iprs_sheet(ws, project, episode, total_ep_count: int | None = None) ->
             cell.border = Border(top=b.top, bottom=b.bottom, left=_NONE, right=b.right)
 
     # ── Footer ────────────────────────────────────────────────────────────────
-    foot = r + 2  # blank row then codes start
+    foot = r + 1  # one blank row then codes start
     for i, row_data in enumerate(_CODES_TABLE):
         curr = foot + i
         ws.row_dimensions[curr].height = 15.75

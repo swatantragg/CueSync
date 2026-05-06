@@ -42,6 +42,8 @@ _COL_WIDTHS = {
 # Exact separator from reference: 100 spaces between multiple composers.
 _SEP = " " * 100
 
+_ASCAP_USE = {"BI": "BI", "BV": "BV", "FI": "VI", "FV": "VV", "OI": "MT", "CI": "ET"}
+
 _USE_CODES = [
     "                *Use Codes: MT = Main Title      VI = Visual Instrumental    BV = Background Vocal",
     "                                          VV = Visual Vocal  ET = End Title                   BI = Background Instrumental",
@@ -179,7 +181,7 @@ def _fill_ascap_sheet(ws, project, episode) -> None:
         row_data = [
             idx,
             cue.song_title or "",
-            use,
+            _ASCAP_USE.get(use, use),
             _to_time(cue.duration_sec),                               # time object
             _fmt_contribs(contribs, cue, is_publisher=False),
             _fmt_contribs(contribs, cue, is_publisher=True),
@@ -193,7 +195,7 @@ def _fill_ascap_sheet(ws, project, episode) -> None:
                 c.number_format = "h:mm:ss"
             if col == 4:
                 c.alignment = _CENTER
-            elif col in (2, 3, 5):
+            elif col in (2, 3, 5, 6):
                 c.alignment = _WRAP_C
             else:
                 c.alignment = _CENTER
