@@ -14,7 +14,9 @@ from app.models.episode import Episode
 from app.models.project import Project
 from app.models.user import User
 from app.services.exporters import build_export
+from app.services.exporters.ascap import build_ascap_bulk
 from app.services.exporters.iprs import build_iprs_bulk
+from app.services.exporters.prs import build_prs_bulk
 
 router = APIRouter()
 
@@ -74,15 +76,22 @@ async def bulk_export(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f'attachment; filename="{fname}"'},
         )
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for ep in eps:
-            data = build_export(society, proj, ep)
-            zf.writestr(f"EP{ep.episode_number:03d}_{society.upper()}.xlsx", data)
-    buf.seek(0)
-    fname = f"{proj.title}_{society.upper()}_EP{from_ep}-{to_ep}.zip"
-    return StreamingResponse(buf, media_type="application/zip",
-                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+    if society == "ascap":
+        data = build_ascap_bulk(proj, eps)
+        fname = f"{proj.title}_ASCAP_EP{from_ep}-{to_ep}.xlsx"
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+    if society == "prs":
+        data = build_prs_bulk(proj, eps)
+        fname = f"{proj.title}_PRS_EP{from_ep}-{to_ep}.xlsx"
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
 
 
 async def _load_episode(eid: int, db: AsyncSession) -> Episode | None:

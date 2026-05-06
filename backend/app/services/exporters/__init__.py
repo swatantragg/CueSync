@@ -1,6 +1,6 @@
-from app.services.exporters.ascap import build_ascap
+from app.services.exporters.ascap import build_ascap, build_ascap_bulk
 from app.services.exporters.iprs import build_iprs
-from app.services.exporters.prs import build_prs
+from app.services.exporters.prs import build_prs, build_prs_bulk
 
 
 def build_export(
