@@ -14,6 +14,8 @@ const USAGE_OPTIONS = [
   ["bv", "BV - BG Vocal"],
   ["fi", "FI - Feature Instrumental"],
   ["fv", "FV - Feature Vocal"],
+  ["oi", "OI - Opening Instrumental"],
+  ["ci", "CI - Closing Instrumental"],
   ["theme", "Theme"],
   ["visual", "Visual"],
   ["other", "Other"],
@@ -43,7 +45,7 @@ function RoleSelect({ value, onChange, readOnly }) {
 }
 
 function UsageSelect({ value, onChange, readOnly }) {
-  const normalized = { background: "bi", instrumental: "bi", vocal: "bv" }[value] || value || "bi";
+  const normalized = { background: "bi", instrumental: "bi", vocal: "bv" }[value?.toLowerCase()] || value || "bi";
   return (
     <select
       value={normalized}

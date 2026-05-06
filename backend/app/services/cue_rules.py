@@ -97,7 +97,7 @@ def usage_code(usage_type, song_title: str | None = None) -> str:
     title = (song_title or "").strip().lower()
     haystack = f"{raw} {title}"
 
-    if raw in {"bi", "bv", "fi", "fv"}:
+    if raw in {"bi", "bv", "fi", "fv", "oi", "ci"}:
         return raw.upper()
     if raw in {"background", "instrumental", "other"}:
         return "BI"
@@ -118,6 +118,8 @@ def usage_value_from_code(code: str | None) -> str:
     normalized = (code or "").strip().upper()
     if normalized in USAGE_ORDER:
         return normalized.lower()
+    if normalized in ("OI", "CI"):
+        return normalized.lower()
     return {
         "BACKGROUND INSTRUMENTAL": "bi",
         "BACKGROUND VOCAL": "bv",
@@ -130,6 +132,10 @@ def usage_value_from_code(code: str | None) -> str:
         "INSTRUMENTAL": "bi",
         "VOCAL": "bv",
         "BACKGROUND": "bi",
+        "OPENING INSTRUMENTAL": "oi",
+        "CLOSING INSTRUMENTAL": "ci",
+        "MAIN TITLE": "oi",
+        "END TITLE": "ci",
     }.get(normalized, "bi")
 
 
