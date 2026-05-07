@@ -5,7 +5,7 @@ const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => userStore.get());
-  const [screen, setScreen] = useState(() => (tokenStore.get() && userStore.get() ? "workspace" : "login"));
+  const [screen, setScreen] = useState(() => (userStore.get() ? "workspace" : "login"));
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [activeEpisodeId, setActiveEpisodeId] = useState(null);
@@ -25,7 +25,7 @@ export function AppProvider({ children }) {
 
   // Fetch notifications from DB
   const fetchNotifications = useCallback(async () => {
-    if (!tokenStore.get()) return;
+    if (!userStore.get()) return;
     try {
       const rows = await api.listNotifications();
       setNotifications(rows);
@@ -34,8 +34,10 @@ export function AppProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (tokenStore.get() && !currentUser) {
-      api.me().then((u) => { userStore.set(u); setCurrentUser(u); }).catch(() => tokenStore.clear());
+    if (userStore.get() && !currentUser) {
+      api.me()
+        .then((u) => { userStore.set(u); setCurrentUser(u); })
+        .catch(() => { userStore.set(null); setScreen("login"); });
     }
   }, []);
 
@@ -48,7 +50,7 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     const handle = () => {
-      tokenStore.clear(); userStore.set(null);
+      tokenStore.clear(); userStore.set(null); // clear both stores
       setCurrentUser(null); setScreen("login");
       setActiveProjectId(null); setActiveEpisodeId(null);
       setNotifications([]); setUnreadCount(0);
@@ -76,7 +78,8 @@ export function AppProvider({ children }) {
   const goHome = () => { setScreen("workspace"); setActiveProjectId(null); setActiveEpisodeId(null); };
 
   const finishAuth = (res) => {
-    tokenStore.set(res.access_token);
+    // Token is stored only in httpOnly cookie by the backend — NOT in localStorage
+    // Only the user profile object is stored locally for UI display
     const u = { ...res.user, avatar: (res.user.full_name || res.user.email).slice(0, 2).toUpperCase() };
     userStore.set(u);
     setCurrentUser(u);
@@ -85,6 +88,7 @@ export function AppProvider({ children }) {
   const login = async (email, password) => finishAuth(await api.login(email, password));
   const signup = async (payload) => finishAuth(await api.signup(payload));
   const logout = () => {
+    api.logout();  // blacklists token server-side + clears httpOnly cookies
     tokenStore.clear(); setCurrentUser(null); setScreen("login");
     setActiveProjectId(null); setActiveEpisodeId(null);
     setNotifications([]); setUnreadCount(0);

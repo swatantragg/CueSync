@@ -70,10 +70,9 @@ async def update_user_role(user_id: int, payload: RoleUpdateIn, db: AsyncSession
         await db.commit()
         await db.refresh(user)
         return user
-    except Exception as exc:
+    except Exception:
         await db.rollback()
-        detail = str(exc).split("\n")[0][:300]
-        raise HTTPException(500, f"Role update failed: {detail}")
+        raise HTTPException(500, "Role update failed. Please try again.")
 
 
 @router.put("/{user_id}/active", response_model=UserOut, dependencies=[Depends(require_roles(UserRole.ADMIN))])
@@ -86,9 +85,9 @@ async def toggle_user_active(user_id: int, payload: ActiveUpdateIn, db: AsyncSes
         await db.commit()
         await db.refresh(user)
         return user
-    except Exception as exc:
+    except Exception:
         await db.rollback()
-        raise HTTPException(500, f"Active toggle failed: {str(exc)[:200]}")
+        raise HTTPException(500, "Status update failed. Please try again.")
 
 
 @router.delete("/{user_id}", dependencies=[Depends(require_roles(UserRole.ADMIN))])

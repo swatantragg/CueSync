@@ -1,6 +1,24 @@
 import json
+import os
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+
+_ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
+_ALLOWED_CONTENT_TYPES = {
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "application/octet-stream",
+    "application/zip",  # .xlsx is a zip container
+}
+
+
+def _validate_excel(file: UploadFile) -> None:
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(400, "Only Excel files (.xlsx, .xls) are accepted")
+    ct = (file.content_type or "").split(";")[0].strip()
+    if ct and ct not in _ALLOWED_CONTENT_TYPES:
+        raise HTTPException(400, "Invalid file type. Upload an Excel file (.xlsx or .xls)")
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -129,14 +147,15 @@ async def upload_rough(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    _validate_excel(file)
     proj = await db.get(Project, project_id)
     if not proj:
         raise HTTPException(404, "Project not found")
     data = await file.read()
     try:
         parsed = parse_rough_workbook(data, filename=file.filename or "")
-    except Exception as e:
-        raise HTTPException(400, f"Parse error: {e}")
+    except Exception:
+        raise HTTPException(400, "Failed to parse the Excel file. Ensure it is a valid rough sheet.")
 
     meta = parsed["meta"]
     for k in ("director", "genre", "language", "production_company", "actors", "producer", "bg_music_composer"):
@@ -210,6 +229,7 @@ async def preview_rough(
     current: User = Depends(get_current_user),
 ):
     try:
+        _validate_excel(file)
         proj = await db.get(Project, project_id)
         if not proj:
             raise HTTPException(404, "Project not found")
@@ -218,8 +238,8 @@ async def preview_rough(
             parsed = parse_rough_workbook(data, filename=file.filename or "")
         except HTTPException:
             raise
-        except Exception as e:
-            raise HTTPException(400, f"Parse error: {e}")
+        except Exception:
+            raise HTTPException(400, "Failed to parse the Excel file. Ensure it is a valid rough sheet.")
 
         enriched_episodes = []
         for ep in parsed["episodes"]:
@@ -296,8 +316,8 @@ async def preview_rough(
 
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(500, f"Preview failed: {exc}")
+    except Exception:
+        raise HTTPException(500, "Preview failed. Please try again.")
 
 
 # ── Commit: save edited preview data to DB ────────────────────────────────────
@@ -407,10 +427,9 @@ async def commit_rough(
             f"Committed rough sheet — {len(created_eps)} new episodes",
         )
         await db.commit()
-    except SQLAlchemyError as exc:
+    except SQLAlchemyError:
         await db.rollback()
-        detail = str(exc.orig)[:300] if hasattr(exc, "orig") and exc.orig else str(exc)[:300]
-        raise HTTPException(500, f"Commit failed: {detail}")
+        raise HTTPException(500, "Commit failed. Please try again.")
     return {"ok": True, "project_id": project_id, "episodes_created": len(created_eps)}
 
 
