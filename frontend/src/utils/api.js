@@ -155,6 +155,7 @@ export const api = {
   deleteDelegation: (id) => request(`/api/delegations/${id}`, { method: "DELETE" }),
   suggestProjects: (q) => request(`/api/delegations/projects/suggest?q=${encodeURIComponent(q || "")}`),
   editorActivity: (uid) => request(`/api/delegations/activity/editor/${uid}`),
+  activityCalendar: (year) => request(`/api/delegations/activity/calendar?year=${year}`),
 
   // ── Notifications ───────────────────────────────────────────────────────────
   listNotifications: () => request("/api/notifications/"),

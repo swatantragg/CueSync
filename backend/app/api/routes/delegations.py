@@ -146,6 +146,71 @@ async def suggest_projects(
     return [{"id": r.id, "title": r.title, "type": r.type.value} for r in rows]
 
 
+@router.get("/activity/calendar", dependencies=[Depends(require_roles(*WD_ROLES))])
+async def activity_calendar(year: int = Query(..., ge=2020, le=2100), db: AsyncSession = Depends(get_db)):
+    from datetime import datetime, timezone
+    from app.models.audit import AuditLog
+
+    start = datetime(year, 1, 1, tzinfo=timezone.utc)
+    end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+
+    rows = (await db.execute(
+        select(AuditLog).where(
+            AuditLog.action.in_(["submit", "approve"]),
+            AuditLog.entity == "episode",
+            AuditLog.created_at >= start,
+            AuditLog.created_at < end,
+        ).order_by(AuditLog.created_at)
+    )).scalars().all()
+
+    user_ids = {r.user_id for r in rows if r.user_id}
+    users: dict[int, User] = {}
+    if user_ids:
+        users = {u.id: u for u in (await db.execute(
+            select(User).where(User.id.in_(user_ids))
+        )).scalars().all()}
+
+    months: dict[int, dict] = {}
+    for r in rows:
+        if not r.created_at:
+            continue
+        month = r.created_at.month
+        day = r.created_at.day
+        week_of_month = (day - 1) // 7 + 1
+
+        if month not in months:
+            months[month] = {"submitted": 0, "approved": 0, "weeks": {}, "editors": {}}
+
+        m = months[month]
+        user = users.get(r.user_id)
+        uname = user.full_name if user else f"User #{r.user_id}"
+
+        if r.action == "submit":
+            m["submitted"] += 1
+        else:
+            m["approved"] += 1
+
+        wk = str(week_of_month)
+        if wk not in m["weeks"]:
+            m["weeks"][wk] = {"submitted": 0, "approved": 0, "editors": []}
+        w = m["weeks"][wk]
+        if r.action == "submit":
+            w["submitted"] += 1
+        else:
+            w["approved"] += 1
+        if uname not in w["editors"]:
+            w["editors"].append(uname)
+
+        if uname not in m["editors"]:
+            m["editors"][uname] = {"submitted": 0, "approved": 0}
+        if r.action == "submit":
+            m["editors"][uname]["submitted"] += 1
+        else:
+            m["editors"][uname]["approved"] += 1
+
+    return {"year": year, "months": months}
+
+
 @router.get("/activity/editor/{user_id}", dependencies=[Depends(require_roles(*WD_ROLES))])
 async def editor_activity(user_id: int, db: AsyncSession = Depends(get_db)):
     from app.models.episode import Episode as EpisodeModel
