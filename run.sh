@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Usage:
-#   ./run.sh          → Docker detached (builds + starts all containers in background)
-#   ./run.sh logs     → Tail live logs from all containers
+#   ./run.sh          → Docker (production-like, builds + starts all containers)
 #   ./run.sh dev      → Local dev (backend + frontend simultaneously, hot-reload)
 #   ./run.sh down     → Stop and remove Docker containers
 
@@ -26,16 +25,8 @@ if [ "$MODE" = "docker" ]; then
         warn "Edit JWT_SECRET and POSTGRES_PASSWORD in .env before deploying to production!"
     fi
 
-    info "Building and starting all containers (detached)..."
-    docker compose up --build -d
-    info "App running at http://localhost"
-    info "Logs: ./run.sh logs  |  Stop: ./run.sh down"
-    exit 0
-fi
-
-# ── Logs mode ─────────────────────────────────────────────────────────────────
-if [ "$MODE" = "logs" ]; then
-    docker compose logs -f
+    info "Building and starting all containers..."
+    docker compose up --build
     exit 0
 fi
 
