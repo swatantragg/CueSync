@@ -148,7 +148,7 @@ async def upsert_song(payload: LibraryUpsertIn, db: AsyncSession = Depends(get_d
     return _lib_payload(entry)
 
 
-@router.post("/cleanup", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+@router.post("/cleanup", dependencies=[Depends(require_roles(UserRole.ADMIN))])
 async def cleanup_library(db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
     songs_merged = await cleanup_song_duplicates(db)
     contribs_merged = await cleanup_contributor_duplicates(db)

@@ -26,3 +26,6 @@ openpyxl>=3.1.5
 python-dotenv>=1.0
 orjson>=3.10
 httpx>=0.28
+
+# Token blacklist (optional — falls back to in-memory if not configured)
+redis[hiredis]>=5.0

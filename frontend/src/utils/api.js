@@ -20,6 +20,8 @@ async function request(path, { method = "GET", body, form, auth = true } = {}) {
   const headers = {};
   if (body) headers["Content-Type"] = "application/json";
   if (auth) {
+    // Authorization header: used in local dev where cookies are cross-origin
+    // In production (Docker/Nginx same-origin), httpOnly cookie is sent automatically
     const t = tokenStore.get();
     if (t) headers["Authorization"] = `Bearer ${t}`;
   }
@@ -28,6 +30,7 @@ async function request(path, { method = "GET", body, form, auth = true } = {}) {
     res = await fetch(apiUrl(path), {
       method,
       headers,
+      credentials: "include",  // always send httpOnly cookies (production security)
       body: form ? form : body ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
@@ -85,9 +88,12 @@ export const api = {
   suggestEpisode: (eid, note) => request(`/api/episodes/${eid}/suggest`, { method: "POST", body: { note } }),
   listEpisodeActivity: (eid) => request(`/api/activity/episode/${eid}`),
   listProjectActivity: (pid) => request(`/api/activity/project/${pid}`),
+  logout: () => request("/api/auth/logout", { method: "POST" }).catch(() => {}),
+
   downloadExport: async (episodeId, society, filename) => {
     const t = tokenStore.get();
     const res = await fetch(apiUrl(`/api/exports/episode/${episodeId}?society=${society}`), {
+      credentials: "include",
       headers: t ? { Authorization: `Bearer ${t}` } : {},
     });
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
@@ -104,7 +110,8 @@ export const api = {
     let res;
     try {
       res = await fetch(apiUrl(`/api/uploads/rough/project/${pid}`), {
-        method: "POST", body: fd, headers: t ? { Authorization: `Bearer ${t}` } : {},
+        method: "POST", body: fd, credentials: "include",
+        headers: t ? { Authorization: `Bearer ${t}` } : {},
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -120,7 +127,8 @@ export const api = {
     let res;
     try {
       res = await fetch(apiUrl(`/api/uploads/rough/project/${pid}/preview`), {
-        method: "POST", body: fd, headers: t ? { Authorization: `Bearer ${t}` } : {},
+        method: "POST", body: fd, credentials: "include",
+        headers: t ? { Authorization: `Bearer ${t}` } : {},
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -169,7 +177,7 @@ export const api = {
     const url = apiUrl(
       `/api/exports/bulk/project/${projectId}?society=${society}&from_ep=${fromEp}&to_ep=${toEp}`
     );
-    const res = await fetch(url, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+    const res = await fetch(url, { credentials: "include", headers: t ? { Authorization: `Bearer ${t}` } : {} });
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
     const blob = await res.blob();
     const a = document.createElement("a");

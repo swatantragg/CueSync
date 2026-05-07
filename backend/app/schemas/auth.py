@@ -14,6 +14,17 @@ class SignupIn(BaseModel):
     password: str
     confirm_password: str
 
+    @field_validator("password")
+    @classmethod
+    def _password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+        return v
+
     @field_validator("confirm_password")
     @classmethod
     def _match(cls, v, info):
@@ -33,6 +44,17 @@ class UserCreate(BaseModel):
     full_name: str
     password: str
     role: UserRole = UserRole.VIEWER
+
+    @field_validator("password")
+    @classmethod
+    def _password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+        return v
 
 
 class UserOut(BaseModel):

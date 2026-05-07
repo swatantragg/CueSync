@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import Base, engine
-import app.models.work_delegation  # noqa: F401 — ensure table is registered
-import app.models.notification      # noqa: F401 — ensure table is registered
+import app.models.work_delegation  # noqa: F401
+import app.models.notification      # noqa: F401
 from app.services.library_sync import (
     cleanup_contributor_duplicates,
     cleanup_cue_contributor_duplicates,
@@ -52,7 +52,6 @@ MIGRATIONS = [
     "ALTER TABLE song_library ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
     "ALTER TABLE song_library ADD COLUMN IF NOT EXISTS alt_titles TEXT",
     "ALTER TABLE contributor_library ADD COLUMN IF NOT EXISTS alt_names TEXT",
-    # member_directory is created by create_all; these guard against partial states
     "CREATE INDEX IF NOT EXISTS ix_member_pa_name ON member_directory(pa_name)",
     "CREATE INDEX IF NOT EXISTS ix_member_ipi ON member_directory(ipi_number)",
     "ALTER TABLE song_library DROP CONSTRAINT IF EXISTS song_library_title_key",
@@ -63,7 +62,6 @@ MIGRATIONS = [
     "SELECT setval('song_library_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM song_library), 1))) FROM song_library_id_seq",
 ]
 
-
 USER_ROLE_ENUM_VALUES = ["WORK_DELEGATOR", "REVIEWER"]
 USAGE_TYPE_ENUM_VALUES = ["BI", "BV", "FI", "FV"]
 
@@ -71,7 +69,6 @@ USAGE_TYPE_ENUM_VALUES = ["BI", "BV", "FI", "FV"]
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        # ALTER TYPE ADD VALUE cannot run inside a transaction — use AUTOCOMMIT engine
         ac_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
         for val in USER_ROLE_ENUM_VALUES:
             try:
@@ -117,24 +114,54 @@ app = FastAPI(
     version="1.0.0",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
+    # Disable automatic debug info exposure in OpenAPI errors
+    debug=False,
 )
 
-app.add_middleware(
-    CORSMiddleware,
+# ── CORS ──────────────────────────────────────────────────────────────────────
+_cors_kwargs: dict = dict(
     allow_origins=settings.cors_list,
-    allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    expose_headers=["Content-Disposition"],
 )
+if settings.APP_ENV != "production":
+    _cors_kwargs["allow_origin_regex"] = r"http://localhost:\d+"
+
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
 app.include_router(api_router)
 
 
-# ── Safety net: guarantee CORS headers even when CORSMiddleware misses them ──
-# (happens when an unhandled exception causes uvicorn to drop the connection
-#  before the middleware can annotate the response)
+# ── Body size limit ────────────────────────────────────────────────────────────
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > settings.max_body_size_bytes:
+                return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+        except ValueError:
+            pass
+    return await call_next(request)
+
+
+# ── Security headers ───────────────────────────────────────────────────────────
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if settings.APP_ENV == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+# ── CORS safety net (keeps headers on unhandled exception paths) ───────────────
 @app.middleware("http")
 async def cors_safety_net(request: Request, call_next):
     response = await call_next(request)
@@ -149,7 +176,7 @@ async def cors_safety_net(request: Request, call_next):
 
 @app.get("/")
 async def root():
-    return {"app": settings.APP_NAME, "env": settings.APP_ENV, "status": "ok"}
+    return {"app": settings.APP_NAME, "status": "ok"}
 
 
 @app.get("/health")
