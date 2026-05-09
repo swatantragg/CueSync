@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import Base, engine
-import app.models.work_delegation  # noqa: F401
-import app.models.notification      # noqa: F401
+import app.models.work_delegation       # noqa: F401
+import app.models.notification           # noqa: F401
+import app.models.society_submission     # noqa: F401
 from app.services.library_sync import (
     cleanup_contributor_duplicates,
     cleanup_cue_contributor_duplicates,

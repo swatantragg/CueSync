@@ -323,6 +323,8 @@ function SerialDetail({ serial, onBack, onReview }) {
   const [subTab, setSubTab]   = useState("all");
   const [allPage, setAllPage]         = useState(1);
   const [approvedPage, setApprovedPage] = useState(1);
+  const [societySubs, setSocietySubs]  = useState([]);
+  const [subsLoading, setSubsLoading]  = useState(false);
 
   const openEpisode = (ep) => {
     const epStub = {
@@ -352,6 +354,14 @@ function SerialDetail({ serial, onBack, onReview }) {
       .then(setDetail).catch(() => {})
       .finally(() => setLoading(false));
   }, [serial.project_id]);
+
+  useEffect(() => {
+    if (subTab !== "society") return;
+    setSubsLoading(true);
+    api.submissionsBySerial(serial.project_id)
+      .then(setSocietySubs).catch(() => {})
+      .finally(() => setSubsLoading(false));
+  }, [subTab, serial.project_id]);
 
   const allEps      = detail?.episodes || [];
   const approvedEps = [...allEps]
@@ -418,6 +428,7 @@ function SerialDetail({ serial, onBack, onReview }) {
         {[
           { key: "all",      label: `All Episodes (${allEps.length})` },
           { key: "approved", label: `Approved (${approvedEps.length})` },
+          { key: "society",  label: "Submitted to Society" },
         ].map((t) => (
           <button key={t.key} onClick={() => setSubTab(t.key)}
             className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all"
@@ -430,7 +441,7 @@ function SerialDetail({ serial, onBack, onReview }) {
       </div>
 
       {/* Episode tables */}
-      {loading ? (
+      {subTab !== "society" && loading ? (
         <div className="py-10 text-center text-sm" style={{ color: C.sub }}>Loading episodes…</div>
       ) : (
         <>
@@ -466,6 +477,51 @@ function SerialDetail({ serial, onBack, onReview }) {
                 </>
               )}
             </>
+          )}
+          {subTab === "society" && (
+            subsLoading ? (
+              <div className="py-10 text-center text-sm" style={{ color: C.sub }}>Loading…</div>
+            ) : societySubs.length === 0 ? (
+              <div className="py-10 text-center text-sm" style={{ color: C.sub }}>
+                No society submissions for this serial yet.
+              </div>
+            ) : (
+              <div className="rounded-xl border overflow-hidden"
+                style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[10px] uppercase tracking-wider border-b"
+                      style={{ borderColor: C.mint4 + "44", color: C.sub, background: C.mint4 + "22" }}>
+                      <th className="text-left px-4 py-2.5">Episodes</th>
+                      <th className="text-left px-4 py-2.5">Client</th>
+                      <th className="text-left px-4 py-2.5">Notes</th>
+                      <th className="text-left px-4 py-2.5">Submitted By</th>
+                      <th className="text-left px-4 py-2.5">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {societySubs.map((s) => (
+                      <tr key={s.id} className="border-b last:border-0"
+                        style={{ borderColor: C.mint4 + "33" }}>
+                        <td className="px-4 py-2.5 font-medium" style={{ color: C.dark }}>
+                          Ep {s.episode_from}–{s.episode_to}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{s.client || "—"}</td>
+                        <td className="px-4 py-2.5 text-xs max-w-[200px] truncate" style={{ color: C.sub }}>
+                          {s.notes || "—"}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>
+                          {s.submitted_by_name || "—"}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>
+                          {s.submitted_at ? new Date(s.submitted_at).toLocaleDateString() : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
           )}
         </>
       )}
@@ -621,96 +677,225 @@ function SerialsTab({ onReviewEp }) {
   );
 }
 
-// ── Download records tab ───────────────────────────────────────────────────────
-function DownloadsTab() {
-  const [entries, setEntries] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("reviewer_downloads") || "[]"); } catch { return []; }
+// ── Submitted Cue tab ─────────────────────────────────────────────────────────
+function SerialSubmissionGroup({ group }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-xl border overflow-hidden"
+      style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+      <button onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 border-b"
+        style={{ borderColor: C.mint4 + "44", background: C.mint4 + "22" }}>
+        <div className="flex items-center gap-2">
+          <Layers className="w-3.5 h-3.5" style={{ color: C.mint1 }} />
+          <span className="font-semibold text-sm" style={{ color: C.dark }}>{group.project_title}</span>
+          <span className="text-[10px] px-2 py-0.5 rounded-full"
+            style={{ background: C.mint1 + "33", color: C.sub }}>
+            {group.items.length} submission{group.items.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+        <ChevronDown className="w-4 h-4 transition-transform"
+          style={{ color: C.sub, transform: open ? "rotate(180deg)" : "" }} />
+      </button>
+      {open && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider border-b"
+              style={{ borderColor: C.mint4 + "44", color: C.sub, background: C.mint4 + "11" }}>
+              <th className="text-left px-4 py-2">Episodes</th>
+              <th className="text-left px-4 py-2">Client</th>
+              <th className="text-left px-4 py-2">Notes</th>
+              <th className="text-left px-4 py-2">Submitted By</th>
+              <th className="text-left px-4 py-2">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {group.items.map((item) => (
+              <tr key={item.id} className="border-b last:border-0"
+                style={{ borderColor: C.mint4 + "33" }}>
+                <td className="px-4 py-2.5 font-medium" style={{ color: C.dark }}>
+                  Ep {item.episode_from}–{item.episode_to}
+                </td>
+                <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{item.client || "—"}</td>
+                <td className="px-4 py-2.5 text-xs max-w-[200px] truncate" style={{ color: C.sub }}>
+                  {item.notes || "—"}
+                </td>
+                <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>
+                  {item.submitted_by_name || "—"}
+                </td>
+                <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>
+                  {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString() : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function SubmittedCueTab() {
+  const [serials, setSerials]         = useState([]);
+  const [clients, setClients]         = useState([]);
+  const [submissions, setSubmissions] = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [submitting, setSubmitting]   = useState(false);
+  const [clientSug, setClientSug]     = useState(false);
+  const [form, setForm] = useState({
+    project_id: "", episode_from: "", episode_to: "", client: "", notes: "",
   });
-  const [form, setForm] = useState({ client: "", serial: "", count: "" });
 
-  const save = () => {
-    if (!form.client.trim() || !form.serial.trim()) return;
-    const updated = [...entries, { ...form, id: Date.now(), at: new Date().toISOString() }];
-    setEntries(updated);
-    localStorage.setItem("reviewer_downloads", JSON.stringify(updated));
-    setForm({ client: "", serial: "", count: "" });
+  const load = () => {
+    Promise.all([
+      api.reviewerSerials(),
+      api.suggestClients(),
+      api.listSubmissions(),
+    ]).then(([s, c, subs]) => {
+      setSerials(s);
+      setClients(c);
+      setSubmissions(subs);
+    }).catch(() => {}).finally(() => setLoading(false));
   };
 
-  const remove = (id) => {
-    const updated = entries.filter((e) => e.id !== id);
-    setEntries(updated);
-    localStorage.setItem("reviewer_downloads", JSON.stringify(updated));
+  useEffect(() => { load(); }, []);
+
+  const filteredClients = clients.filter((c) =>
+    c.toLowerCase().includes((form.client || "").toLowerCase())
+  );
+
+  const submit = async () => {
+    if (!form.project_id) {
+      await showAlert("Select a serial.", { variant: "warn" }); return;
+    }
+    const from = parseInt(form.episode_from, 10);
+    const to   = parseInt(form.episode_to,   10);
+    if (!from || !to || from > to) {
+      await showAlert("Enter a valid episode range (From ≤ To).", { variant: "warn" }); return;
+    }
+    setSubmitting(true);
+    try {
+      await api.createSubmission({
+        project_id: parseInt(form.project_id),
+        episode_from: from,
+        episode_to: to,
+        client: form.client.trim() || null,
+        notes: form.notes.trim() || null,
+      });
+      setForm({ project_id: "", episode_from: "", episode_to: "", client: "", notes: "" });
+      load();
+    } catch (ex) {
+      await showAlert(ex.message, { title: "Failed", variant: "error" });
+    } finally { setSubmitting(false); }
   };
+
+  const grouped = submissions.reduce((acc, s) => {
+    if (!acc[s.project_id]) acc[s.project_id] = { project_id: s.project_id, project_title: s.project_title, items: [] };
+    acc[s.project_id].items.push(s);
+    return acc;
+  }, {});
+  const groups = Object.values(grouped);
 
   return (
-    <div>
-      <div className="rounded-xl border p-4 mb-6"
-        style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-        <h4 className="text-sm font-semibold mb-3" style={{ fontFamily: FONTS.serif }}>
-          Add Download Entry
+    <div className="space-y-6">
+      {/* Form */}
+      <div className="rounded-xl border p-5" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <h4 className="text-sm font-semibold mb-4" style={{ fontFamily: FONTS.serif, color: C.dark }}>
+          Submit to Society
         </h4>
-        <div className="grid grid-cols-3 gap-3">
-          <input value={form.client} onChange={(e) => setForm((f) => ({ ...f, client: e.target.value }))}
-            placeholder="Client name"
-            className="px-3 py-2 rounded-lg text-sm border focus:outline-none"
-            style={{ borderColor: C.mint1 + "44", color: C.dark }} />
-          <input value={form.serial} onChange={(e) => setForm((f) => ({ ...f, serial: e.target.value }))}
-            placeholder="Serial / movie name"
-            className="px-3 py-2 rounded-lg text-sm border focus:outline-none"
-            style={{ borderColor: C.mint1 + "44", color: C.dark }} />
-          <input value={form.count} onChange={(e) => setForm((f) => ({ ...f, count: e.target.value }))}
-            placeholder="No. of cue sheets" type="number"
-            className="px-3 py-2 rounded-lg text-sm border focus:outline-none"
-            style={{ borderColor: C.mint1 + "44", color: C.dark }} />
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: C.sub }}>
+              Serial
+            </label>
+            <select value={form.project_id}
+              onChange={(e) => setForm((f) => ({ ...f, project_id: e.target.value }))}
+              className="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+              style={{ borderColor: C.mint1 + "44", color: C.dark, background: C.white }}>
+              <option value="">Select serial…</option>
+              {serials.map((s) => (
+                <option key={s.project_id} value={s.project_id}>{s.project_title}</option>
+              ))}
+            </select>
+          </div>
+          <div className="relative">
+            <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: C.sub }}>
+              Client
+            </label>
+            <input value={form.client}
+              onChange={(e) => { setForm((f) => ({ ...f, client: e.target.value })); setClientSug(true); }}
+              onFocus={() => setClientSug(true)}
+              onBlur={() => setTimeout(() => setClientSug(false), 150)}
+              placeholder="Client name…"
+              className="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+              style={{ borderColor: C.mint1 + "44", color: C.dark }} />
+            {clientSug && filteredClients.length > 0 && (
+              <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-xl shadow-xl overflow-hidden max-h-40 overflow-y-auto"
+                style={{ background: C.white, border: `1px solid ${C.mint1}44` }}>
+                {filteredClients.map((c) => (
+                  <button key={c}
+                    onMouseDown={() => { setForm((f) => ({ ...f, client: c })); setClientSug(false); }}
+                    className="block w-full text-left px-4 py-2 text-xs hover:bg-green-50"
+                    style={{ color: C.dark }}>{c}</button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <button onClick={save}
-          className="mt-3 px-4 py-2 rounded-lg text-sm font-medium"
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: C.sub }}>
+              Episode From
+            </label>
+            <input type="number" min={1} value={form.episode_from}
+              onChange={(e) => setForm((f) => ({ ...f, episode_from: e.target.value }))}
+              placeholder="1"
+              className="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+              style={{ borderColor: C.mint1 + "44", color: C.dark }} />
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: C.sub }}>
+              Episode To
+            </label>
+            <input type="number" min={1} value={form.episode_to}
+              onChange={(e) => setForm((f) => ({ ...f, episode_to: e.target.value }))}
+              placeholder="10"
+              className="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+              style={{ borderColor: C.mint1 + "44", color: C.dark }} />
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: C.sub }}>
+              Notes
+            </label>
+            <input value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="Optional notes…"
+              className="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+              style={{ borderColor: C.mint1 + "44", color: C.dark }} />
+          </div>
+        </div>
+        <button onClick={submit} disabled={submitting}
+          className="px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
           style={{ background: C.dark, color: C.mint4 }}>
-          Add Entry
+          {submitting ? "Submitting…" : "Submit"}
         </button>
       </div>
 
-      <div className="rounded-xl border overflow-hidden"
-        style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-        <div className="px-4 py-3 border-b text-xs font-semibold uppercase tracking-wider"
-          style={{ borderColor: C.mint4, background: C.mint4 + "66", color: C.sub }}>
-          Download Records ({entries.length})
-        </div>
-        {entries.length === 0 ? (
-          <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No entries yet</div>
+      {/* Submission log */}
+      <div>
+        <h4 className="text-sm font-semibold mb-3" style={{ fontFamily: FONTS.serif, color: C.dark }}>
+          Submission Log
+        </h4>
+        {loading ? (
+          <div className="py-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>
+        ) : groups.length === 0 ? (
+          <div className="py-8 text-center text-sm" style={{ color: C.sub }}>No submissions yet.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-[10px] uppercase tracking-wider"
-                style={{ borderColor: C.mint4, color: C.sub, background: C.mint4 + "22" }}>
-                <th className="text-left px-4 py-2">Client</th>
-                <th className="text-left px-4 py-2">Serial / Movie</th>
-                <th className="text-center px-4 py-2">Cue Sheets</th>
-                <th className="text-left px-4 py-2">Date</th>
-                <th className="w-8 px-4 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.id} className="border-b last:border-0"
-                  style={{ borderColor: C.mint4 + "55" }}>
-                  <td className="px-4 py-3" style={{ color: C.dark }}>{e.client}</td>
-                  <td className="px-4 py-3" style={{ color: C.dark }}>{e.serial}</td>
-                  <td className="px-4 py-3 text-center font-medium" style={{ color: C.dark }}>
-                    {e.count || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-xs" style={{ color: C.sub }}>
-                    {e.at ? new Date(e.at).toLocaleDateString() : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <button onClick={() => remove(e.id)} className="hover:opacity-70">
-                      <X className="w-3.5 h-3.5" style={{ color: C.danger }} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="space-y-4">
+            {groups.map((g) => (
+              <SerialSubmissionGroup key={g.project_id} group={g} />
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -750,9 +935,9 @@ export default function ReviewerDashboard() {
   const visibleQueue     = filtered.slice((queuePage - 1) * PER_PAGE, queuePage * PER_PAGE);
 
   const tabs = [
-    { key: "queue",     label: "Review Queue", badge: submitted.length },
-    { key: "serials",   label: "Serials" },
-    { key: "downloads", label: "Download Records" },
+    { key: "queue",          label: "Review Queue", badge: submitted.length },
+    { key: "serials",        label: "Serials" },
+    { key: "submitted_cue",  label: "Submitted Cue" },
   ];
 
   return (
@@ -855,8 +1040,8 @@ export default function ReviewerDashboard() {
         <SerialsTab onReviewEp={setReviewEp} />
       )}
 
-      {/* ── Download Records ── */}
-      {tab === "downloads" && <DownloadsTab />}
+      {/* ── Submitted Cue ── */}
+      {tab === "submitted_cue" && <SubmittedCueTab />}
     </DashboardShell>
   );
 }

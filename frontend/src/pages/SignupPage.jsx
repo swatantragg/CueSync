@@ -39,7 +39,11 @@ export default function SignupPage() {
         <AuthField label="Email" type="email" value={form.email} onChange={set("email")} required placeholder="you@company.com" autoComplete="email" />
         <AuthField label="Password" type="password" value={form.password} onChange={set("password")} required placeholder="••••••••" autoComplete="new-password" />
         <AuthField label="Confirm password" type="password" value={form.confirm_password} onChange={set("confirm_password")} required placeholder="••••••••" autoComplete="new-password" />
-        {err && <div className="text-xs mb-3 px-3 py-2 rounded-lg" style={{ background: "#C0392B33", color: "#FFB4A9" }}>{err}</div>}
+        {err && (
+          <div className="text-xs mb-3 px-3 py-2 rounded-lg" style={{ background: "#C0392B33", color: "#FFB4A9" }}>
+            {err.split("\n").map((line, i) => <div key={i}>• {line}</div>)}
+          </div>
+        )}
         <AuthButton type="submit" disabled={busy}>{busy ? "Creating…" : "Create account"}</AuthButton>
       </form>
     </AuthShell>
