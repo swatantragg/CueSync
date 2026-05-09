@@ -45,8 +45,16 @@ async function request(path, { method = "GET", body, form, auth = true } = {}) {
     window.dispatchEvent(new CustomEvent("auth:expired"));
   }
   if (!res.ok) {
-    const msg = (data && (data.detail || data.message)) || `${res.status} ${res.statusText}`;
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    const raw = (data && (data.detail || data.message)) || `${res.status} ${res.statusText}`;
+    let msg;
+    if (typeof raw === "string") {
+      msg = raw;
+    } else if (Array.isArray(raw)) {
+      msg = raw.map(e => (e.msg || JSON.stringify(e)).replace(/^Value error,\s*/i, "")).join("\n");
+    } else {
+      msg = JSON.stringify(raw);
+    }
+    throw new Error(msg);
   }
   return data;
 }
@@ -156,6 +164,12 @@ export const api = {
   suggestProjects: (q) => request(`/api/delegations/projects/suggest?q=${encodeURIComponent(q || "")}`),
   editorActivity: (uid) => request(`/api/delegations/activity/editor/${uid}`),
   activityCalendar: (year) => request(`/api/delegations/activity/calendar?year=${year}`),
+
+  // ── Society Submissions ─────────────────────────────────────────────────────
+  listSubmissions: () => request("/api/society-submissions/"),
+  createSubmission: (payload) => request("/api/society-submissions/", { method: "POST", body: payload }),
+  submissionsBySerial: (pid) => request(`/api/society-submissions/serial/${pid}`),
+  suggestClients: () => request("/api/society-submissions/suggest-clients"),
 
   // ── Notifications ───────────────────────────────────────────────────────────
   listNotifications: () => request("/api/notifications/"),

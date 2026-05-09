@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import {
   Plus, Trash2, Search, Edit2, X, ChevronLeft, ChevronRight,
-  FileText, ArrowLeft, CalendarDays, History,
+  FileText, ArrowLeft, CalendarDays, History, Layers, ChevronDown,
 } from "lucide-react";
 import { C, FONTS } from "../../styles/palette";
 import DashboardShell from "./DashboardShell";
@@ -765,6 +765,94 @@ function ActivityPanel({ editors, selected, onSelect }) {
   );
 }
 
+// ── Society Submissions tab ───────────────────────────────────────────────────
+function WDSubmissionGroup({ group }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-xl border overflow-hidden"
+      style={{ background: "#fff", borderColor: C.mint1 + "44" }}>
+      <button onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 border-b"
+        style={{ borderColor: C.mint4 + "44", background: C.mint4 + "22" }}>
+        <div className="flex items-center gap-2">
+          <Layers className="w-3.5 h-3.5" style={{ color: C.mint1 }} />
+          <span className="font-semibold text-sm" style={{ color: C.dark }}>{group.project_title}</span>
+          <span className="text-[10px] px-2 py-0.5 rounded-full"
+            style={{ background: C.mint1 + "33", color: C.sub }}>
+            {group.items.length} submission{group.items.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+        <ChevronDown className="w-4 h-4 transition-transform"
+          style={{ color: C.sub, transform: open ? "rotate(180deg)" : "" }} />
+      </button>
+      {open && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider border-b"
+              style={{ borderColor: C.mint4 + "44", color: C.sub, background: C.mint4 + "11" }}>
+              <th className="text-left px-4 py-2">Episodes</th>
+              <th className="text-left px-4 py-2">Client</th>
+              <th className="text-left px-4 py-2">Notes</th>
+              <th className="text-left px-4 py-2">Submitted By</th>
+              <th className="text-left px-4 py-2">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {group.items.map((item) => (
+              <tr key={item.id} className="border-b last:border-0"
+                style={{ borderColor: C.mint4 + "33" }}>
+                <td className="px-4 py-2.5 font-medium" style={{ color: C.dark }}>
+                  Ep {item.episode_from}–{item.episode_to}
+                </td>
+                <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{item.client || "—"}</td>
+                <td className="px-4 py-2.5 text-xs max-w-[200px] truncate" style={{ color: C.sub }}>
+                  {item.notes || "—"}
+                </td>
+                <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>
+                  {item.submitted_by_name || "—"}
+                </td>
+                <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>
+                  {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString() : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function SubmissionsTab() {
+  const [submissions, setSubmissions] = useState([]);
+  const [loading, setLoading]         = useState(true);
+
+  useEffect(() => {
+    api.listSubmissions()
+      .then(setSubmissions).catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const grouped = submissions.reduce((acc, s) => {
+    if (!acc[s.project_id]) acc[s.project_id] = { project_id: s.project_id, project_title: s.project_title, items: [] };
+    acc[s.project_id].items.push(s);
+    return acc;
+  }, {});
+  const groups = Object.values(grouped);
+
+  if (loading) return <div className="p-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>;
+
+  return (
+    <div className="space-y-4">
+      {groups.length === 0 ? (
+        <div className="py-10 text-center text-sm" style={{ color: C.sub }}>No society submissions yet.</div>
+      ) : (
+        groups.map((g) => <WDSubmissionGroup key={g.project_id} group={g} />)
+      )}
+    </div>
+  );
+}
+
 // ─── Main WDDashboard ─────────────────────────────────────────────────────────
 export default function WDDashboard() {
   const { currentUser } = useApp();
@@ -813,10 +901,11 @@ export default function WDDashboard() {
   })();
 
   const tabs = [
-    { key: "delegations", label: "Work Delegations" },
-    { key: "serials",     label: "All Serials" },
-    { key: "calendar",    label: "Activity" },
-    { key: "activity",    label: "Editor Activity" },
+    { key: "delegations",  label: "Work Delegations" },
+    { key: "serials",      label: "All Serials" },
+    { key: "calendar",     label: "Activity" },
+    { key: "activity",     label: "Editor Activity" },
+    { key: "submissions",  label: "Submissions" },
   ];
 
   return (
@@ -927,6 +1016,8 @@ export default function WDDashboard() {
       {tab === "activity" && (
         <ActivityPanel editors={editors} selected={selectedEditor} onSelect={setSelectedEditor} />
       )}
+
+      {tab === "submissions" && <SubmissionsTab />}
     </DashboardShell>
   );
 }

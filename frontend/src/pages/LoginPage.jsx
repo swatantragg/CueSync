@@ -32,7 +32,11 @@ export default function LoginPage() {
       <form onSubmit={onSubmit}>
         <AuthField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@company.com" autoComplete="email" />
         <AuthField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••" autoComplete="current-password" />
-        {err && <div className="text-xs mb-3 px-3 py-2 rounded-lg" style={{ background: "#C0392B33", color: "#FFB4A9" }}>{err}</div>}
+        {err && (
+          <div className="text-xs mb-3 px-3 py-2 rounded-lg" style={{ background: "#C0392B33", color: "#FFB4A9" }}>
+            {err.split("\n").map((line, i) => <div key={i}>• {line}</div>)}
+          </div>
+        )}
         <AuthButton type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</AuthButton>
       </form>
     </AuthShell>
