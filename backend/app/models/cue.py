@@ -29,7 +29,7 @@ class CueEntry(Base):
     episode_id: Mapped[int] = mapped_column(ForeignKey("episodes.id", ondelete="CASCADE"), index=True, nullable=False)
 
     song_title: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
-    usage_type: Mapped[UsageType] = mapped_column(Enum(UsageType), default=UsageType.BI)
+    usage_type: Mapped[UsageType] = mapped_column(Enum(UsageType, native_enum=False, length=50), default=UsageType.BI)
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False)
     usage_count: Mapped[int] = mapped_column(Integer, default=1)
 

@@ -427,9 +427,9 @@ async def commit_rough(
             f"Committed rough sheet — {len(created_eps)} new episodes",
         )
         await db.commit()
-    except SQLAlchemyError:
+    except SQLAlchemyError as e:
         await db.rollback()
-        raise HTTPException(500, "Commit failed. Please try again.")
+        raise HTTPException(500, f"Commit failed: {type(e).__name__}: {str(e)[:400]}")
     return {"ok": True, "project_id": project_id, "episodes_created": len(created_eps)}
 
 
