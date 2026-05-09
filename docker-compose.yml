@@ -42,7 +42,8 @@ services:
         VITE_API_URL: "http://o11yje0rg7k0eqxi5qxvx6sa.89.116.21.10.sslip.io"
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      # Changed fallback host port from 80 to 3000 to prevent conflicts
+      - "${FRONTEND_PORT:-7832}:80"
     depends_on:
       - backend
 
