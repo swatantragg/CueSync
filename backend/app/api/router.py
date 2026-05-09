@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routes import activity, auth, cues, delegations, episodes, exports, library, notifications, projects, uploads, users, validation
+from app.api.routes import activity, auth, cues, delegations, episodes, exports, library, notifications, projects, society_submissions, uploads, users, validation
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -15,3 +15,4 @@ api_router.include_router(uploads.router, prefix="/uploads", tags=["uploads"])
 api_router.include_router(activity.router, prefix="/activity", tags=["activity"])
 api_router.include_router(delegations.router, prefix="/delegations", tags=["delegations"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
+api_router.include_router(society_submissions.router, prefix="/society-submissions", tags=["society-submissions"])

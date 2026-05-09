@@ -12,23 +12,6 @@ services:
       retries: 5
 
   # ── PostgreSQL ────────────────────────────────────────────────────────────────
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-cuesync}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:-cuesync}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cuesync} -d ${POSTGRES_DB:-cuesync}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    # DB port NOT exposed to host — only backend can reach it via internal network
-
   # ── FastAPI backend ───────────────────────────────────────────────────────────
   backend:
     build:
@@ -46,8 +29,6 @@ services:
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     # Port NOT exposed to host — Nginx proxies to it via internal network
@@ -58,7 +39,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ""
+        VITE_API_URL: "http://o11yje0rg7k0eqxi5qxvx6sa.89.116.21.10.sslip.io"
     restart: unless-stopped
     ports:
       # Changed fallback host port from 80 to 3000 to prevent conflicts
