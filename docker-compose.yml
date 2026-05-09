@@ -39,7 +39,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: "http://o11yje0rg7k0eqxi5qxvx6sa.89.116.21.10.sslip.io"
+        VITE_API_URL: "https://cuesync-b.musicrightsmanagement.in"
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-80}:80"
