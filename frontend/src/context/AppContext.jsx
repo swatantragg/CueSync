@@ -78,8 +78,7 @@ export function AppProvider({ children }) {
   const goHome = () => { setScreen("workspace"); setActiveProjectId(null); setActiveEpisodeId(null); };
 
   const finishAuth = (res) => {
-    // Token is stored only in httpOnly cookie by the backend — NOT in localStorage
-    // Only the user profile object is stored locally for UI display
+    if (res.access_token) tokenStore.set(res.access_token);
     const u = { ...res.user, avatar: (res.user.full_name || res.user.email).slice(0, 2).toUpperCase() };
     userStore.set(u);
     setCurrentUser(u);
