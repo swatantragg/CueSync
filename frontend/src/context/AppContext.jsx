@@ -34,10 +34,11 @@ export function AppProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (userStore.get() && !currentUser) {
+    if (userStore.get()) {
+      // Always refresh role from DB on mount — localStorage role can be stale if admin changed it
       api.me()
         .then((u) => { userStore.set(u); setCurrentUser(u); })
-        .catch(() => { userStore.set(null); setScreen("login"); });
+        .catch(() => { userStore.set(null); setCurrentUser(null); setScreen("login"); });
     }
   }, []);
 

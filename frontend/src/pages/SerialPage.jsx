@@ -10,7 +10,7 @@ import { api } from "../utils/api";
 import { useApp } from "../context/AppContext";
 
 export default function SerialPage() {
-  const { activeProject, isAdmin, isReviewer, updateProject, setActiveEpisodeId, setScreen, goHome } = useApp();
+  const { activeProject, activeProjectId, isAdmin, isReviewer, updateProject, setProjects, setActiveProjectId, setActiveEpisodeId, setScreen, goHome, role } = useApp();
   const canReviewRole = isAdmin || isReviewer;
   const [busy, setBusy] = useState(false);
   const [importProgress, setImportProgress] = useState(null);
@@ -23,11 +23,19 @@ export default function SerialPage() {
   const [selected, setSelected] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
   const [searchQ, setSearchQ] = useState("");
+  const [bootstrapping, setBootstrapping] = useState(false);
 
-  const reload = async () => {
-    if (!activeProject) return;
-    const [p, eps] = await Promise.all([api.getProject(activeProject.id), api.listEpisodes(activeProject.id)]);
-    updateProject(activeProject.id, (prev) => ({
+  const reload = async (pid) => {
+    const id = pid || activeProject?.id || activeProjectId;
+    if (!id) return;
+    const [p, eps] = await Promise.all([api.getProject(id), api.listEpisodes(id)]);
+    setProjects((prev) => {
+      const exists = prev.find((proj) => proj.id === id);
+      if (!exists) return [...prev, { id, title: p.title, episodes: [] }];
+      return prev;
+    });
+    setActiveProjectId(id);
+    updateProject(id, (prev) => ({
       ...prev, ...p,
       year: p.production_year, productionCompany: p.production_company, channel: p.channel_name,
       countryOfOrigin: p.country, backgroundMusicComposer: p.bg_music_composer,
@@ -41,7 +49,21 @@ export default function SerialPage() {
     }));
   };
 
-  useEffect(() => { setPage(1); reload().catch(() => {}); }, [activeProject?.id]);
+  useEffect(() => {
+    setPage(1);
+    if (!activeProject && activeProjectId) {
+      setBootstrapping(true);
+      reload(activeProjectId).catch(() => {}).finally(() => setBootstrapping(false));
+    } else {
+      reload().catch(() => {});
+    }
+  }, [activeProject?.id, activeProjectId]);
+
+  if (!activeProject && bootstrapping) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: "#f8f9fa" }}>
+      <span className="text-sm" style={{ color: "#6B7280" }}>Loading…</span>
+    </div>
+  );
 
   if (!activeProject) return null;
   const proj = activeProject;
@@ -288,7 +310,7 @@ export default function SerialPage() {
                 )}
               </div>
 
-              {selected.size > 0 && (
+              {selected.size > 0 && !canReviewRole && (
                 <button
                   onClick={handleDeleteSelected}
                   disabled={deleting}
@@ -330,15 +352,17 @@ export default function SerialPage() {
                 <th className="text-left px-5 py-3 w-32">Status</th>
                 <th className="text-left px-5 py-3">Last Activity</th>
                 <th className="text-right px-5 py-3 w-52">Action</th>
-                <th className="px-5 py-3 w-10 text-center">
-                  <input type="checkbox" checked={allPageSelected} onChange={toggleAll} style={{ accentColor: C.dark }} className="cursor-pointer" title="Select all on this page" />
-                </th>
+                {!canReviewRole && (
+                  <th className="px-5 py-3 w-10 text-center">
+                    <input type="checkbox" checked={allPageSelected} onChange={toggleAll} style={{ accentColor: C.dark }} className="cursor-pointer" title="Select all on this page" />
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {filteredEps.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>
+                  <td colSpan={canReviewRole ? 8 : 9} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>
                     {searchQ ? `No episodes match "${searchQ}".` : "No episodes yet."}
                   </td>
                 </tr>
@@ -363,19 +387,21 @@ export default function SerialPage() {
                     <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>{lastEdit ? `${lastEdit.name} · ${lastEdit.at}` : "—"}</td>
                     <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={async () => {
-                            const ok = await showConfirm(
-                              `Episode ${String(ep.number).padStart(2, "0")}${ep.title ? ` — "${ep.title}"` : ""} will be permanently deleted.`,
-                              { title: "Delete Episode", confirmLabel: "Delete", variant: "danger", detail: "All songs and cue data inside will be lost." }
-                            );
-                            if (!ok) return;
-                            try { await api.deleteEpisode(ep.id); await reload(); }
-                            catch (ex) { await showAlert(ex.message, { title: "Delete Failed", variant: "error" }); }
-                          }}
-                          className="p-1.5 rounded-lg hover:bg-red-50"
-                          title="Delete episode"
-                        ><Trash2 className="w-4 h-4" style={{ color: C.danger }} /></button>
+                        {!canReviewRole && (
+                          <button
+                            onClick={async () => {
+                              const ok = await showConfirm(
+                                `Episode ${String(ep.number).padStart(2, "0")}${ep.title ? ` — "${ep.title}"` : ""} will be permanently deleted.`,
+                                { title: "Delete Episode", confirmLabel: "Delete", variant: "danger", detail: "All songs and cue data inside will be lost." }
+                              );
+                              if (!ok) return;
+                              try { await api.deleteEpisode(ep.id); await reload(); }
+                              catch (ex) { await showAlert(ex.message, { title: "Delete Failed", variant: "error" }); }
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-red-50"
+                            title="Delete episode"
+                          ><Trash2 className="w-4 h-4" style={{ color: C.danger }} /></button>
+                        )}
 
                         {canReview && (
                           <>
@@ -409,9 +435,11 @@ export default function SerialPage() {
                         </button>
                       </div>
                     </td>
-                    <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={isSelected} onChange={() => toggleOne(ep.id)} style={{ accentColor: C.dark }} className="cursor-pointer" />
-                    </td>
+                    {!canReviewRole && (
+                      <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={isSelected} onChange={() => toggleOne(ep.id)} style={{ accentColor: C.dark }} className="cursor-pointer" />
+                      </td>
+                    )}
                   </tr>
                 );
               })}

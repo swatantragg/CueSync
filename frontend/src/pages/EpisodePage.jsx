@@ -221,6 +221,8 @@ export default function EpisodePage() {
   const [showEpPicker, setShowEpPicker] = useState(null);
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [copyToast, setCopyToast] = useState(null); // array of episode numbers
+  const [reviewerHasPendingChanges, setReviewerHasPendingChanges] = useState(false);
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
   // saves: key → { timer: id|null, fn: () => Promise }
   // flying: Map<key, in-flight Promise> — keyed same as saves so saves chain in order
   const saves = useRef(new Map());
@@ -442,6 +444,7 @@ export default function EpisodePage() {
   const editEpCue = (k, v) => {
     const updated = replaceCurrentEpisode((e) => ({ ...e, cueDetails: { ...(e.cueDetails || {}), [k]: v } }));
     saveEpisode(updated);
+    if (canReviewRole) setReviewerHasPendingChanges(true);
   };
 
   const addSong = async () => {
@@ -456,6 +459,7 @@ export default function EpisodePage() {
         contributors: [],
       });
       await refreshEpisode();
+      if (canReviewRole) setReviewerHasPendingChanges(true);
     } catch (e) { await showAlert(e?.message || String(e), { title: "Failed to Add Song", variant: "error" }); }
   };
 
@@ -482,6 +486,7 @@ export default function EpisodePage() {
     }));
     const updatedCue = updated.cues.find((c) => c.id === cid);
     if (updatedCue) saveCue(updatedCue);
+    if (canReviewRole) setReviewerHasPendingChanges(true);
   };
 
   const copyToEpisodes = async (targetEids) => {
@@ -548,6 +553,7 @@ export default function EpisodePage() {
   const editEp = (k, v) => {
     const updated = replaceCurrentEpisode((e) => ({ ...e, [k]: v }));
     saveEpisode(updated);
+    if (canReviewRole) setReviewerHasPendingChanges(true);
   };
   const uploader = USERS_DB.find((u) => u.id === ep.uploadedBy);
   const uploadRow = [...activity].reverse().find((r) => r.action === "upload");
@@ -564,8 +570,15 @@ export default function EpisodePage() {
       await persistCurrentSnapshot();
       await refreshEpisode();
       setSavedAt(new Date().toLocaleTimeString());
-    } catch (e) { console.error(e); await showAlert(e?.message || String(e), { title: "Save Failed", variant: "error" }); }
-    finally { setSaving(false); }
+      setReviewerHasPendingChanges(false);
+    } catch (e) {
+      console.error(e);
+      const raw = e?.message || String(e);
+      const msg = raw === "Insufficient privileges"
+        ? "Save failed — your account role may not have write access. Ask an admin to verify your role is set to \"reviewer\" in the Admin Dashboard, then log out and back in."
+        : raw;
+      await showAlert(msg, { title: "Save Failed", variant: "error" });
+    } finally { setSaving(false); }
   };
 
   const shareCheck = (c) => {
@@ -586,6 +599,7 @@ export default function EpisodePage() {
     }));
     if (updated) saveCue(updated);
     if (newEp && k === "duration") saveEpisode(newEp);
+    if (canReviewRole) setReviewerHasPendingChanges(true);
   };
   const updateContrib = (cid, coid, k, v) => {
     let updated;
@@ -600,6 +614,7 @@ export default function EpisodePage() {
       }),
     }));
     if (updated) saveCue(updated);
+    if (canReviewRole) setReviewerHasPendingChanges(true);
   };
   const addContrib = (cid, afterId) => {
     let updated;
@@ -622,6 +637,7 @@ export default function EpisodePage() {
       }),
     }));
     if (updated) saveCue(updated);
+    if (canReviewRole) setReviewerHasPendingChanges(true);
   };
   const removeContrib = (cid, coid) => {
     let updated;
@@ -630,6 +646,7 @@ export default function EpisodePage() {
       cues: e.cues.map((c) => { if (c.id === cid) { updated = { ...c, contributors: applyShareRules(c.contributors.filter((co) => co.id !== coid)) }; return updated; } return c; }),
     }));
     if (updated) saveCue(updated);
+    if (canReviewRole) setReviewerHasPendingChanges(true);
   };
   const removeContribs = (cid, coIds) => {
     const idSet = new Set(coIds);
@@ -643,6 +660,7 @@ export default function EpisodePage() {
       }),
     }));
     if (updated) saveCue(updated);
+    if (canReviewRole) setReviewerHasPendingChanges(true);
   };
   const duplicateCue = async (cid) => {
     const cue = ep.cues.find((c) => c.id === cid);
@@ -674,6 +692,7 @@ export default function EpisodePage() {
     replaceCurrentEpisode((e) => ({ ...e, cues: e.cues.filter((c) => c.id !== cid) }));
     addEditEntry("Removed a song");
     api.deleteCue(cid).catch(() => {});
+    if (canReviewRole) setReviewerHasPendingChanges(true);
   };
   const handleSubmit = async () => {
     try {
@@ -684,11 +703,64 @@ export default function EpisodePage() {
     } catch (e) { await showAlert(e.message, { title: "Submit Failed", variant: "error" }); }
   };
   const handleApprove = async () => {
+    if (reviewerHasPendingChanges) {
+      setShowApproveConfirm(true);
+      return;
+    }
+    await _doApprove();
+  };
+
+  const _doApprove = async () => {
+    // Flush any in-flight auto-saves first (best-effort; auto-saves already committed most changes)
+    await flushAll().catch(() => {});
+    try {
+      await api.approveEpisode(ep.id);
+      await refreshEpisode();
+      setReviewerHasPendingChanges(false);
+      setNotifications((prev) => [...prev, { id: uid(), type: "approval", serial: proj.title, epNum: ep.number, message: `Episode ${ep.number} has been approved. Cue sheets are ready for export.`, from: currentUser.name, at: now(), read: false }]);
+    } catch (e) {
+      const raw = e?.message || String(e);
+      const msg = raw === "Insufficient privileges"
+        ? "Approve failed — your account role must be \"reviewer\". Ask an admin to verify your role in the Admin Dashboard, then log out and back in."
+        : raw;
+      await showAlert(msg, { title: "Approve Failed", variant: "error" });
+    }
+  };
+
+  const handleSaveAndApprove = async () => {
+    setShowApproveConfirm(false);
+    setSaving(true);
+    // Step 1: save
+    try {
+      await persistCurrentSnapshot();
+      setSavedAt(new Date().toLocaleTimeString());
+      setReviewerHasPendingChanges(false);
+    } catch (e) {
+      const raw = e?.message || String(e);
+      const msg = raw === "Insufficient privileges"
+        ? "Save failed — your account role may not have write access. Ask an admin to verify your role is set to \"reviewer\" in the Admin Dashboard, then log out and back in."
+        : raw;
+      await showAlert(msg, { title: "Save Failed", variant: "error" });
+      setSaving(false);
+      return;
+    }
+    // Step 2: approve
     try {
       await api.approveEpisode(ep.id);
       await refreshEpisode();
       setNotifications((prev) => [...prev, { id: uid(), type: "approval", serial: proj.title, epNum: ep.number, message: `Episode ${ep.number} has been approved. Cue sheets are ready for export.`, from: currentUser.name, at: now(), read: false }]);
-    } catch (e) { await showAlert(e.message, { title: "Approve Failed", variant: "error" }); }
+    } catch (e) {
+      const raw = e?.message || String(e);
+      const msg = raw === "Insufficient privileges"
+        ? "Approve failed — your account role must be \"reviewer\". Ask an admin to verify your role in the Admin Dashboard, then log out and back in."
+        : raw;
+      await showAlert(msg, { title: "Approve Failed", variant: "error" });
+    } finally { setSaving(false); }
+  };
+
+  const handleApproveWithoutSaving = async () => {
+    setShowApproveConfirm(false);
+    await _doApprove();
   };
   const handleReject = async () => {
     if (!adminReviewNote.trim()) return;
@@ -734,6 +806,45 @@ export default function EpisodePage() {
   return (
     <div className="min-h-screen" style={{ background: C.light, fontFamily: FONTS.sans, color: C.dark }}>
       <Header />
+
+      {showApproveConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
+          <div className="rounded-2xl w-full max-w-md shadow-2xl overflow-hidden" style={{ background: C.dark }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: C.mid }}>
+              <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>
+                Unsaved Changes
+              </h3>
+              <p className="text-xs mt-1" style={{ color: C.muted }}>
+                Save your changes before approving so the exported cue sheet reflects your edits.
+              </p>
+            </div>
+            <div className="p-6 space-y-3">
+              <button
+                onClick={handleSaveAndApprove}
+                disabled={saving}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium disabled:opacity-50"
+                style={{ background: C.ok, color: C.white }}
+              >
+                <Save className="w-4 h-4" />Save &amp; Approve
+              </button>
+              <button
+                onClick={handleApproveWithoutSaving}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium"
+                style={{ background: C.mid, color: C.mint4, border: `1px solid ${C.mint1}33` }}
+              >
+                <Check className="w-4 h-4" />Approve Without Saving
+              </button>
+              <button
+                onClick={() => setShowApproveConfirm(false)}
+                className="w-full py-2.5 rounded-xl text-sm"
+                style={{ color: C.sub }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {(loading || saving) && (
         <div className="fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-lg" style={{ background: C.dark, color: C.mint4 }}>
           <span className="w-3 h-3 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: C.mint1, borderTopColor: "transparent" }} />
@@ -872,15 +983,13 @@ export default function EpisodePage() {
 
         <div className="mb-3 flex items-center justify-between">
           <SectionTitle title={`Song Details (${ep.cues.length})`} />
-          {!canReviewRole && (
-            <button
-              onClick={addSong}
-              className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl font-medium hover:opacity-90 transition"
-              style={{ background: C.ok, color: C.white }}
-            >
-              <Plus className="w-3.5 h-3.5" />Add Song
-            </button>
-          )}
+          <button
+            onClick={addSong}
+            className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl font-medium hover:opacity-90 transition"
+            style={{ background: C.ok, color: C.white }}
+          >
+            <Plus className="w-3.5 h-3.5" />Add Song
+          </button>
         </div>
         <div className="space-y-6 mb-8">
           {ep.cues.map((cue, idx) => (
@@ -888,7 +997,7 @@ export default function EpisodePage() {
               key={cue.id}
               cue={cue}
               idx={idx}
-              isAdmin={canReviewRole}
+              isAdmin={isAdmin}
               onUpdate={updateCue}
               onContribUpdate={updateContrib}
               onContribAdd={addContrib}
@@ -977,6 +1086,9 @@ export default function EpisodePage() {
                 />
               </div>
               <div className="flex items-center gap-3 flex-wrap">
+                <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium disabled:opacity-40 hover:opacity-90 transition" style={{ background: C.mid, color: C.mint4, border: `1px solid ${C.mint1}44` }}>
+                  <Save className="w-4 h-4" />{saving ? "Saving…" : "Save Changes"}
+                </button>
                 <button onClick={handleApprove} className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium hover:opacity-90 transition" style={{ background: C.ok, color: C.white }}>
                   <Check className="w-4 h-4" />Approve
                 </button>

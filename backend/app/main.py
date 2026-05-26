@@ -63,7 +63,8 @@ MIGRATIONS = [
     "SELECT setval('song_library_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM song_library), 1))) FROM song_library_id_seq",
 ]
 
-USER_ROLE_ENUM_VALUES = ["WORK_DELEGATOR", "REVIEWER"]
+# Use lowercase values to match Python enum .value ("reviewer", not "REVIEWER")
+USER_ROLE_ENUM_VALUES = ["work_delegator", "reviewer"]
 USAGE_TYPE_ENUM_VALUES = ["BI", "BV", "FI", "FV"]
 
 
@@ -85,6 +86,38 @@ async def lifespan(app: FastAPI):
                 print(f"[enum-migration] ensured usagetype value: {val}")
             except Exception as me:
                 print(f"[enum-migration] skipped '{val}': {me}")
+
+        # Convert users.role from native PostgreSQL enum to varchar (matches native_enum=False).
+        # Idempotent: only runs if the column is still the userrole enum type.
+        try:
+            async with ac_engine.connect() as conn:
+                await conn.execute(text("""
+                    DO $$ BEGIN
+                      IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name='users' AND column_name='role' AND udt_name='userrole'
+                      ) THEN
+                        ALTER TABLE users ALTER COLUMN role TYPE varchar(50) USING role::varchar;
+                      END IF;
+                    END $$;
+                """))
+            print("[enum-migration] converted users.role to varchar(50)")
+        except Exception as me:
+            print(f"[enum-migration] role column conversion skipped: {me}")
+
+        # Normalize ALL uppercase role values (old DB stored them as enum names, not values).
+        # Runs in autocommit so it's independent of the main migration transaction.
+        _role_map = [
+            ("ADMIN", "admin"), ("EDITOR", "editor"), ("VIEWER", "viewer"),
+            ("REVIEWER", "reviewer"), ("WORK_DELEGATOR", "work_delegator"),
+        ]
+        try:
+            async with ac_engine.connect() as conn:
+                for old_val, new_val in _role_map:
+                    await conn.execute(text(f"UPDATE users SET role = '{new_val}' WHERE role = '{old_val}'"))
+            print("[enum-migration] normalized user role casing")
+        except Exception as me:
+            print(f"[enum-migration] role normalization skipped: {me}")
 
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
