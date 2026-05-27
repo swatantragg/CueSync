@@ -32,15 +32,15 @@ export default function NewSerialModal({ onClose, onCreate }) {
     <div style={{ position: "fixed", inset: 0, background: "#0008", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
       <form onSubmit={submit} style={{ background: C.white, borderRadius: 16, padding: 28, width: 480, fontFamily: FONTS.sans }}>
         <div className="flex items-center justify-between mb-4">
-          <h3 style={{ fontFamily: FONTS.serif, fontSize: 24 }}>New Serial</h3>
+          <h3 style={{ fontFamily: FONTS.serif, fontSize: 24 }}>{f.type === "movie" ? "New Movie" : "New Serial"}</h3>
           <button type="button" onClick={onClose}><X className="w-5 h-5" /></button>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <label className="col-span-2 text-xs" style={{ color: C.sub }}>Serial Title
+          <label className="col-span-2 text-xs" style={{ color: C.sub }}>{f.type === "movie" ? "Movie Title" : "Serial Title"}
             <input style={inp} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} autoFocus />
           </label>
           <label className="text-xs" style={{ color: C.sub }}>Type
-            <select style={inp} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
+            <select style={inp} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value, total_episodes: e.target.value === "movie" ? "" : f.total_episodes })}>
               {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </label>
@@ -52,8 +52,15 @@ export default function NewSerialModal({ onClose, onCreate }) {
           <label className="text-xs" style={{ color: C.sub }}>Production Year
             <input type="number" style={inp} value={f.production_year} onChange={(e) => setF({ ...f, production_year: e.target.value })} />
           </label>
-          <label className="text-xs" style={{ color: C.sub }}>Total Episodes
-            <input type="number" style={inp} value={f.total_episodes} onChange={(e) => setF({ ...f, total_episodes: e.target.value })} />
+          <label className="text-xs" style={{ color: f.type === "movie" ? C.sub + "55" : C.sub }}>Total Episodes
+            <input
+              type="number"
+              style={{ ...inp, opacity: f.type === "movie" ? 0.4 : 1, cursor: f.type === "movie" ? "not-allowed" : "auto" }}
+              value={f.total_episodes}
+              onChange={(e) => setF({ ...f, total_episodes: e.target.value })}
+              disabled={f.type === "movie"}
+              placeholder={f.type === "movie" ? "N/A for movies" : ""}
+            />
           </label>
         </div>
         {err && <div className="text-xs mt-3" style={{ color: C.danger }}>{err}</div>}

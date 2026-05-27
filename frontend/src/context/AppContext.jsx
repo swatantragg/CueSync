@@ -34,10 +34,11 @@ export function AppProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (userStore.get() && !currentUser) {
+    if (userStore.get()) {
+      // Always refresh role from DB on mount — localStorage role can be stale if admin changed it
       api.me()
         .then((u) => { userStore.set(u); setCurrentUser(u); })
-        .catch(() => { userStore.set(null); setScreen("login"); });
+        .catch(() => { userStore.set(null); setCurrentUser(null); setScreen("login"); });
     }
   }, []);
 
@@ -71,7 +72,15 @@ export function AppProvider({ children }) {
     setUnreadCount(0);
   };
 
-  const updateProject = (pid, fn) => setProjects((prev) => prev.map((p) => (p.id === pid ? fn(p) : p)));
+  // always normalise project type to lowercase so comparisons are consistent
+  const normaliseProject = (p) => ({ ...p, type: (p.type || "serial").toLowerCase() });
+  const safeSetProjects = (arg) =>
+    setProjects((prev) => {
+      const next = typeof arg === "function" ? arg(prev) : arg;
+      return next.map(normaliseProject);
+    });
+  const updateProject = (pid, fn) =>
+    safeSetProjects((prev) => prev.map((p) => (p.id === pid ? normaliseProject(fn(p)) : p)));
   const updateEpisode = (pid, eid, fn) =>
     updateProject(pid, (p) => ({ ...p, episodes: (p.episodes || []).map((e) => (e.id === eid ? fn(e) : e)) }));
 
@@ -97,7 +106,7 @@ export function AppProvider({ children }) {
   const value = {
     currentUser, setCurrentUser,
     screen, setScreen,
-    projects, setProjects,
+    projects, setProjects: safeSetProjects,
     activeProjectId, setActiveProjectId,
     activeEpisodeId, setActiveEpisodeId,
     activeProject, activeEpisode,

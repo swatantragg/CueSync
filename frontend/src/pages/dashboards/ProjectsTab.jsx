@@ -8,7 +8,7 @@ import { api } from "../../utils/api";
 
 const PAGE_SIZE = 10;
 
-export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterProjectIds }) {
+export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterProjectIds, projectType }) {
   const { projects, setProjects, isAdmin, setActiveProjectId, setScreen } = useApp();
   const [showNew, setShowNew] = useState(false);
   const [page, setPage] = useState(1);
@@ -21,6 +21,7 @@ export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterP
     api.projects().then((list) => {
       setProjects(list.map((p) => ({
         ...p,
+        type: (p.type || "serial").toLowerCase(),
         year: p.production_year,
         productionCompany: p.production_company,
         channel: p.channel_name,
@@ -76,7 +77,12 @@ export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterP
 
   const filtered = useMemo(() => {
     let list = projects;
-    if (filterProjectIds) list = list.filter((p) => filterProjectIds.has(p.id));
+    // filterProjectIds takes priority (delegation-derived); fall back to p.type only when no filterProjectIds
+    if (filterProjectIds) {
+      list = list.filter((p) => filterProjectIds.has(p.id));
+    } else if (projectType) {
+      list = list.filter((p) => (p.type || "serial") === projectType);
+    }
     const q = searchQ.trim().toLowerCase();
     if (!q) return list;
     return list.filter((p) =>
@@ -87,7 +93,7 @@ export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterP
       (p.productionCompany || "").toLowerCase().includes(q) ||
       (p.channel || "").toLowerCase().includes(q)
     );
-  }, [projects, searchQ, filterProjectIds]);
+  }, [projects, searchQ, filterProjectIds, projectType]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
@@ -124,10 +130,10 @@ export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterP
       {!hideHeader && (
         <div className="flex items-end justify-between mb-6">
           <div>
-            <h2 className="text-3xl mb-1" style={{ fontFamily: FONTS.serif }}>Serials</h2>
+            <h2 className="text-3xl mb-1" style={{ fontFamily: FONTS.serif }}>{projectType === "movie" ? "Movies" : "Serials"}</h2>
           </div>
           <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium hover:opacity-90" style={{ background: C.dark, color: C.mint4 }}>
-            <Plus className="w-4 h-4" />New Serial
+            <Plus className="w-4 h-4" />{projectType === "movie" ? "New Movie" : "New Serial"}
           </button>
         </div>
       )}
@@ -137,7 +143,7 @@ export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterP
       <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
         <div className="px-6 py-4 border-b flex flex-wrap items-center gap-3 justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
           <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>
-            {filtered.length}{searchQ ? ` of ${projects.length}` : ""} Serials
+            {filtered.length}{searchQ ? ` of ${projects.filter((p) => !projectType || (p.type || "serial") === projectType).length}` : ""} {projectType === "movie" ? "Movies" : "Serials"}
           </h3>
           <div className="flex items-center gap-3 flex-wrap">
             <div className="relative">
@@ -161,7 +167,7 @@ export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterP
               </button>
             )}
             {(showCreateBtn ?? !hideHeader) && <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-medium hover:opacity-90" style={{ background: C.dark, color: C.mint4 }}>
-              <Plus className="w-3.5 h-3.5" />New Serial
+              <Plus className="w-3.5 h-3.5" />{projectType === "movie" ? "New Movie" : "New Serial"}
             </button>}
             <span className="text-xs" style={{ color: C.sub }}>Page {pageSafe} of {totalPages}</span>
           </div>
@@ -200,7 +206,7 @@ export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterP
                   </td>
                   <td className="px-5 py-4">
                     <div className="font-medium" style={{ fontFamily: FONTS.serif, color: C.dark }}>{p.title}</div>
-                    <div className="text-[11px] mt-0.5" style={{ color: C.sub }}>{(p.episodes || []).length} episodes</div>
+                    {p.type !== "movie" && <div className="text-[11px] mt-0.5" style={{ color: C.sub }}>{(p.episodes || []).length} episodes</div>}
                   </td>
                   <td className="px-5 py-4"><span className="inline-flex items-center gap-1 text-xs uppercase tracking-wider" style={{ color: C.sub }}><Tv className="w-3.5 h-3.5" />{p.type}</span></td>
                   <td className="px-5 py-4 text-xs" style={{ color: C.sub }}>{[p.language, p.genre, p.year].filter(Boolean).join(" · ") || "—"}</td>

@@ -1,4 +1,5 @@
-import { Music2 } from "lucide-react";
+import { Music2, Eye, EyeOff } from "lucide-react";
+import { useState } from "react";
 import { C, FONTS } from "../styles/palette";
 
 export default function AuthShell({ title, subtitle, children, footer }) {
@@ -26,17 +27,34 @@ export default function AuthShell({ title, subtitle, children, footer }) {
   );
 }
 
-export function AuthField({ label, ...props }) {
+export function AuthField({ label, type, ...props }) {
+  const [show, setShow] = useState(false);
+  const isPassword = type === "password";
+
   return (
     <div className="mb-4">
       <label className="text-[10px] uppercase tracking-widest block mb-1.5" style={{ color: C.mint1 + "CC" }}>{label}</label>
-      <input
-        {...props}
-        className="w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors"
-        style={{ background: "rgba(255,255,255,0.05)", color: C.mint4, borderColor: C.mint1 + "44" }}
-        onFocus={(e) => (e.target.style.borderColor = C.mint1)}
-        onBlur={(e) => (e.target.style.borderColor = C.mint1 + "44")}
-      />
+      <div className="relative">
+        <input
+          {...props}
+          type={isPassword ? (show ? "text" : "password") : type}
+          className="w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors"
+          style={{ background: "rgba(255,255,255,0.05)", color: C.mint4, borderColor: C.mint1 + "44", paddingRight: isPassword ? "2.75rem" : undefined }}
+          onFocus={(e) => (e.target.style.borderColor = C.mint1)}
+          onBlur={(e) => (e.target.style.borderColor = C.mint1 + "44")}
+        />
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setShow((s) => !s)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none"
+            style={{ color: C.mint1 + "99" }}
+            tabIndex={-1}
+          >
+            {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

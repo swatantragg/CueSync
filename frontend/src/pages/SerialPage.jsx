@@ -10,7 +10,7 @@ import { api } from "../utils/api";
 import { useApp } from "../context/AppContext";
 
 export default function SerialPage() {
-  const { activeProject, isAdmin, isReviewer, updateProject, setActiveEpisodeId, setScreen, goHome } = useApp();
+  const { activeProject, activeProjectId, isAdmin, isReviewer, updateProject, setProjects, setActiveProjectId, setActiveEpisodeId, setScreen, goHome, role } = useApp();
   const canReviewRole = isAdmin || isReviewer;
   const [busy, setBusy] = useState(false);
   const [importProgress, setImportProgress] = useState(null);
@@ -23,12 +23,21 @@ export default function SerialPage() {
   const [selected, setSelected] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
   const [searchQ, setSearchQ] = useState("");
+  const [bootstrapping, setBootstrapping] = useState(false);
 
-  const reload = async () => {
-    if (!activeProject) return;
-    const [p, eps] = await Promise.all([api.getProject(activeProject.id), api.listEpisodes(activeProject.id)]);
-    updateProject(activeProject.id, (prev) => ({
+  const reload = async (pid) => {
+    const id = pid || activeProject?.id || activeProjectId;
+    if (!id) return;
+    const [p, eps] = await Promise.all([api.getProject(id), api.listEpisodes(id)]);
+    setProjects((prev) => {
+      const exists = prev.find((proj) => proj.id === id);
+      if (!exists) return [...prev, { id, title: p.title, episodes: [] }];
+      return prev;
+    });
+    setActiveProjectId(id);
+    updateProject(id, (prev) => ({
       ...prev, ...p,
+      type: (p.type || "serial").toLowerCase(),
       year: p.production_year, productionCompany: p.production_company, channel: p.channel_name,
       countryOfOrigin: p.country, backgroundMusicComposer: p.bg_music_composer,
       submittedBy: p.submitted_by,
@@ -41,10 +50,24 @@ export default function SerialPage() {
     }));
   };
 
-  useEffect(() => { setPage(1); reload().catch(() => {}); }, [activeProject?.id]);
+  useEffect(() => {
+    setPage(1);
+    if (!activeProject && activeProjectId) {
+      setBootstrapping(true);
+      reload(activeProjectId).catch(() => {}).finally(() => setBootstrapping(false));
+    } else {
+      reload().catch(() => {});
+    }
+  }, [activeProject?.id, activeProjectId]);
+
+  if (!activeProject && bootstrapping) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: "#f8f9fa" }}>
+      <span className="text-sm" style={{ color: "#6B7280" }}>Loading…</span>
+    </div>
+  );
 
   if (!activeProject) return null;
-  const proj = activeProject;
+  const proj = { ...activeProject, type: (activeProject.type || "serial").toLowerCase() };
 
   const fmtDur = (sec) => {
     if (!sec) return "—";
@@ -203,7 +226,7 @@ export default function SerialPage() {
 
       <main className="max-w-7xl mx-auto px-6 py-10">
         <button onClick={goHome} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}>
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Serials
+          <ArrowLeft className="w-3.5 h-3.5" /> Back
         </button>
         <div className="flex items-end justify-between mb-8">
           <div>
@@ -211,10 +234,12 @@ export default function SerialPage() {
             <h2 className="text-5xl" style={{ fontFamily: FONTS.serif }}>{proj.title}</h2>
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-          <MetaCard label="Channel" value={proj.channel} />
-          <MetaCard label="Episodes" value={proj.episodes.length} mono />
-        </div>
+        {proj.type !== "movie" && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+            <MetaCard label="Channel" value={proj.channel} />
+            <MetaCard label="Episodes" value={proj.episodes.length} mono />
+          </div>
+        )}
 
         {importResult && (
           <div className="mb-4 text-sm rounded-xl px-4 py-3 flex items-center justify-between" style={{ color: "#2E7D32", background: "#E8F5E9", border: "1px solid #A5D6A7" }}>
@@ -267,10 +292,11 @@ export default function SerialPage() {
         <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
           <div className="px-6 py-4 border-b flex flex-wrap items-center gap-3 justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
             <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>
-              Episodes ({filteredEps.length}{searchQ ? ` of ${proj.episodes.length}` : ""})
+              {proj.type === "movie" ? "Movie Cue Sheet" : `Episodes (${filteredEps.length}${searchQ ? ` of ${proj.episodes.length}` : ""})`}
             </h3>
             <div className="flex items-center gap-3 flex-wrap">
-              {/* Search */}
+              {/* Search — hidden for movies */}
+              {proj.type !== "movie" && (
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: C.sub }} />
                 <input
@@ -287,8 +313,9 @@ export default function SerialPage() {
                   </button>
                 )}
               </div>
+              )}
 
-              {selected.size > 0 && (
+              {selected.size > 0 && !canReviewRole && (
                 <button
                   onClick={handleDeleteSelected}
                   disabled={deleting}
@@ -322,7 +349,7 @@ export default function SerialPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-[10px] uppercase tracking-wider" style={{ borderColor: C.mint4, color: C.sub, background: C.mint4 + "33" }}>
-                <th className="text-left px-5 py-3 w-16">Ep.</th>
+                {proj.type !== "movie" && <th className="text-left px-5 py-3 w-16">Ep.</th>}
                 <th className="text-left px-5 py-3">Title</th>
                 <th className="text-left px-5 py-3">Air Date</th>
                 <th className="text-left px-5 py-3 w-28">Duration</th>
@@ -330,16 +357,20 @@ export default function SerialPage() {
                 <th className="text-left px-5 py-3 w-32">Status</th>
                 <th className="text-left px-5 py-3">Last Activity</th>
                 <th className="text-right px-5 py-3 w-52">Action</th>
-                <th className="px-5 py-3 w-10 text-center">
-                  <input type="checkbox" checked={allPageSelected} onChange={toggleAll} style={{ accentColor: C.dark }} className="cursor-pointer" title="Select all on this page" />
-                </th>
+                {!canReviewRole && (
+                  <th className="px-5 py-3 w-10 text-center">
+                    <input type="checkbox" checked={allPageSelected} onChange={toggleAll} style={{ accentColor: C.dark }} className="cursor-pointer" title="Select all on this page" />
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {filteredEps.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>
-                    {searchQ ? `No episodes match "${searchQ}".` : "No episodes yet."}
+                  <td colSpan={canReviewRole ? 8 : 9} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>
+                    {proj.type === "movie"
+                      ? "No cue sheet imported yet. Use the Import Rough Sheet option above."
+                      : searchQ ? `No episodes match "${searchQ}".` : "No episodes yet."}
                   </td>
                 </tr>
               )}
@@ -354,7 +385,7 @@ export default function SerialPage() {
                     style={{ borderColor: C.mint4 + "88", background: isSelected ? C.mint4 + "99" : canReview ? "#F3E5F511" : undefined }}
                     onClick={() => { setActiveEpisodeId(ep.id); setScreen("episode"); }}
                   >
-                    <td className="px-5 py-3 font-mono text-sm">{String(ep.number).padStart(2, "0")}</td>
+                    {proj.type !== "movie" && <td className="px-5 py-3 font-mono text-sm">{String(ep.number).padStart(2, "0")}</td>}
                     <td className="px-5 py-3 text-xs font-medium" style={{ color: C.dark }}>{ep.title || "—"}</td>
                     <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{ep.airDate || "—"}</td>
                     <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{fmtDur(ep.totalDuration)}</td>
@@ -363,19 +394,21 @@ export default function SerialPage() {
                     <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>{lastEdit ? `${lastEdit.name} · ${lastEdit.at}` : "—"}</td>
                     <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={async () => {
-                            const ok = await showConfirm(
-                              `Episode ${String(ep.number).padStart(2, "0")}${ep.title ? ` — "${ep.title}"` : ""} will be permanently deleted.`,
-                              { title: "Delete Episode", confirmLabel: "Delete", variant: "danger", detail: "All songs and cue data inside will be lost." }
-                            );
-                            if (!ok) return;
-                            try { await api.deleteEpisode(ep.id); await reload(); }
-                            catch (ex) { await showAlert(ex.message, { title: "Delete Failed", variant: "error" }); }
-                          }}
-                          className="p-1.5 rounded-lg hover:bg-red-50"
-                          title="Delete episode"
-                        ><Trash2 className="w-4 h-4" style={{ color: C.danger }} /></button>
+                        {!canReviewRole && (
+                          <button
+                            onClick={async () => {
+                              const ok = await showConfirm(
+                                `Episode ${String(ep.number).padStart(2, "0")}${ep.title ? ` — "${ep.title}"` : ""} will be permanently deleted.`,
+                                { title: "Delete Episode", confirmLabel: "Delete", variant: "danger", detail: "All songs and cue data inside will be lost." }
+                              );
+                              if (!ok) return;
+                              try { await api.deleteEpisode(ep.id); await reload(); }
+                              catch (ex) { await showAlert(ex.message, { title: "Delete Failed", variant: "error" }); }
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-red-50"
+                            title="Delete episode"
+                          ><Trash2 className="w-4 h-4" style={{ color: C.danger }} /></button>
+                        )}
 
                         {canReview && (
                           <>
@@ -409,9 +442,11 @@ export default function SerialPage() {
                         </button>
                       </div>
                     </td>
-                    <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={isSelected} onChange={() => toggleOne(ep.id)} style={{ accentColor: C.dark }} className="cursor-pointer" />
-                    </td>
+                    {!canReviewRole && (
+                      <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={isSelected} onChange={() => toggleOne(ep.id)} style={{ accentColor: C.dark }} className="cursor-pointer" />
+                      </td>
+                    )}
                   </tr>
                 );
               })}

@@ -23,7 +23,7 @@ from app.services.library_sync import (
 router = APIRouter()
 
 
-@router.post("/episode/{episode_id}", response_model=CueOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+@router.post("/episode/{episode_id}", response_model=CueOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.REVIEWER))])
 async def create_cue(episode_id: int, payload: CueCreate, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     data = payload.model_dump(exclude={"contributors"})
     cue = CueEntry(episode_id=episode_id, **data)
@@ -56,7 +56,7 @@ async def get_cue(cid: int, db: AsyncSession = Depends(get_db), _: User = Depend
     return await _get_cue(cid, db)
 
 
-@router.put("/{cid}", response_model=CueOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+@router.put("/{cid}", response_model=CueOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.REVIEWER))])
 async def update_cue(cid: int, payload: CueUpdate, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     cue = (await db.execute(select(CueEntry).where(CueEntry.id == cid).options(selectinload(CueEntry.contributors)))).scalar_one_or_none()
     if not cue:
@@ -107,7 +107,7 @@ async def copy_cue_to_episode(cid: int, target_episode_id: int, db: AsyncSession
     return await _get_cue(nc.id, db)
 
 
-@router.delete("/{cid}", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+@router.delete("/{cid}", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.REVIEWER))])
 async def delete_cue(cid: int, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     cue = await db.get(CueEntry, cid)
     if not cue:

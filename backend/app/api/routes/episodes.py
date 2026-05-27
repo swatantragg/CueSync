@@ -37,7 +37,7 @@ async def get_episode(eid: int, db: AsyncSession = Depends(get_db), _: User = De
     return ep
 
 
-@router.put("/{eid}", response_model=EpisodeOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+@router.put("/{eid}", response_model=EpisodeOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.REVIEWER))])
 async def update_episode(eid: int, payload: EpisodeUpdate, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     ep = await db.get(Episode, eid)
     if not ep:
