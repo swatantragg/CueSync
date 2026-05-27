@@ -355,7 +355,7 @@ export default function EpisodePage() {
   }, [activeEpisode?.id]);
 
   if (!activeProject || !activeEpisode) return null;
-  const proj = activeProject;
+  const proj = { ...activeProject, type: (activeProject.type || "serial").toLowerCase() };
   const ep = activeEpisode;
   const sortedEps = [...proj.episodes].sort((a, b) => (a.number || 0) - (b.number || 0));
   const epIdx = sortedEps.findIndex((e) => e.id === ep.id);
@@ -853,13 +853,17 @@ export default function EpisodePage() {
       )}
       <main className="max-w-7xl mx-auto px-6 py-10">
         <button onClick={async () => { await flushAll().catch(() => {}); setActiveEpisodeId(null); setScreen("serial"); }} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}>
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Episodes
+          <ArrowLeft className="w-3.5 h-3.5" /> {proj.type === "movie" ? "Back to Cue Sheet" : "Back to Episodes"}
         </button>
         <div className="flex items-start justify-between mb-6">
           <div>
-            <div className="text-xs uppercase tracking-widest mb-2" style={{ color: C.sub }}>{proj.title} · Episode {String(ep.number).padStart(2, "0")}</div>
-            <h2 className="text-4xl mb-2" style={{ fontFamily: FONTS.serif }}>Episode {ep.number}</h2>
-            {ep.airDate && <div className="text-sm" style={{ color: C.sub }}>Air date: {ep.airDate}</div>}
+            <div className="text-xs uppercase tracking-widest mb-2" style={{ color: C.sub }}>
+              {proj.type === "movie" ? `${proj.title} · MOVIE` : `${proj.title} · Episode ${String(ep.number).padStart(2, "0")}`}
+            </div>
+            <h2 className="text-4xl mb-2" style={{ fontFamily: FONTS.serif }}>
+              {proj.type === "movie" ? proj.title : `Episode ${ep.number}`}
+            </h2>
+            {ep.airDate && <div className="text-sm" style={{ color: C.sub }}>{proj.type === "movie" ? "Release date" : "Air date"}: {ep.airDate}</div>}
           </div>
           <StatusBadge status={ep.status} />
         </div>
@@ -903,17 +907,19 @@ export default function EpisodePage() {
           )}
         </div>
 
-        {showEpPicker && <div className="fixed inset-0 z-40" onClick={() => setShowEpPicker(null)} />}
-        <EpNavRow
-          id="top"
-          className="mb-6"
-          prevEp={prevEp} nextEp={nextEp} epIdx={epIdx}
-          sortedEps={sortedEps} currentEpId={ep.id}
-          showEpPicker={showEpPicker} setShowEpPicker={setShowEpPicker}
-          onPrev={async () => { if (prevEp) { await flushAll().catch(() => {}); setActiveEpisodeId(prevEp.id); } }}
-          onNext={async () => { if (nextEp) { await flushAll().catch(() => {}); setActiveEpisodeId(nextEp.id); } }}
-          onPick={async (e) => { await flushAll().catch(() => {}); setActiveEpisodeId(e.id); setShowEpPicker(null); }}
-        />
+        {proj.type !== "movie" && showEpPicker && <div className="fixed inset-0 z-40" onClick={() => setShowEpPicker(null)} />}
+        {proj.type !== "movie" && (
+          <EpNavRow
+            id="top"
+            className="mb-6"
+            prevEp={prevEp} nextEp={nextEp} epIdx={epIdx}
+            sortedEps={sortedEps} currentEpId={ep.id}
+            showEpPicker={showEpPicker} setShowEpPicker={setShowEpPicker}
+            onPrev={async () => { if (prevEp) { await flushAll().catch(() => {}); setActiveEpisodeId(prevEp.id); } }}
+            onNext={async () => { if (nextEp) { await flushAll().catch(() => {}); setActiveEpisodeId(nextEp.id); } }}
+            onPick={async (e) => { await flushAll().catch(() => {}); setActiveEpisodeId(e.id); setShowEpPicker(null); }}
+          />
+        )}
 
         {ep.status === "rejected" && ep.rejectionNote && (
           <div className="rounded-2xl border px-5 py-4 mb-6 flex items-start gap-3" style={{ background: "#FFEBEE", borderColor: "#EF9A9A" }}>
@@ -940,9 +946,9 @@ export default function EpisodePage() {
         <div className="rounded-2xl border p-6 mb-3" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
           {(() => { const cd = ep.cueDetails || {}; return (
           <div className="grid grid-cols-4 gap-4">
-            <Fld label="Serial Title" tag="auto"><Inp value={cd.serialTitle} onChange={(v) => editEpCue("serialTitle", v)} /></Fld>
-            <Fld label="Channel" tag="auto"><Inp value={cd.channel} onChange={(v) => editEpCue("channel", v)} /></Fld>
-            <Fld label="Serial Type" tag="auto"><Inp value={cd.serialType} onChange={(v) => editEpCue("serialType", v)} /></Fld>
+            <Fld label={proj.type === "movie" ? "Movie Title" : "Serial Title"} tag="auto"><Inp value={cd.serialTitle} onChange={(v) => editEpCue("serialTitle", v)} /></Fld>
+            {proj.type !== "movie" && <Fld label="Channel" tag="auto"><Inp value={cd.channel} onChange={(v) => editEpCue("channel", v)} /></Fld>}
+            {proj.type !== "movie" && <Fld label="Serial Type" tag="auto"><Inp value={cd.serialType} onChange={(v) => editEpCue("serialType", v)} /></Fld>}
             <Fld label="Language" tag="auto"><Inp value={cd.language} onChange={(v) => editEpCue("language", v)} /></Fld>
             <Fld label="Director" tag="auto"><Inp value={cd.director} onChange={(v) => editEpCue("director", v)} /></Fld>
             <Fld label="Genre" tag="auto"><Inp value={cd.genre} onChange={(v) => editEpCue("genre", v)} /></Fld>
@@ -956,7 +962,7 @@ export default function EpisodePage() {
           </div>
           ); })()}
         </div>
-        {sortedEps.length > 1 && !canReviewRole && (
+        {sortedEps.length > 1 && !canReviewRole && proj.type !== "movie" && (
           <div className="flex justify-end mb-6">
             <button
               onClick={() => setShowCopyModal(true)}
@@ -970,12 +976,12 @@ export default function EpisodePage() {
           </div>
         )}
 
-        <SectionTitle title="Episode Details" />
+        <SectionTitle title={proj.type === "movie" ? "Movie Details" : "Episode Details"} />
         <div className="rounded-2xl border p-6 mb-6" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
           <div className="grid grid-cols-4 gap-4">
-            <Fld label="Episode #" tag="auto"><Inp value={ep.number} onChange={(v) => editEp("number", Number(v) || ep.number)} /></Fld>
-            <Fld label="Episode Title" tag="auto"><Inp value={ep.title} onChange={(v) => editEp("title", v)} /></Fld>
-            <Fld label="Air Date" tag="auto"><Inp value={ep.airDate} onChange={(v) => editEp("airDate", v)} /></Fld>
+            {proj.type !== "movie" && <Fld label="Episode #" tag="auto"><Inp value={ep.number} onChange={(v) => editEp("number", Number(v) || ep.number)} /></Fld>}
+            <Fld label={proj.type === "movie" ? "Movie Title" : "Episode Title"} tag="auto"><Inp value={ep.title} onChange={(v) => editEp("title", v)} /></Fld>
+            <Fld label={proj.type === "movie" ? "Release Date" : "Air Date"} tag="auto"><Inp value={ep.airDate} onChange={(v) => editEp("airDate", v)} /></Fld>
             <Fld label="Total Duration" tag="auto"><Inp value={typeof ep.totalDuration === "number" ? secToMinSec(ep.totalDuration) : (ep.totalDuration ?? "")} onChange={(v) => editEp("totalDuration", v)} mono /></Fld>
             <Fld label="Musical Duration" tag="auto"><Inp value={secToMinSec(ep.cues.reduce((s, c) => s + (toSec(c.duration) || 0), 0))} readOnly mono /></Fld>
           </div>

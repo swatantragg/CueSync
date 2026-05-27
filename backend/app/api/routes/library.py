@@ -1,3 +1,4 @@
+
 import json
 
 from fastapi import APIRouter, Depends, Query
@@ -100,7 +101,7 @@ async def lookup_song(
     return _lib_payload(match) if match else None
 
 
-@router.post("/songs/upsert", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
+@router.post("/songs/upsert", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.REVIEWER))])
 async def upsert_song(payload: LibraryUpsertIn, db: AsyncSession = Depends(get_db)):
     entry = None
     if payload.isrc:

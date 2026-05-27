@@ -103,7 +103,7 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
                   <button key={s.id} type="button"
                     onMouseDown={() => { setForm((f) => ({ ...f, serial_name: s.title })); setShowSuggest(false); setIsNewSerial(false); }}
                     className="w-full text-left px-4 py-2.5 hover:opacity-80 text-sm" style={{ color: C.mint4 }}>
-                    {s.title} <span className="text-xs opacity-60">({s.type})</span>
+                    {s.title} <span className="text-xs opacity-60">({s.type === "movie" ? "MOVIE" : "SERIAL"})</span>
                   </button>
                 ))}
               </div>
@@ -118,7 +118,7 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Work Type</label>
-              <select value={form.work_type} onChange={(e) => setForm((f) => ({ ...f, work_type: e.target.value }))} className={inp} style={inpStyle}>
+              <select value={form.work_type} onChange={(e) => setForm((f) => ({ ...f, work_type: e.target.value, episode_range: e.target.value === "Movie Cue Sheet" ? "" : f.episode_range }))} className={inp} style={inpStyle}>
                 {WORK_TYPES.map((t) => <option key={t}>{t}</option>)}
               </select>
             </div>
@@ -131,21 +131,30 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className={`grid gap-4 ${form.work_type === "Movie Cue Sheet" ? "grid-cols-1" : "grid-cols-2"}`}>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Client</label>
               <input value={form.client} onChange={(e) => setForm((f) => ({ ...f, client: e.target.value }))} placeholder="Client name" className={inp} style={inpStyle} />
             </div>
-            <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Channel</label>
-              <input value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))} placeholder="TV channel" className={inp} style={inpStyle} />
-            </div>
+            {form.work_type !== "Movie Cue Sheet" && (
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Channel</label>
+                <input value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))} placeholder="TV channel" className={inp} style={inpStyle} />
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Episode Range</label>
-              <input value={form.episode_range} onChange={(e) => setForm((f) => ({ ...f, episode_range: e.target.value }))} placeholder="e.g. Ep 601-800" className={inp} style={inpStyle} />
+              <label className="block text-xs font-medium mb-1" style={{ color: form.work_type === "Movie Cue Sheet" ? C.muted + "55" : C.muted }}>Episode Range</label>
+              <input
+                value={form.episode_range}
+                onChange={(e) => setForm((f) => ({ ...f, episode_range: e.target.value }))}
+                placeholder={form.work_type === "Movie Cue Sheet" ? "N/A for movies" : "e.g. Ep 601-800"}
+                className={inp}
+                style={{ ...inpStyle, opacity: form.work_type === "Movie Cue Sheet" ? 0.4 : 1, cursor: form.work_type === "Movie Cue Sheet" ? "not-allowed" : "auto" }}
+                disabled={form.work_type === "Movie Cue Sheet"}
+              />
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Week Target</label>
@@ -825,30 +834,53 @@ function WDSubmissionGroup({ group }) {
 
 function SubmissionsTab() {
   const [submissions, setSubmissions] = useState([]);
+  const [delegations, setDelegations] = useState([]);
   const [loading, setLoading]         = useState(true);
+  const [subTab, setSubTab]           = useState("serial");
 
   useEffect(() => {
-    api.listSubmissions()
-      .then(setSubmissions).catch(() => {})
+    Promise.all([api.listSubmissions(), api.listDelegations()])
+      .then(([subs, dels]) => { setSubmissions(subs); setDelegations(dels); })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
+  // derive type from delegation work_type — Movie Cue Sheet → movie, else serial
+  const movieProjIds = new Set(delegations.filter((d) => d.work_type === "Movie Cue Sheet" && d.project_id).map((d) => d.project_id));
+
   const grouped = submissions.reduce((acc, s) => {
-    if (!acc[s.project_id]) acc[s.project_id] = { project_id: s.project_id, project_title: s.project_title, items: [] };
+    if (!acc[s.project_id]) acc[s.project_id] = {
+      project_id: s.project_id,
+      project_title: s.project_title,
+      items: [],
+      project_type: movieProjIds.has(s.project_id) ? "movie" : "serial",
+    };
     acc[s.project_id].items.push(s);
     return acc;
   }, {});
-  const groups = Object.values(grouped);
+  const allGroups = Object.values(grouped);
+  const groups = allGroups.filter((g) => subTab === "movie" ? g.project_type === "movie" : g.project_type !== "movie");
 
   if (loading) return <div className="p-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>;
 
   return (
-    <div className="space-y-4">
-      {groups.length === 0 ? (
-        <div className="py-10 text-center text-sm" style={{ color: C.sub }}>No society submissions yet.</div>
-      ) : (
-        groups.map((g) => <WDSubmissionGroup key={g.project_id} group={g} />)
-      )}
+    <div>
+      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+        {[{ key: "serial", label: "Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
+          <button key={key} onClick={() => setSubTab(key)}
+            className="px-5 py-1.5 rounded-lg text-xs font-medium transition-all"
+            style={{ background: subTab === key ? C.dark : "transparent", color: subTab === key ? C.mint4 : C.sub }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-4">
+        {groups.length === 0 ? (
+          <div className="py-10 text-center text-sm" style={{ color: C.sub }}>No {subTab === "movie" ? "movie" : "serial"} submissions yet.</div>
+        ) : (
+          groups.map((g) => <WDSubmissionGroup key={g.project_id} group={g} />)
+        )}
+      </div>
     </div>
   );
 }
@@ -864,6 +896,7 @@ export default function WDDashboard() {
   const [selectedEditor, setSelectedEditor] = useState(null);
   const [loading, setLoading]         = useState(true);
   const [searchQ, setSearchQ]         = useState("");
+  const [projectSubTab, setProjectSubTab] = useState("serial");
 
   useEffect(() => {
     Promise.all([api.listDelegations(), api.listEditors()])
@@ -902,7 +935,7 @@ export default function WDDashboard() {
 
   const tabs = [
     { key: "delegations",  label: "Work Delegations" },
-    { key: "serials",      label: "All Serials" },
+    { key: "serials",      label: "Projects" },
     { key: "calendar",     label: "Activity" },
     { key: "activity",     label: "Editor Activity" },
     { key: "submissions",  label: "Submissions" },
@@ -1009,7 +1042,30 @@ export default function WDDashboard() {
         </div>
       )}
 
-      {tab === "serials" && <ProjectsTab hideHeader showCreateBtn />}
+      {tab === "serials" && (() => {
+        // derive project ID sets from delegation work_type — this is the source of truth
+        const movieProjIds  = new Set(delegations.filter((d) => d.work_type === "Movie Cue Sheet" && d.project_id).map((d) => d.project_id));
+        const serialProjIds = new Set(delegations.filter((d) => d.work_type !== "Movie Cue Sheet" && d.project_id).map((d) => d.project_id));
+        return (
+          <div>
+            <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+              {[{ key: "serial", label: "Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
+                <button key={key} onClick={() => setProjectSubTab(key)}
+                  className="px-5 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  style={{ background: projectSubTab === key ? C.dark : "transparent", color: projectSubTab === key ? C.mint4 : C.sub }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <ProjectsTab
+              hideHeader
+              showCreateBtn
+              filterProjectIds={projectSubTab === "movie" ? movieProjIds : serialProjIds}
+              projectType={projectSubTab}
+            />
+          </div>
+        );
+      })()}
 
       {tab === "calendar" && <CalendarActivity />}
 

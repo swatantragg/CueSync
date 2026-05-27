@@ -5,7 +5,6 @@ import {
 } from "lucide-react";
 import { C, FONTS } from "../../styles/palette";
 import DashboardShell from "./DashboardShell";
-import ProjectsTab from "./ProjectsTab";
 import { api } from "../../utils/api";
 import { useApp } from "../../context/AppContext";
 
@@ -28,7 +27,9 @@ function useOpenSerial() {
       const p = await api.getProject(projectId);
       setProjects((prev) => {
         const mapped = {
-          ...p, year: p.production_year, productionCompany: p.production_company,
+          ...p,
+          type: (p.type || "serial").toLowerCase(),
+          year: p.production_year, productionCompany: p.production_company,
           channel: p.channel_name, countryOfOrigin: p.country,
           backgroundMusicComposer: p.bg_music_composer,
           episodes: prev.find((x) => x.id === p.id)?.episodes || [],
@@ -48,6 +49,7 @@ function MyWorkTab() {
   const openSerial = useOpenSerial();
   const [delegations, setDelegations] = useState([]);
   const [loading, setLoading]         = useState(true);
+  const [workSubTab, setWorkSubTab]   = useState("serial");
 
   useEffect(() => {
     api.listDelegations().then(setDelegations).catch(() => {}).finally(() => setLoading(false));
@@ -59,67 +61,91 @@ function MyWorkTab() {
   };
 
   if (loading) return <div className="p-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>;
+
+  const isMovie = (d) => d.work_type === "Movie Cue Sheet";
+  const filtered = delegations.filter((d) => workSubTab === "movie" ? isMovie(d) : !isMovie(d));
+
   if (delegations.length === 0) {
     return (
       <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
         <div className="text-4xl mb-3">📋</div>
         <div className="font-semibold mb-1" style={{ fontFamily: FONTS.serif }}>No work assigned yet</div>
-        <p className="text-sm" style={{ color: C.sub }}>Your work delegator will assign serials/episodes here.</p>
+        <p className="text-sm" style={{ color: C.sub }}>Work delegator will assign tasks here.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
-      {delegations.map((d) => {
-        const s   = STATUS_STYLE[d.status] || STATUS_STYLE.pending;
-        const pct = d.week_target ? Math.min(100, Math.round((d.completed / d.week_target) * 100)) : 0;
-        return (
-          <div key={d.id} className="rounded-xl border p-5" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-semibold" style={{ fontFamily: FONTS.serif, color: C.dark }}>{d.serial_name}</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded font-medium" style={{ background: s.bg, color: s.color }}>{s.label}</span>
-                </div>
-                <div className="flex flex-wrap gap-3 text-xs" style={{ color: C.sub }}>
-                  {d.work_type    && <span>{d.work_type}</span>}
-                  {d.client       && <span>Client: {d.client}</span>}
-                  {d.channel      && <span>Channel: {d.channel}</span>}
-                  {d.episode_range && <span>Range: {d.episode_range}</span>}
-                  {d.created_by_name && <span>Assigned by: {d.created_by_name}</span>}
-                </div>
-                {d.notes && <p className="text-xs mt-2 italic" style={{ color: C.sub }}>{d.notes}</p>}
-              </div>
-              <div className="text-right shrink-0">
-                <div className="text-xs mb-1" style={{ color: C.sub }}>Progress</div>
-                <div className="text-2xl font-bold" style={{ color: C.dark }}>
-                  {d.completed}<span className="text-sm font-normal" style={{ color: C.sub }}>/{d.week_target || "?"}</span>
-                </div>
-                {d.week_target && (
-                  <div className="mt-1 w-24 h-1.5 rounded-full overflow-hidden" style={{ background: C.mint4 }}>
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pct >= 100 ? C.ok : C.dark }} />
+    <div>
+      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+        {[{ key: "serial", label: "TV Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
+          <button key={key} onClick={() => setWorkSubTab(key)}
+            className="px-5 py-1.5 rounded-lg text-xs font-medium transition-all"
+            style={{ background: workSubTab === key ? C.dark : "transparent", color: workSubTab === key ? C.mint4 : C.sub }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {filtered.length === 0 ? (
+        <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>
+          No {workSubTab === "movie" ? "movie" : "serial"} assignments yet.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((d) => {
+            const s   = STATUS_STYLE[d.status] || STATUS_STYLE.pending;
+            const pct = d.week_target ? Math.min(100, Math.round((d.completed / d.week_target) * 100)) : 0;
+            const movie = isMovie(d);
+            return (
+              <div key={d.id} className="rounded-xl border p-5" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-semibold" style={{ fontFamily: FONTS.serif, color: C.dark }}>{d.serial_name}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded font-medium" style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-3 text-xs" style={{ color: C.sub }}>
+                      {d.work_type    && <span>{d.work_type}</span>}
+                      {d.client       && <span>Client: {d.client}</span>}
+                      {!movie && d.channel      && <span>Channel: {d.channel}</span>}
+                      {!movie && d.episode_range && <span>Range: {d.episode_range}</span>}
+                      {d.created_by_name && <span>Assigned by: {d.created_by_name}</span>}
+                    </div>
+                    {d.notes && <p className="text-xs mt-2 italic" style={{ color: C.sub }}>{d.notes}</p>}
                   </div>
-                )}
+                  {!movie && (
+                    <div className="text-right shrink-0">
+                      <div className="text-xs mb-1" style={{ color: C.sub }}>Progress</div>
+                      <div className="text-2xl font-bold" style={{ color: C.dark }}>
+                        {d.completed}<span className="text-sm font-normal" style={{ color: C.sub }}>/{d.week_target || "?"}</span>
+                      </div>
+                      {d.week_target && (
+                        <div className="mt-1 w-24 h-1.5 rounded-full overflow-hidden" style={{ background: C.mint4 }}>
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pct >= 100 ? C.ok : C.dark }} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between mt-4">
+                  <select value={d.status} onChange={(e) => handleStatusUpdate(d.id, e.target.value)}
+                    className="text-xs px-3 py-1.5 rounded-lg focus:outline-none"
+                    style={{ background: s.bg, color: s.color, border: "none", fontWeight: 500 }}>
+                    {Object.entries(STATUS_STYLE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                  {d.project_id && (
+                    <button onClick={() => openSerial(d.project_id)}
+                      className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-90"
+                      style={{ background: C.dark, color: C.mint4 }}>
+                      {movie ? "Open Movie →" : "Open Serial →"}
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="flex items-center justify-between mt-4">
-              <select value={d.status} onChange={(e) => handleStatusUpdate(d.id, e.target.value)}
-                className="text-xs px-3 py-1.5 rounded-lg focus:outline-none"
-                style={{ background: s.bg, color: s.color, border: "none", fontWeight: 500 }}>
-                {Object.entries(STATUS_STYLE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-              {d.project_id && (
-                <button onClick={() => openSerial(d.project_id)}
-                  className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-90"
-                  style={{ background: C.dark, color: C.mint4 }}>
-                  Open Serial →
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -129,12 +155,14 @@ function ReviewFeedbackTab() {
   const { notifications, markRead } = useApp();
   const openSerial = useOpenSerial();
 
-  const [groups, setGroups]     = useState([]);  // [{project_id, title, episodes}]
-  const [loading, setLoading]   = useState(true);
-  const [expanded, setExpanded] = useState({});
-  const [newEpIds, setNewEpIds] = useState(new Set());
-  const prevEpIdsRef            = useRef(null);
-  const isMounted               = useRef(true);
+  const [groups, setGroups]         = useState([]);  // [{project_id, title, episodes, project_type}]
+  const [delegations, setDelegations] = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [expanded, setExpanded]     = useState({});
+  const [newEpIds, setNewEpIds]     = useState(new Set());
+  const [reviewSubTab, setReviewSubTab] = useState("serial");
+  const prevEpIdsRef                = useRef(null);
+  const isMounted                   = useRef(true);
 
   // Episode IDs with unread notifications from backend
   const unreadEpIds = new Set(
@@ -143,7 +171,10 @@ function ReviewFeedbackTab() {
 
   const loadData = useCallback(async (isRefresh = false) => {
     try {
-      const projs = await api.projects();
+      const [projs, dels] = await Promise.all([api.projects(), api.listDelegations()]);
+      if (isMounted.current) setDelegations(dels);
+      // derive type from delegation work_type — Movie Cue Sheet → movie, else serial
+      const movieProjIds = new Set(dels.filter((d) => d.work_type === "Movie Cue Sheet" && d.project_id).map((d) => d.project_id));
       const result = [];
       for (const p of projs) {
         try {
@@ -153,6 +184,7 @@ function ReviewFeedbackTab() {
             result.push({
               project_id: p.id,
               title: p.title,
+              project_type: movieProjIds.has(p.id) ? "movie" : "serial",
               episodes: reviewed.sort((a, b) => b.id - a.id),
             });
           }
@@ -214,19 +246,31 @@ function ReviewFeedbackTab() {
 
   if (loading) return <div className="p-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>;
 
-  if (groups.length === 0) {
-    return (
-      <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-        <div className="text-4xl mb-3">✅</div>
-        <div className="font-semibold mb-1" style={{ fontFamily: FONTS.serif }}>No feedback yet</div>
-        <p className="text-sm" style={{ color: C.sub }}>Reviewed episodes will appear here, grouped by serial.</p>
-      </div>
-    );
-  }
+  const filteredGroups = groups.filter((g) =>
+    reviewSubTab === "movie" ? g.project_type === "movie" : g.project_type !== "movie"
+  );
 
   return (
-    <div className="space-y-3">
-      {groups.map((g) => {
+    <div>
+      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+        {[{ key: "serial", label: "TV Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
+          <button key={key} onClick={() => setReviewSubTab(key)}
+            className="px-5 py-1.5 rounded-lg text-xs font-medium transition-all"
+            style={{ background: reviewSubTab === key ? C.dark : "transparent", color: reviewSubTab === key ? C.mint4 : C.sub }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {filteredGroups.length === 0 ? (
+        <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+          <div className="text-4xl mb-3">✅</div>
+          <div className="font-semibold mb-1" style={{ fontFamily: FONTS.serif }}>No feedback yet</div>
+          <p className="text-sm" style={{ color: C.sub }}>Reviewed {reviewSubTab === "movie" ? "movies" : "episodes"} will appear here.</p>
+        </div>
+      ) : (
+      <div className="space-y-3">
+      {filteredGroups.map((g) => {
         const isOpen   = expanded[g.project_id] ?? true;
         const epIds    = g.episodes.map((e) => e.id);
         const newInGroup    = epIds.filter((id) => newEpIds.has(id)).length;
@@ -342,6 +386,8 @@ function ReviewFeedbackTab() {
           </div>
         );
       })}
+      </div>
+      )}
     </div>
   );
 }
@@ -350,26 +396,17 @@ function ReviewFeedbackTab() {
 export default function EditorDashboard() {
   const { notifications } = useApp();
   const [tab, setTab] = useState("work");
-  const [assignedProjectIds, setAssignedProjectIds] = useState(null);
-
-  useEffect(() => {
-    api.listDelegations().then((delegations) => {
-      setAssignedProjectIds(new Set(delegations.map((d) => d.project_id).filter(Boolean)));
-    }).catch(() => setAssignedProjectIds(new Set()));
-  }, []);
 
   const feedbackUnread = notifications.filter((n) => !n.is_read && n.entity_type === "episode").length;
 
   const tabs = [
     { key: "work",     label: "My Assignments"  },
-    { key: "projects", label: "My Serials"       },
     { key: "feedback", label: feedbackUnread > 0 ? `Review Feedback (${feedbackUnread})` : "Review Feedback" },
   ];
 
   return (
     <DashboardShell title="Editor Workspace" subtitle="Manage your assigned work and cue sheets" tabs={tabs} activeTab={tab} onTab={setTab}>
       {tab === "work"     && <MyWorkTab />}
-      {tab === "projects" && <ProjectsTab hideHeader showCreateBtn filterProjectIds={assignedProjectIds} />}
       {tab === "feedback" && <ReviewFeedbackTab />}
     </DashboardShell>
   );

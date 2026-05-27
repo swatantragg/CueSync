@@ -84,16 +84,20 @@ async def create_delegation(
 ):
     project_id = payload.project_id
     if not project_id and payload.serial_name:
+        from app.models.project import ProjectType
         proj = (await db.execute(
             select(Project).where(Project.title.ilike(payload.serial_name.strip()))
         )).scalar_one_or_none()
         if proj:
             project_id = proj.id
+            # sync project type with delegation work_type
+            desired_type = ProjectType.MOVIE if payload.work_type == "Movie Cue Sheet" else ProjectType.SERIAL
+            if proj.type != desired_type:
+                proj.type = desired_type
         else:
-            from app.models.project import ProjectType
             new_proj = Project(
                 title=payload.serial_name.strip(),
-                type=ProjectType.SERIAL,
+                type=ProjectType.MOVIE if payload.work_type == "Movie Cue Sheet" else ProjectType.SERIAL,
                 channel_name=payload.channel or None,
                 created_by_id=current.id,
             )
@@ -143,7 +147,19 @@ async def suggest_projects(
     if q and q.strip():
         stmt = select(Project).where(Project.title.ilike(f"%{q.strip()}%")).order_by(Project.title).limit(20)
     rows = (await db.execute(stmt)).scalars().all()
-    return [{"id": r.id, "title": r.title, "type": r.type.value} for r in rows]
+    if not rows:
+        return []
+    # determine effective type from delegation work_type (Movie Cue Sheet → movie, else serial)
+    proj_ids = [r.id for r in rows]
+    deleg_rows = (await db.execute(
+        select(WorkDelegation.project_id, WorkDelegation.work_type)
+        .where(WorkDelegation.project_id.in_(proj_ids))
+    )).all()
+    movie_proj_ids = {pid for pid, wt in deleg_rows if wt == "Movie Cue Sheet"}
+    return [
+        {"id": r.id, "title": r.title, "type": "movie" if r.id in movie_proj_ids else "serial"}
+        for r in rows
+    ]
 
 
 @router.get("/activity/calendar", dependencies=[Depends(require_roles(*WD_ROLES))])

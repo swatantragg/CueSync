@@ -330,6 +330,8 @@ function SerialDetail({ serial, onBack, onReview }) {
     const epStub = {
       id: ep.id, number: ep.episode_number, title: ep.title || "",
       airDate: ep.air_date, status: ep.status, editHistory: [], cues: [],
+      rejectionNote: ep.rejection_note || null, reviewNote: ep.review_note || null,
+      cueDetails: {}, totalDuration: ep.total_duration_sec || 0, musicalDuration: 0,
     };
     setProjects((prev) => {
       const existing = prev.find((p) => p.id === serial.project_id);
@@ -904,7 +906,7 @@ function SubmittedCueTab() {
 
 // ── Main dashboard ─────────────────────────────────────────────────────────────
 export default function ReviewerDashboard() {
-  const { setActiveProjectId, setScreen } = useApp();
+  const { setActiveProjectId, setScreen, setProjects } = useApp();
   const [tab, setTab]             = useState("queue");
   const [submitted, setSubmitted] = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -1014,7 +1016,14 @@ export default function ReviewerDashboard() {
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => { setActiveProjectId(ep.project_id); setScreen("serial"); }}
+                          onClick={() => {
+                            setProjects((prev) => {
+                              if (prev.find((p) => p.id === ep.project_id)) return prev;
+                              return [...prev, { id: ep.project_id, title: ep.project_title, episodes: [] }];
+                            });
+                            setActiveProjectId(ep.project_id);
+                            setScreen("serial");
+                          }}
                           className="text-xs flex items-center gap-1 hover:opacity-70"
                           style={{ color: C.sub }}>
                           View <ChevronRight className="w-3 h-3" />

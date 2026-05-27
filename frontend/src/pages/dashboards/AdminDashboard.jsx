@@ -1127,6 +1127,7 @@ function ActivityTab() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const [tab, setTab] = useState("overview");
+  const [projectSubTab, setProjectSubTab] = useState("serial");
   const tabs = [
     { key: "overview",    label: "Overview"           },
     { key: "projects",    label: "Projects"           },
@@ -1138,7 +1139,20 @@ export default function AdminDashboard() {
   return (
     <DashboardShell title="Admin Dashboard" subtitle="Manage users, serials, and delegations" tabs={tabs} activeTab={tab} onTab={setTab}>
       {tab === "overview"    && <OverviewTab />}
-      {tab === "projects"    && <ProjectsTab hideHeader />}
+      {tab === "projects"    && (
+        <div>
+          <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+            {[{ key: "serial", label: "Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
+              <button key={key} onClick={() => setProjectSubTab(key)}
+                className="px-5 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={{ background: projectSubTab === key ? C.dark : "transparent", color: projectSubTab === key ? C.mint4 : C.sub }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <ProjectsTab hideHeader projectType={projectSubTab} />
+        </div>
+      )}
       {tab === "delegations" && <DelegationsTab />}
       {tab === "activity"    && <ActivityTab />}
       {tab === "users"       && <UsersTab />}

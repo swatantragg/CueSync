@@ -37,6 +37,7 @@ export default function SerialPage() {
     setActiveProjectId(id);
     updateProject(id, (prev) => ({
       ...prev, ...p,
+      type: (p.type || "serial").toLowerCase(),
       year: p.production_year, productionCompany: p.production_company, channel: p.channel_name,
       countryOfOrigin: p.country, backgroundMusicComposer: p.bg_music_composer,
       submittedBy: p.submitted_by,
@@ -66,7 +67,7 @@ export default function SerialPage() {
   );
 
   if (!activeProject) return null;
-  const proj = activeProject;
+  const proj = { ...activeProject, type: (activeProject.type || "serial").toLowerCase() };
 
   const fmtDur = (sec) => {
     if (!sec) return "—";
@@ -225,7 +226,7 @@ export default function SerialPage() {
 
       <main className="max-w-7xl mx-auto px-6 py-10">
         <button onClick={goHome} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}>
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Serials
+          <ArrowLeft className="w-3.5 h-3.5" /> Back
         </button>
         <div className="flex items-end justify-between mb-8">
           <div>
@@ -233,10 +234,12 @@ export default function SerialPage() {
             <h2 className="text-5xl" style={{ fontFamily: FONTS.serif }}>{proj.title}</h2>
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-          <MetaCard label="Channel" value={proj.channel} />
-          <MetaCard label="Episodes" value={proj.episodes.length} mono />
-        </div>
+        {proj.type !== "movie" && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+            <MetaCard label="Channel" value={proj.channel} />
+            <MetaCard label="Episodes" value={proj.episodes.length} mono />
+          </div>
+        )}
 
         {importResult && (
           <div className="mb-4 text-sm rounded-xl px-4 py-3 flex items-center justify-between" style={{ color: "#2E7D32", background: "#E8F5E9", border: "1px solid #A5D6A7" }}>
@@ -289,10 +292,11 @@ export default function SerialPage() {
         <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
           <div className="px-6 py-4 border-b flex flex-wrap items-center gap-3 justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
             <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>
-              Episodes ({filteredEps.length}{searchQ ? ` of ${proj.episodes.length}` : ""})
+              {proj.type === "movie" ? "Movie Cue Sheet" : `Episodes (${filteredEps.length}${searchQ ? ` of ${proj.episodes.length}` : ""})`}
             </h3>
             <div className="flex items-center gap-3 flex-wrap">
-              {/* Search */}
+              {/* Search — hidden for movies */}
+              {proj.type !== "movie" && (
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: C.sub }} />
                 <input
@@ -309,6 +313,7 @@ export default function SerialPage() {
                   </button>
                 )}
               </div>
+              )}
 
               {selected.size > 0 && !canReviewRole && (
                 <button
@@ -344,7 +349,7 @@ export default function SerialPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-[10px] uppercase tracking-wider" style={{ borderColor: C.mint4, color: C.sub, background: C.mint4 + "33" }}>
-                <th className="text-left px-5 py-3 w-16">Ep.</th>
+                {proj.type !== "movie" && <th className="text-left px-5 py-3 w-16">Ep.</th>}
                 <th className="text-left px-5 py-3">Title</th>
                 <th className="text-left px-5 py-3">Air Date</th>
                 <th className="text-left px-5 py-3 w-28">Duration</th>
@@ -363,7 +368,9 @@ export default function SerialPage() {
               {filteredEps.length === 0 && (
                 <tr>
                   <td colSpan={canReviewRole ? 8 : 9} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>
-                    {searchQ ? `No episodes match "${searchQ}".` : "No episodes yet."}
+                    {proj.type === "movie"
+                      ? "No cue sheet imported yet. Use the Import Rough Sheet option above."
+                      : searchQ ? `No episodes match "${searchQ}".` : "No episodes yet."}
                   </td>
                 </tr>
               )}
@@ -378,7 +385,7 @@ export default function SerialPage() {
                     style={{ borderColor: C.mint4 + "88", background: isSelected ? C.mint4 + "99" : canReview ? "#F3E5F511" : undefined }}
                     onClick={() => { setActiveEpisodeId(ep.id); setScreen("episode"); }}
                   >
-                    <td className="px-5 py-3 font-mono text-sm">{String(ep.number).padStart(2, "0")}</td>
+                    {proj.type !== "movie" && <td className="px-5 py-3 font-mono text-sm">{String(ep.number).padStart(2, "0")}</td>}
                     <td className="px-5 py-3 text-xs font-medium" style={{ color: C.dark }}>{ep.title || "—"}</td>
                     <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{ep.airDate || "—"}</td>
                     <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{fmtDur(ep.totalDuration)}</td>
