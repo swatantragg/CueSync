@@ -23,6 +23,22 @@ export default function App() {
       <GoogleFonts />
       <Router />
       <DialogRoot />
+      <div
+        style={{
+          position: "fixed",
+          bottom: 10,
+          right: 14,
+          fontSize: 10,
+          fontWeight: 500,
+          color: "rgba(0,0,0,0.28)",
+          letterSpacing: "0.03em",
+          pointerEvents: "none",
+          zIndex: 9999,
+          userSelect: "none",
+        }}
+      >
+        SK-Version 2
+      </div>
     </AppProvider>
   );
 }

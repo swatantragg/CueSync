@@ -469,7 +469,9 @@ async def upsert_cue_to_library(db: AsyncSession, cue: CueEntry) -> SongLibrary 
             existing.contributors_json = contribs_json
         return existing
 
-    # Not in library at all — create new entry
+    # Not in library at all — create new entry.
+    # flush() can fail on uq_song_library_isrc if a concurrent request raced us;
+    # the caller must guard with begin_nested() so this exception stays contained.
     entry = SongLibrary(
         title=cue.song_title.strip(),
         isrc=cue.isrc,

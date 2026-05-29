@@ -3,6 +3,7 @@ from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
+from app.models.project import ProjectType
 from app.services.cue_rules import iprs_role_code, role_key
 from app.services.exporters._common import fmt_dur, save_bytes
 
@@ -110,6 +111,8 @@ _DATA_STYLE = {
 
 
 def _fill_iprs_sheet(ws, project, episode, total_ep_count: int | None = None) -> None:
+    is_movie = project.type == ProjectType.MOVIE
+
     # ── Row 1: IPRS header ────────────────────────────────────────────────────
     ws.merge_cells("A1:M1")
     c = ws.cell(row=1, column=1)
@@ -119,13 +122,14 @@ def _fill_iprs_sheet(ws, project, episode, total_ep_count: int | None = None) ->
 
     # ── Row 2: Cue sheet type title ───────────────────────────────────────────
     ws.merge_cells("A2:M2")
-    c = ws.cell(row=2, column=1, value="TV/WEB SERIES CUE SHEET")
+    c = ws.cell(row=2, column=1,
+                value="MOVIE CUE SHEET" if is_movie else "TV/WEB SERIES CUE SHEET")
     c.font = Font(name="Calibri", bold=True, size=28)
     c.alignment = _TOP_CENTER
     ws.row_dimensions[2].height = 36.75
 
     # ── Metadata values ───────────────────────────────────────────────────────
-    serial_title = episode.cue_serial_title or project.title or ""
+    title        = episode.cue_serial_title or project.title or ""
     channel      = episode.cue_channel or project.channel_name or ""
     serial_type  = episode.cue_serial_type or ""
     language     = episode.cue_language or project.language or ""
@@ -143,84 +147,105 @@ def _fill_iprs_sheet(ws, project, episode, total_ep_count: int | None = None) ->
         ws.merge_cells(f"B{row}:F{row}")
         ws.merge_cells(f"G{row}:H{row}")
         ws.merge_cells(f"I{row}:M{row}")
-        # Col A — label, bold, left
         c = ws.cell(row=row, column=1, value=ll)
         c.font = _LBL; c.alignment = _TOP_LEFT
-        # Col B (B:F merged) — value, bold, CENTER per reference
         c = ws.cell(row=row, column=2, value=lv)
         c.font = _VAL_B; c.alignment = _TOP_CENTER
-        # Col G (G:H merged) — right-side label, left
         c = ws.cell(row=row, column=7, value=rl)
         c.font = _LBL; c.alignment = _TOP_LEFT
-        # Col I (I:M merged) — right-side value, NOT bold, CENTER per reference
         c = ws.cell(row=row, column=9, value=rv)
         c.font = _VAL; c.alignment = _TOP_CENTER
 
-    _meta(3,  "SERIAL TITLE", serial_title,
-              "CHANNEL NAME", channel)
-    _meta(4,  "SERIAL TYPE [EG: DOCUMENTRY, SOAPS, WEB SERIES]", serial_type,
-              "DIRECTOR", director)
-    _meta(5,  "GENRE / CATEGORY", genre,
-              "BANNER / PRODUCTION COMPANY", prod_company)
-    _meta(6,  "LANGUAGE", language,
-              "PRINCIPAL ACTORS / ACTRESS", actors)
-    _meta(7,  "PRODUCTION NUMBER", "",
-              "TOTAL EPISODE DURATION", fmt_dur(episode.total_duration_sec))
-    _meta(8,  "DATE OF EPISODE 1ST PERFORMED / AIRED", air_date,
-              "TOTAL MUSICAL DURATION", fmt_dur(episode.musical_duration_sec))
-    _meta(9,  "PRODUCTION YEAR", str(prod_year) if prod_year else "",
-              "BACKGROUND MUSIC COMPOSER", bg_composer)
-    _meta(10, "PRODUCER", producer,
-              "Submitted By (Name of C/A/E)", submitted_by)
+    if is_movie:
+        _meta(3, "TITLE", title,
+                 "DIRECTOR", director)
+        _meta(4, "GENRE / CATEGORY", genre,
+                 "BANNER / PRODUCTION COMPANY", prod_company)
+        _meta(5, "LANGUAGE", language,
+                 "PRINCIPAL ACTORS / ACTRESS", actors)
+        _meta(6, "PRODUCTION NUMBER (FROM CENSOR CERTIFICATE)", "NA",
+                 "TOTAL MOVIE DURATION", fmt_dur(episode.total_duration_sec))
+        _meta(7, "DATE OF FIRST PERFORMED", air_date,
+                 "TOTAL MUSICAL DURATION", fmt_dur(episode.musical_duration_sec))
+        _meta(8, "PRODUCTION YEAR", str(prod_year) if prod_year else "",
+                 "BACKGROUND MUSIC COMPOSER", bg_composer)
+        _meta(9, "PRODUCER", producer,
+                 "Submitted By (Name of C/A/E)", submitted_by)
 
-    # Row 11: Episode No / Title — same column structure as _meta
-    ws.merge_cells("B11:F11")
-    ws.merge_cells("G11:H11")
-    ws.merge_cells("I11:M11")
-    for col, val, fnt, aln in (
-        (1, "EPISODE NO.",          _LBL,   _TOP_LEFT),
-        (2, episode.episode_number, _VAL_B, _TOP_CENTER),
-        (7, "EPISODE TITLE",        _LBL,   _TOP_LEFT),
-        (9, episode.title or "",    _VAL,   _TOP_CENTER),
-    ):
-        c = ws.cell(row=11, column=col, value=val)
-        c.font = fnt; c.alignment = aln
+        _apply_block_borders(ws, 3, 9, 1, 13)
 
-    # Row 12: Total episodes — same column structure (NOT merged B:M)
-    ws.merge_cells("B12:F12")
-    ws.merge_cells("G12:H12")
-    ws.merge_cells("I12:M12")
-    total_eps_val = total_ep_count or project.total_episodes or ""
-    for col, val, fnt, aln in (
-        (1, "TOTAL NO. OF EPISODE", _LBL,   _TOP_LEFT),
-        (2, total_eps_val,          _VAL_B, _TOP_CENTER),
-        (7, "",                     _LBL,   _TOP_LEFT),
-        (9, "",                     _VAL,   _TOP_CENTER),
-    ):
-        c = ws.cell(row=12, column=col, value=val)
-        c.font = fnt; c.alignment = aln
+        blank_row   = 10
+        labels_row  = 11
+        headers_row = 12
+        data_start  = 13
+    else:
+        _meta(3,  "SERIAL TITLE", title,
+                  "CHANNEL NAME", channel)
+        _meta(4,  "SERIAL TYPE [EG: DOCUMENTRY, SOAPS, WEB SERIES]", serial_type,
+                  "DIRECTOR", director)
+        _meta(5,  "GENRE / CATEGORY", genre,
+                  "BANNER / PRODUCTION COMPANY", prod_company)
+        _meta(6,  "LANGUAGE", language,
+                  "PRINCIPAL ACTORS / ACTRESS", actors)
+        _meta(7,  "PRODUCTION NUMBER", "",
+                  "TOTAL EPISODE DURATION", fmt_dur(episode.total_duration_sec))
+        _meta(8,  "DATE OF EPISODE 1ST PERFORMED / AIRED", air_date,
+                  "TOTAL MUSICAL DURATION", fmt_dur(episode.musical_duration_sec))
+        _meta(9,  "PRODUCTION YEAR", str(prod_year) if prod_year else "",
+                  "BACKGROUND MUSIC COMPOSER", bg_composer)
+        _meta(10, "PRODUCER", producer,
+                  "Submitted By (Name of C/A/E)", submitted_by)
 
-    # Medium outside + thin inside for whole metadata block (rows 3-12)
-    _apply_block_borders(ws, 3, 12, 1, 13)
+        ws.merge_cells("B11:F11")
+        ws.merge_cells("G11:H11")
+        ws.merge_cells("I11:M11")
+        for col, val, fnt, aln in (
+            (1, "EPISODE NO.",          _LBL,   _TOP_LEFT),
+            (2, episode.episode_number, _VAL_B, _TOP_CENTER),
+            (7, "EPISODE TITLE",        _LBL,   _TOP_LEFT),
+            (9, episode.title or "",    _VAL,   _TOP_CENTER),
+        ):
+            c = ws.cell(row=11, column=col, value=val)
+            c.font = fnt; c.alignment = aln
 
-    # ── Row 13: blank separator ───────────────────────────────────────────────
-    ws.merge_cells("A13:M13")
-    ws.row_dimensions[13].height = 15.75
+        ws.merge_cells("B12:F12")
+        ws.merge_cells("G12:H12")
+        ws.merge_cells("I12:M12")
+        total_eps_val = total_ep_count or project.total_episodes or ""
+        for col, val, fnt, aln in (
+            (1, "TOTAL NO. OF EPISODE", _LBL,   _TOP_LEFT),
+            (2, total_eps_val,          _VAL_B, _TOP_CENTER),
+            (7, "",                     _LBL,   _TOP_LEFT),
+            (9, "",                     _VAL,   _TOP_CENTER),
+        ):
+            c = ws.cell(row=12, column=col, value=val)
+            c.font = fnt; c.alignment = aln
 
-    # ── Row 14: Section labels ────────────────────────────────────────────────
-    ws.merge_cells("A14:F14")
-    ws.merge_cells("G14:K14")
-    ws.merge_cells("L14:M14")
-    ws.row_dimensions[14].height = 15.75
-    c = ws.cell(row=14, column=1, value="WORK DETAILS")
+        _apply_block_borders(ws, 3, 12, 1, 13)
+
+        blank_row   = 13
+        labels_row  = 14
+        headers_row = 15
+        data_start  = 16
+
+    # ── Blank separator ───────────────────────────────────────────────────────
+    ws.merge_cells(f"A{blank_row}:M{blank_row}")
+    ws.row_dimensions[blank_row].height = 15.75
+
+    # ── Section labels ────────────────────────────────────────────────────────
+    ws.merge_cells(f"A{labels_row}:F{labels_row}")
+    ws.merge_cells(f"G{labels_row}:K{labels_row}")
+    ws.merge_cells(f"L{labels_row}:M{labels_row}")
+    ws.row_dimensions[labels_row].height = 15.75
+    c = ws.cell(row=labels_row, column=1, value="WORK DETAILS")
     c.font = _LBL11; c.alignment = _TOP_CENTER
-    c = ws.cell(row=14, column=7, value="COMPOSER / AUTHOR / PUBLISHER / SINGER DETAILS")
+    c = ws.cell(row=labels_row, column=7, value="COMPOSER / AUTHOR / PUBLISHER / SINGER DETAILS")
     c.font = _LBL11; c.alignment = _TOP_CENTER
-    _apply_block_borders(ws, 14, 14, 1, 6)
-    _apply_block_borders(ws, 14, 14, 7, 11)
-    _apply_block_borders(ws, 14, 14, 12, 13)
+    _apply_block_borders(ws, labels_row, labels_row, 1, 6)
+    _apply_block_borders(ws, labels_row, labels_row, 7, 11)
+    _apply_block_borders(ws, labels_row, labels_row, 12, 13)
 
-    # ── Row 15: Column headers ────────────────────────────────────────────────
+    # ── Column headers ────────────────────────────────────────────────────────
     _HEADERS = [
         "SONG TITLE / TRACK NAME",
         "CHARACTERISTICS",
@@ -236,19 +261,18 @@ def _fill_iprs_sheet(ws, project, episode, total_ep_count: int | None = None) ->
         "SINGER",
         "VALIDATION LINK (IF SONG CODE IS NOT AVAILABLE)",
     ]
-    ws.row_dimensions[15].height = 38.25
+    ws.row_dimensions[headers_row].height = 38.25
     _MED_ALL = _b(top=_MEDIUM, bottom=_MEDIUM, left=_MEDIUM, right=_MEDIUM)
     for col, hdr in enumerate(_HEADERS, 1):
-        c = ws.cell(row=15, column=col, value=hdr)
+        c = ws.cell(row=headers_row, column=col, value=hdr)
         c.font = _LBL
         c.fill = _HEADER_FILL
         c.border = _MED_ALL
-        # Col 13 (validation): left-aligned per reference; others center
         c.alignment = _TOP_LEFT if col == 13 else _TOP_CENTER
 
     # ── Data rows ─────────────────────────────────────────────────────────────
     cues_ordered = sorted(episode.cues, key=lambda c: (c.order_index, c.id))
-    r = 16
+    r = data_start
     for cue in cues_ordered:
         contribs = _sorted_contribs(list(cue.contributors or []))
         n_rows   = max(len(contribs), 1)

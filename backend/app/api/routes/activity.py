@@ -79,10 +79,13 @@ async def reviewer_serials(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """All projects that have at least one submitted or approved episode, with counts."""
+    """All SERIAL projects that have at least one submitted or approved episode, with counts."""
     if current.role not in _REVIEWER_ROLES:
         raise HTTPException(403)
-    projects = (await db.execute(select(Project).order_by(Project.title))).scalars().all()
+    from app.models.project import ProjectType
+    projects = (await db.execute(
+        select(Project).where(Project.type == ProjectType.SERIAL).order_by(Project.title)
+    )).scalars().all()
     result = []
     for proj in projects:
         eps = (await db.execute(
@@ -95,6 +98,39 @@ async def reviewer_serials(
         result.append({
             "project_id":      proj.id,
             "project_title":   proj.title,
+            "project_type":    proj.type.value,
+            "total_episodes":  len(eps),
+            "submitted_count": submitted,
+            "approved_count":  approved,
+        })
+    return result
+
+
+@router.get("/reviewer-movies")
+async def reviewer_movies(
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """All MOVIE projects that have at least one submitted or approved episode, with counts."""
+    if current.role not in _REVIEWER_ROLES:
+        raise HTTPException(403)
+    from app.models.project import ProjectType
+    projects = (await db.execute(
+        select(Project).where(Project.type == ProjectType.MOVIE).order_by(Project.title)
+    )).scalars().all()
+    result = []
+    for proj in projects:
+        eps = (await db.execute(
+            select(Episode).where(Episode.project_id == proj.id)
+        )).scalars().all()
+        submitted = sum(1 for e in eps if e.status == "submitted")
+        approved  = sum(1 for e in eps if e.status == "approved")
+        if submitted == 0 and approved == 0:
+            continue
+        result.append({
+            "project_id":      proj.id,
+            "project_title":   proj.title,
+            "project_type":    proj.type.value,
             "total_episodes":  len(eps),
             "submitted_count": submitted,
             "approved_count":  approved,
@@ -129,6 +165,7 @@ async def reviewer_serial_episodes(
     return {
         "project_id":    proj.id,
         "project_title": proj.title,
+        "project_type":  proj.type.value,
         "channel":       proj.channel_name or "",
         "episodes": [{
             "id":                ep.id,

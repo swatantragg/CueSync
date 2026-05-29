@@ -18,20 +18,54 @@ import { STATUS } from "../constants/status";
 import { applyShareRules } from "../utils/cueRules";
 
 function CopyEpisodesModal({ episodes, currentEpId, onCopy, onClose }) {
-  const [checked, setChecked] = useState(new Set());
+  const [checked, setChecked]         = useState(new Set());
+  const [rangeInput, setRangeInput]   = useState("");
+  const [rangeError, setRangeError]   = useState("");
+  const [rangePreview, setRangePreview] = useState(new Set()); // highlighted, not yet confirmed
+
+  const targets = episodes.filter((e) => e.id !== currentEpId);
+
   const toggle = (id) => setChecked((prev) => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
-  const targets = episodes.filter((e) => e.id !== currentEpId);
+
+  const handleRangeInput = (val) => {
+    setRangeInput(val);
+    setRangeError("");
+    setRangePreview(new Set());
+    const trimmed = val.trim();
+    if (!trimmed) return;
+    const m = trimmed.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+    if (!m) { setRangeError("Format: start-end  e.g. 1-5"); return; }
+    const from = parseInt(m[1], 10);
+    const to   = parseInt(m[2], 10);
+    if (from > to) { setRangeError("Start must be ≤ end"); return; }
+    // Only highlight — do NOT check yet
+    const preview = new Set();
+    for (const ep of targets) {
+      if (ep.number >= from && ep.number <= to) preview.add(ep.id);
+    }
+    setRangePreview(preview);
+  };
+
+  const confirmRange = () => {
+    if (!rangePreview.size) return;
+    setChecked((prev) => { const next = new Set(prev); rangePreview.forEach((id) => next.add(id)); return next; });
+    setRangePreview(new Set());
+    setRangeInput("");
+    setRangeError("");
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
       <div
         className="rounded-2xl shadow-2xl flex flex-col"
-        style={{ background: C.dark, border: `1px solid ${C.mid}`, width: 340, maxHeight: 520 }}
+        style={{ background: C.dark, border: `1px solid ${C.mid}`, width: 360, maxHeight: 580 }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Header */}
         <div className="px-5 py-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: C.mid }}>
           <div>
             <div className="font-semibold text-base" style={{ color: C.mint1, fontFamily: FONTS.serif }}>Copy Cue Details</div>
@@ -39,27 +73,77 @@ function CopyEpisodesModal({ episodes, currentEpId, onCopy, onClose }) {
           </div>
           <button onClick={onClose} style={{ color: C.muted }} className="hover:opacity-70"><XCircle className="w-4 h-4" /></button>
         </div>
-        <div className="flex-1 overflow-y-auto py-2" style={{ maxHeight: 360 }}>
-          {targets.map((e) => (
-            <label
-              key={e.id}
-              className="flex items-center gap-3 px-5 py-2.5 cursor-pointer hover:opacity-70 transition-opacity"
-            >
-              <input
-                type="checkbox"
-                checked={checked.has(e.id)}
-                onChange={() => toggle(e.id)}
-                style={{ accentColor: C.mint1 }}
-              />
-              <span className="font-mono text-xs" style={{ color: C.mint1, minWidth: 28 }}>
-                {String(e.number).padStart(2, "0")}
-              </span>
-              <span className="text-xs flex-1 truncate" style={{ color: C.mint4 }}>
-                {e.airDate || e.title || `Episode ${e.number}`}
-              </span>
-            </label>
-          ))}
+
+        {/* Range input */}
+        <div className="px-5 pt-3 pb-3 border-b shrink-0" style={{ borderColor: C.mid }}>
+          <div className="text-[10px] uppercase tracking-wide mb-1.5" style={{ color: C.muted }}>Select by range</div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={rangeInput}
+              onChange={(e) => handleRangeInput(e.target.value)}
+              placeholder="e.g. 1-5"
+              className="flex-1 border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
+              style={{ borderColor: rangePreview.size ? C.mint1 : C.mid, background: "rgba(255,255,255,0.07)", color: C.mint4 }}
+            />
+            {rangePreview.size > 0 && (
+              <button
+                onClick={confirmRange}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-80 transition"
+                style={{ background: C.mint1, color: C.dark }}
+              >
+                Confirm {rangePreview.size}
+              </button>
+            )}
+          </div>
+          {rangePreview.size > 0 && (
+            <div className="text-[10px] mt-1.5 flex items-center gap-1" style={{ color: C.mint1 }}>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: C.mint1 }} />
+              {rangePreview.size} episode{rangePreview.size !== 1 ? "s" : ""} highlighted — verify below then click Confirm to select
+            </div>
+          )}
+          {rangeError && (
+            <div className="text-[10px] mt-1" style={{ color: "#EF5350" }}>{rangeError}</div>
+          )}
         </div>
+
+        {/* Episode list */}
+        <div className="flex-1 overflow-y-auto py-1" style={{ maxHeight: 360 }}>
+          {targets.map((e) => {
+            const isHighlighted = rangePreview.has(e.id);
+            const isChecked     = checked.has(e.id);
+            return (
+              <label
+                key={e.id}
+                className="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-all"
+                style={{
+                  background:  isHighlighted ? `${C.mint1}18` : "transparent",
+                  borderLeft:  isHighlighted ? `3px solid ${C.mint1}` : "3px solid transparent",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => toggle(e.id)}
+                  style={{ accentColor: C.mint1 }}
+                />
+                <span className="font-mono text-xs" style={{ color: isHighlighted ? C.mint1 : C.sub, minWidth: 28 }}>
+                  {String(e.number).padStart(2, "0")}
+                </span>
+                <span className="text-xs flex-1 truncate" style={{ color: isHighlighted ? C.mint1 : C.mint4 }}>
+                  {e.airDate || e.title || `Episode ${e.number}`}
+                </span>
+                {isHighlighted && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full shrink-0 font-medium" style={{ background: `${C.mint1}30`, color: C.mint1 }}>
+                    preview
+                  </span>
+                )}
+              </label>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
         <div className="px-5 py-4 border-t shrink-0" style={{ borderColor: C.mid }}>
           <button
             disabled={checked.size === 0}
@@ -384,9 +468,10 @@ export default function EpisodePage() {
     if (val == null || val === "") return "";
     const s = typeof val === "number" ? val : toSec(val);
     if (s == null) return typeof val === "string" ? val : "";
-    const m = Math.floor(s / 60);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
     const sec = Math.round(s % 60);
-    return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   };
 
   const calcMusicalDuration = (e) =>

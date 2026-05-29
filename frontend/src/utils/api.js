@@ -170,6 +170,10 @@ export const api = {
   createSubmission: (payload) => request("/api/society-submissions/", { method: "POST", body: payload }),
   submissionsBySerial: (pid) => request(`/api/society-submissions/serial/${pid}`),
   suggestClients: () => request("/api/society-submissions/suggest-clients"),
+  submissionStats: () => request("/api/society-submissions/stats/overview"),
+  markSubmittedToIprs: (id) => request(`/api/society-submissions/${id}/submit-to-iprs`, { method: "POST" }),
+  markAcceptedByIprs: (id) => request(`/api/society-submissions/${id}/accept-iprs`, { method: "POST" }),
+  reviewerCalendar: (year) => request(`/api/delegations/activity/reviewer-calendar?year=${year}`),
 
   // ── Notifications ───────────────────────────────────────────────────────────
   listNotifications: () => request("/api/notifications/"),
@@ -183,9 +187,10 @@ export const api = {
   submittedEpisodes: () => request("/api/activity/submitted-episodes"),
   editorActivityLog: (uid) => request(`/api/activity/editor/${uid}`),
 
-  // ── Reviewer serial view ────────────────────────────────────────────────────
+  // ── Reviewer serial/movie view ───────────────────────────────────────────────
   reviewerSerials: () => request("/api/activity/reviewer-serials"),
   reviewerSerialEpisodes: (pid) => request(`/api/activity/reviewer-serials/${pid}`),
+  reviewerMovies: () => request("/api/activity/reviewer-movies"),
 
   downloadBulkExport: async (projectId, society, fromEp, toEp, filename) => {
     const t = tokenStore.get();

@@ -24,6 +24,28 @@ const MATCH_BADGE = {
   none:  { bg: "#F5F5F5", color: "#9E9E9E", label: "no match" },
 };
 
+function _toSec(v) {
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return v;
+  const s = String(v).trim();
+  const m3 = s.match(/^(\d+):(\d+):(\d+)$/);
+  if (m3) return +m3[1] * 3600 + +m3[2] * 60 + +m3[3];
+  const m2 = s.match(/^(\d+):(\d+)$/);
+  if (m2) return +m2[1] * 60 + +m2[2];
+  const n = Number(s);
+  return isNaN(n) ? null : n;
+}
+
+function _secToHMS(sec) {
+  if (sec == null || sec === "") return "";
+  const n = typeof sec === "number" ? sec : _toSec(sec);
+  if (n == null || isNaN(n)) return "";
+  const h = Math.floor(n / 3600);
+  const m = Math.floor((n % 3600) / 60);
+  const s = Math.round(n % 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 function Field({ label, children }) {
   return (
     <div>
@@ -284,32 +306,36 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                   placeholder="DD Mon YYYY"
                 />
               </Field>
-              <Field label="Total Duration (sec)">
+              <Field label="Total Duration (HH:MM:SS)">
                 <Inp
-                  type="number" value={ep.total_duration_sec}
+                  value={_secToHMS(ep.total_duration_sec)}
                   disabled={!!ep.existing_episode_id}
-                  onChange={ev => updEp(activeEp, { total_duration_sec: Number(ev.target.value) || null })}
+                  placeholder="00:00:00"
+                  onChange={ev => updEp(activeEp, { total_duration_sec: _toSec(ev.target.value) })}
                 />
               </Field>
-              <Field label="Musical Duration (sec)">
+              <Field label="Musical Duration (HH:MM:SS)">
                 <Inp
-                  type="number" value={ep.musical_duration_sec}
+                  value={_secToHMS(ep.musical_duration_sec)}
                   disabled={!!ep.existing_episode_id}
-                  onChange={ev => updEp(activeEp, { musical_duration_sec: Number(ev.target.value) || null })}
+                  placeholder="00:00:00"
+                  onChange={ev => updEp(activeEp, { musical_duration_sec: _toSec(ev.target.value) })}
                 />
               </Field>
-              <Field label="BG Instrumental (sec)">
+              <Field label="BG Instrumental (HH:MM:SS)">
                 <Inp
-                  type="number" value={ep.bg_instrumental_duration_sec}
+                  value={_secToHMS(ep.bg_instrumental_duration_sec)}
                   disabled={!!ep.existing_episode_id}
-                  onChange={ev => updEp(activeEp, { bg_instrumental_duration_sec: Number(ev.target.value) || null })}
+                  placeholder="00:00:00"
+                  onChange={ev => updEp(activeEp, { bg_instrumental_duration_sec: _toSec(ev.target.value) })}
                 />
               </Field>
-              <Field label="BG Vocal (sec)">
+              <Field label="BG Vocal (HH:MM:SS)">
                 <Inp
-                  type="number" value={ep.bg_vocal_duration_sec}
+                  value={_secToHMS(ep.bg_vocal_duration_sec)}
                   disabled={!!ep.existing_episode_id}
-                  onChange={ev => updEp(activeEp, { bg_vocal_duration_sec: Number(ev.target.value) || null })}
+                  placeholder="00:00:00"
+                  onChange={ev => updEp(activeEp, { bg_vocal_duration_sec: _toSec(ev.target.value) })}
                 />
               </Field>
             </div>
@@ -329,7 +355,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                 <span />
                 <span>Song Title</span>
                 <span>Usage</span>
-                <span>Dur (s)</span>
+                <span>Duration</span>
                 <span>Song Code</span>
                 <span>ISRC</span>
                 <span>Singer</span>
@@ -370,10 +396,10 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                         onChange={ev => updCue(activeEp, ci, { usage_type: ev.target.value })}
                       />
                       <Inp
-                        type="number" value={cue.duration_sec}
+                        value={_secToHMS(cue.duration_sec)}
                         disabled={locked}
-                        onChange={ev => updCue(activeEp, ci, { duration_sec: Number(ev.target.value) || 0 })}
-                        placeholder="sec"
+                        onChange={ev => updCue(activeEp, ci, { duration_sec: _toSec(ev.target.value) ?? 0 })}
+                        placeholder="00:00:00"
                       />
                       <Inp
                         value={cue.song_code}

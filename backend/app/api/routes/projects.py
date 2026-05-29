@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
 from app.models.episode import Episode
-from app.models.project import Project
+from app.models.project import Project, ProjectType
 from app.models.user import User, UserRole
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate
 
@@ -103,19 +103,21 @@ async def project_stats(
     if current.role not in (UserRole.ADMIN, UserRole.WORK_DELEGATOR, UserRole.REVIEWER):
         raise HTTPException(403)
     total_projects = (await db.execute(select(func.count()).select_from(Project))).scalar() or 0
+    total_serials = (await db.execute(select(func.count()).select_from(Project).where(Project.type == ProjectType.SERIAL))).scalar() or 0
+    total_movies = (await db.execute(select(func.count()).select_from(Project).where(Project.type == ProjectType.MOVIE))).scalar() or 0
     total_episodes = (await db.execute(select(func.count()).select_from(Episode))).scalar() or 0
     approved = (await db.execute(select(func.count()).where(Episode.status == "approved"))).scalar() or 0
     submitted = (await db.execute(select(func.count()).where(Episode.status == "submitted"))).scalar() or 0
     rejected = (await db.execute(select(func.count()).where(Episode.status == "rejected"))).scalar() or 0
     pending = (await db.execute(select(func.count()).where(Episode.status == "pending"))).scalar() or 0
-    # Users by role
-    from sqlalchemy import text
     user_rows = (await db.execute(
         select(User.role, func.count()).group_by(User.role)
     )).all()
     users_by_role = {r[0].value: r[1] for r in user_rows}
     return {
         "total_projects": total_projects,
+        "total_serials": total_serials,
+        "total_movies": total_movies,
         "total_episodes": total_episodes,
         "episodes": {"approved": approved, "submitted": submitted, "rejected": rejected, "pending": pending},
         "users_by_role": users_by_role,

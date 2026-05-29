@@ -133,23 +133,36 @@ def _fill_ascap_sheet(ws, project, episode) -> None:
         or getattr(project, "submitted_by", None)
         or "NA"
     )
+    language     = (
+        getattr(episode, "cue_language", None)
+        or getattr(project, "language", None)
+        or "Hindi"
+    )
+    # ProjectType is a str-enum; use .value when available to avoid "ProjectType.MOVIE" repr
+    _raw_type  = getattr(project, "type", None)
+    _type_str  = (_raw_type.value if hasattr(_raw_type, "value") else str(_raw_type or "serial")).upper()
+    is_movie   = "MOVIE" in _type_str
+    type_label = "Movie" if is_movie else "Serial"
 
     # Row 1: title, merged A1:G1, no border.
     ws.merge_cells("A1:G1")
-    c = ws.cell(row=1, column=1, value=f"{serial_title}(Hindi Serial)Cuesheet")
+    c = ws.cell(row=1, column=1, value=f"{serial_title} ({language} {type_label}) Cuesheet")
     c.font = _TITLE_FONT
     c.alignment = _CENTER
     ws.row_dimensions[1].height = 23.25
 
     # Rows 3-7: plain metadata cells, no merges and no borders.
-    ep_label = f"{ep_num} {ep_title}".strip() if ep_title else str(ep_num)
+    ep_label     = f"{ep_num} {ep_title}".strip() if ep_title else str(ep_num)
+    title_label  = "Film Title" if is_movie else "Series/Film Title"
+    ep_label_key = "Film Title/Number" if is_movie else "Episode Title/Number"
+    prog_type    = "Film" if is_movie else "Soap"
     for i, (lv, rv) in enumerate(zip(
         [
-            f"Series/Film Title: {serial_title}",
-            f"Episode Title/Number: {ep_label}",
+            f"{title_label}: {serial_title}",
+            f"{ep_label_key}: {ep_label}",
             f"Estimated Airdate: {_fmt_date(getattr(episode, 'air_date', None))}",
             f"Program Length: {duration}",
-            "Program Type: Soap",
+            f"Program Type: {prog_type}",
         ],
         [
             "Company Name: NA",

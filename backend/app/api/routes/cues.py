@@ -34,9 +34,13 @@ async def create_cue(episode_id: int, payload: CueCreate, db: AsyncSession = Dep
         db.add(Contributor(cue_id=cue.id, **cd))
     await db.flush()
     lib = await find_autofill_library_match(db, cue.song_title, cue.isrc, cue.song_code)
-    if lib:
-        await apply_library_to_cue(db, cue, lib)
-    await propagate_cue_to_siblings(db, await _get_cue(cue.id, db))
+    try:
+        async with db.begin_nested():
+            if lib:
+                await apply_library_to_cue(db, cue, lib)
+            await propagate_cue_to_siblings(db, await _get_cue(cue.id, db))
+    except Exception:
+        pass  # library sync failed; cue is still committed
     await log_activity(db, current.id, "create", "episode", episode_id, f"Added song '{payload.song_title}'")
     await db.commit()
     return await _get_cue(cue.id, db)
@@ -75,13 +79,20 @@ async def update_cue(cid: int, payload: CueUpdate, db: AsyncSession = Depends(ge
     ):
         db.add(Contributor(cue_id=cue.id, **cd))
     await db.flush()
-    await reconcile_library(db, cue.song_title, cue.isrc)
-    await propagate_cue_to_siblings(db, await _get_cue(cue.id, db))
-    # Auto-save song + contributors to library on every user save
-    await upsert_cue_to_library(db, await _get_cue(cue.id, db))
-    for co in payload.contributors:
-        if co.name and co.ipi_number:
-            await upsert_contributor_library(db, co.name, co.role or "Composer", co.ipi_number, co.society)
+    # Library sync is best-effort; a constraint violation must NOT abort the cue save.
+    # begin_nested() issues a SAVEPOINT so any DB error rolls back only to here,
+    # leaving the outer transaction (cue + contributors) intact.
+    try:
+        async with db.begin_nested():
+            await reconcile_library(db, cue.song_title, cue.isrc)
+            await propagate_cue_to_siblings(db, await _get_cue(cue.id, db))
+            # Auto-save song + contributors to library on every user save
+            await upsert_cue_to_library(db, await _get_cue(cue.id, db))
+            for co in payload.contributors:
+                if co.name and co.ipi_number:
+                    await upsert_contributor_library(db, co.name, co.role or "Composer", co.ipi_number, co.society)
+    except Exception:
+        pass  # library sync failed; cue data is still committed below
     await log_activity(db, current.id, "update", "episode", ep_id, f"Edited song '{payload.song_title}'")
     await db.commit()
     return await _get_cue(cid, db)
