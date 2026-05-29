@@ -73,12 +73,23 @@ async def search_by_bg_composer(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    rows = (await db.execute(
-        select(Project).where(Project.bg_music_composer.ilike(f"%{q}%"))
-        .order_by(Project.title).limit(50)
+    """Search by cue_bg_music_composer (episode-level Cue Details field)."""
+    # Find all episodes where the cue-level BG composer matches
+    eps = (await db.execute(
+        select(Episode).where(Episode.cue_bg_music_composer.ilike(f"%{q}%"))
     )).scalars().all()
+
+    # Group distinct composer values per project
+    proj_composers: dict[int, set] = {}
+    for ep in eps:
+        if ep.cue_bg_music_composer:
+            proj_composers.setdefault(ep.project_id, set()).add(ep.cue_bg_music_composer.strip())
+
     result = []
-    for p in rows:
+    for project_id, composers in proj_composers.items():
+        p = await db.get(Project, project_id)
+        if not p:
+            continue
         ep_count = (await db.execute(
             select(func.count()).where(Episode.project_id == p.id)
         )).scalar() or 0
@@ -87,11 +98,13 @@ async def search_by_bg_composer(
         )).scalar() or 0
         result.append({
             "id": p.id, "title": p.title, "type": p.type.value,
-            "bg_music_composer": p.bg_music_composer,
+            "bg_music_composer": ", ".join(sorted(composers)),
             "language": p.language, "channel_name": p.channel_name,
             "production_company": p.production_company,
             "total_episodes": ep_count, "approved_episodes": approved,
         })
+
+    result.sort(key=lambda x: x["title"])
     return result
 
 

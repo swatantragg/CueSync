@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 html, body, #root { margin: 0; padding: 0; min-height: 100vh; }
-body { font-family: 'DM Sans', system-ui, -apple-system, sans-serif; }
+body { font-family: 'DM Sans', system-ui, -apple-system, sans-serif; font-size: 20px; }
 
 @keyframes progress-shimmer {
   0%   { background-position: -200% center; }
