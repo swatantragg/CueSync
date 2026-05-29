@@ -1,12 +1,14 @@
+import asyncio
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 import orjson
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.router import api_router
@@ -61,7 +63,103 @@ MIGRATIONS = [
     "SELECT setval('episodes_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM episodes), 1))) FROM episodes_id_seq",
     "SELECT setval('cue_entries_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM cue_entries), 1))) FROM cue_entries_id_seq",
     "SELECT setval('song_library_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM song_library), 1))) FROM song_library_id_seq",
+    # IPRS tracking columns on society_submissions
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS submitted_to_iprs BOOLEAN DEFAULT FALSE NOT NULL",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS submitted_to_iprs_at TIMESTAMPTZ",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS accepted_by_iprs BOOLEAN DEFAULT FALSE NOT NULL",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS accepted_by_iprs_at TIMESTAMPTZ",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS last_followup_at TIMESTAMPTZ",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS followup_count INTEGER DEFAULT 0 NOT NULL",
 ]
+
+# ── IPRS followup background task ─────────────────────────────────────────────
+
+async def _send_followup_notifications() -> None:
+    """
+    Run every hour. For each SocietySubmission:
+    - If NOT submitted_to_iprs AND created > 3 weeks ago → notify to submit to IPRS
+    - If submitted_to_iprs AND NOT accepted_by_iprs AND submitted_to_iprs_at > 3 weeks ago → followup
+    Both: re-notify every week after the first notification.
+    Notifies all admin, reviewer, and work_delegator users.
+    """
+    from app.models.notification import Notification
+    from app.models.project import Project
+    from app.models.society_submission import SocietySubmission
+    from app.models.user import User
+
+    THREE_WEEKS = timedelta(weeks=3)
+    ONE_WEEK    = timedelta(weeks=1)
+    now         = datetime.now(timezone.utc)
+
+    try:
+        async with AsyncSession(engine) as db:
+            async with db.begin():
+                target_users = (await db.execute(
+                    select(User).where(User.role.in_(["admin", "reviewer", "work_delegator"]))
+                )).scalars().all()
+                if not target_users:
+                    return
+
+                subs = (await db.execute(
+                    select(SocietySubmission).where(SocietySubmission.accepted_by_iprs == False)
+                )).scalars().all()
+
+                for sub in subs:
+                    proj = await db.get(Project, sub.project_id)
+                    if not proj:
+                        continue
+
+                    sub_at    = sub.submitted_at.replace(tzinfo=timezone.utc) if sub.submitted_at else None
+                    iprs_at   = sub.submitted_to_iprs_at.replace(tzinfo=timezone.utc) if sub.submitted_to_iprs_at else None
+                    follow_at = sub.last_followup_at.replace(tzinfo=timezone.utc) if sub.last_followup_at else None
+
+                    needs_notif   = False
+                    is_first      = follow_at is None
+                    weekly_due    = follow_at is not None and (now - follow_at) >= ONE_WEEK
+
+                    ep_range = (
+                        f"Ep {sub.episode_from}–{sub.episode_to}"
+                        if sub.episode_from != sub.episode_to
+                        else f"Ep {sub.episode_from}"
+                    )
+
+                    if not sub.submitted_to_iprs:
+                        if sub_at and (now - sub_at) >= THREE_WEEKS and (is_first or weekly_due):
+                            needs_notif = True
+                            title = f"Action Required: Submit to IPRS — {proj.title}"
+                            body  = (
+                                f"{ep_range} was logged {sub.followup_count + 1 if sub.followup_count else 1} "
+                                f"week(s) ago but has not been submitted to IPRS. Please submit immediately."
+                            )
+                    else:
+                        if iprs_at and (now - iprs_at) >= THREE_WEEKS and (is_first or weekly_due):
+                            needs_notif = True
+                            title = f"IPRS Followup Required — {proj.title}"
+                            body  = (
+                                f"{ep_range} was submitted to IPRS but acceptance has not been confirmed. "
+                                f"Please follow up with IPRS. (Followup #{sub.followup_count + 1})"
+                            )
+
+                    if needs_notif:
+                        for user in target_users:
+                            db.add(Notification(
+                                user_id=user.id, title=title, body=body,
+                                entity_type="society_submission", entity_id=sub.id,
+                            ))
+                        sub.last_followup_at = now
+                        sub.followup_count   = (sub.followup_count or 0) + 1
+
+        print(f"[followup-task] checked {len(subs) if 'subs' in dir() else 0} submissions at {now.isoformat()}")
+    except Exception as exc:
+        print(f"[followup-task] error: {exc}")
+
+
+async def _followup_loop() -> None:
+    await asyncio.sleep(60)  # small initial delay to let DB settle
+    while True:
+        await _send_followup_notifications()
+        await asyncio.sleep(3600)  # check every hour
+
 
 # Use lowercase values to match Python enum .value ("reviewer", not "REVIEWER")
 USER_ROLE_ENUM_VALUES = ["work_delegator", "reviewer"]
@@ -139,8 +237,13 @@ async def lifespan(app: FastAPI):
             print(f"[startup] dedup skipped: {de}")
     except Exception as e:
         print(f"[startup] DB unavailable — API will run without DB. Error: {e}")
-    yield
-    await engine.dispose()
+
+    followup_task = asyncio.create_task(_followup_loop())
+    try:
+        yield
+    finally:
+        followup_task.cancel()
+        await engine.dispose()
 
 
 app = FastAPI(

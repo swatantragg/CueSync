@@ -227,6 +227,110 @@ async def activity_calendar(year: int = Query(..., ge=2020, le=2100), db: AsyncS
     return {"year": year, "months": months}
 
 
+@router.get("/activity/reviewer-calendar", dependencies=[Depends(require_roles(*ALL_PRIVILEGED))])
+async def reviewer_calendar(year: int = Query(..., ge=2020, le=2100), db: AsyncSession = Depends(get_db)):
+    """Calendar data for reviewer dashboard — same audit-log aggregation as WD calendar."""
+    from datetime import datetime, timezone
+    from app.models.audit import AuditLog
+    from app.models.society_submission import SocietySubmission
+
+    start = datetime(year, 1, 1, tzinfo=timezone.utc)
+    end   = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+
+    rows = (await db.execute(
+        select(AuditLog).where(
+            AuditLog.action.in_(["submit", "approve"]),
+            AuditLog.entity == "episode",
+            AuditLog.created_at >= start,
+            AuditLog.created_at < end,
+        ).order_by(AuditLog.created_at)
+    )).scalars().all()
+
+    # Society submissions for that year (submitted_at)
+    soc_rows = (await db.execute(
+        select(SocietySubmission).where(
+            SocietySubmission.submitted_at >= start,
+            SocietySubmission.submitted_at < end,
+        )
+    )).scalars().all()
+
+    user_ids = {r.user_id for r in rows if r.user_id}
+    users: dict[int, User] = {}
+    if user_ids:
+        users = {u.id: u for u in (await db.execute(
+            select(User).where(User.id.in_(user_ids))
+        )).scalars().all()}
+
+    months: dict[int, dict] = {}
+    for r in rows:
+        if not r.created_at:
+            continue
+        month = r.created_at.month
+        week  = str((r.created_at.day - 1) // 7 + 1)
+        if month not in months:
+            months[month] = {"submitted": 0, "approved": 0, "society": 0, "weeks": {}}
+        m = months[month]
+        if r.action == "submit":   m["submitted"] += 1
+        else:                      m["approved"]  += 1
+        if week not in m["weeks"]:
+            m["weeks"][week] = {"submitted": 0, "approved": 0}
+        w = m["weeks"][week]
+        if r.action == "submit": w["submitted"] += 1
+        else:                    w["approved"]  += 1
+
+    # Accepted-by-IPRS submissions for that year (accepted_by_iprs_at)
+    accepted_rows = (await db.execute(
+        select(SocietySubmission).where(
+            SocietySubmission.accepted_by_iprs == True,
+            SocietySubmission.accepted_by_iprs_at >= start,
+            SocietySubmission.accepted_by_iprs_at < end,
+        )
+    )).scalars().all()
+
+    for s in soc_rows:
+        if s.submitted_at:
+            mo = s.submitted_at.month
+            if mo not in months:
+                months[mo] = {"submitted": 0, "approved": 0, "society": 0, "society_accepted": 0, "weeks": {}}
+            months[mo]["society"]          = months[mo].get("society", 0) + 1
+            months[mo].setdefault("society_accepted", 0)
+
+    for s in accepted_rows:
+        if s.accepted_by_iprs_at:
+            mo = s.accepted_by_iprs_at.month
+            if mo not in months:
+                months[mo] = {"submitted": 0, "approved": 0, "society": 0, "society_accepted": 0, "weeks": {}}
+            months[mo]["society_accepted"] = months[mo].get("society_accepted", 0) + 1
+
+    # Total target from delegations (sum of all week_targets)
+    total_target = sum(
+        (d.week_target or 0)
+        for d in (await db.execute(select(WorkDelegation))).scalars().all()
+    )
+
+    # Per-month target: delegations created in that month
+    from collections import defaultdict
+    month_target: dict[int, int] = defaultdict(int)
+    week_target:  dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for d in (await db.execute(select(WorkDelegation).where(
+        WorkDelegation.created_at >= start,
+        WorkDelegation.created_at < end,
+    ))).scalars().all():
+        if d.created_at and d.week_target:
+            mo  = d.created_at.month
+            wk  = str((d.created_at.day - 1) // 7 + 1)
+            month_target[mo]    += d.week_target
+            week_target[mo][wk] += d.week_target
+
+    return {
+        "year":         year,
+        "months":       months,
+        "total_target": total_target,
+        "month_target": dict(month_target),
+        "week_target":  {str(mo): dict(wks) for mo, wks in week_target.items()},
+    }
+
+
 @router.get("/activity/editor/{user_id}", dependencies=[Depends(require_roles(*WD_ROLES))])
 async def editor_activity(user_id: int, db: AsyncSession = Depends(get_db)):
     from app.models.episode import Episode as EpisodeModel
@@ -276,7 +380,8 @@ async def editor_activity(user_id: int, db: AsyncSession = Depends(get_db)):
     for r in rows:
         pid, serial = _get_serial(r)
         if serial not in groups:
-            groups[serial] = {"project_id": pid, "serial": serial, "entries": []}
+            proj_type = proj_map[pid].type.value if pid and pid in proj_map else None
+            groups[serial] = {"project_id": pid, "project_type": proj_type, "serial": serial, "entries": []}
         ep_num = ep_map[r.entity_id].episode_number if r.entity == "episode" and r.entity_id in ep_map else None
         groups[serial]["entries"].append({
             "id": r.id, "action": r.action, "entity": r.entity,
@@ -286,16 +391,18 @@ async def editor_activity(user_id: int, db: AsyncSession = Depends(get_db)):
         })
 
     by_serial = [
-        {"project_id": v["project_id"], "serial": v["serial"],
-         "count": len(v["entries"]), "entries": v["entries"]}
+        {"project_id": v["project_id"], "project_type": v.get("project_type"),
+         "serial": v["serial"], "count": len(v["entries"]), "entries": v["entries"]}
         for v in sorted(groups.values(), key=lambda x: (x["serial"] or "").lower())
     ]
 
-    # Episode status counts per serial (from delegated projects)
+    # Episode status counts + episode list per serial (from delegated projects)
     episode_stats: dict[str, dict] = {}
+    episodes_by_serial: dict[str, list] = {}
     if delegated_proj_ids:
         all_eps = (await db.execute(
             select(EpisodeModel).where(EpisodeModel.project_id.in_(delegated_proj_ids))
+            .order_by(EpisodeModel.episode_number)
         )).scalars().all()
         for ep_row in all_eps:
             proj = proj_map.get(ep_row.project_id)
@@ -307,12 +414,21 @@ async def editor_activity(user_id: int, db: AsyncSession = Depends(get_db)):
             episode_stats[sname]["total"] += 1
             s = ep_row.status or "pending"
             episode_stats[sname][s] = episode_stats[sname].get(s, 0) + 1
+            if sname not in episodes_by_serial:
+                episodes_by_serial[sname] = []
+            episodes_by_serial[sname].append({
+                "id": ep_row.id,
+                "episode_number": ep_row.episode_number,
+                "title": ep_row.title or "",
+                "status": ep_row.status or "pending",
+            })
 
     return {
         "user": {"id": user.id, "full_name": user.full_name, "email": user.email, "role": user.role.value},
         "delegations": delegation_list,
         "by_serial": by_serial,
         "episode_stats": episode_stats,
+        "episodes_by_serial": episodes_by_serial,
     }
 
 

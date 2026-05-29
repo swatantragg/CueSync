@@ -15,9 +15,11 @@ const STATUS_STYLE = {
 };
 
 const REVIEW_STYLE = {
-  rejected: { bg: "#FFEBEE", color: "#C62828", Icon: XCircle,        label: "Rejected"           },
-  edited:   { bg: "#E3F2FD", color: "#1565C0", Icon: MessageSquare,  label: "Changes Suggested"  },
-  approved: { bg: "#E8F5E9", color: "#2E7D32", Icon: CheckCircle2,   label: "Approved"           },
+  rejected:    { bg: "#FFEBEE", color: "#C62828", Icon: XCircle,        label: "Rejected"           },
+  edited:      { bg: "#E3F2FD", color: "#1565C0", Icon: MessageSquare,  label: "Changes Suggested"  },
+  approved:    { bg: "#E8F5E9", color: "#2E7D32", Icon: CheckCircle2,   label: "Approved"           },
+  pending:     { bg: "#FFF3E0", color: "#E65100", Icon: Clock,          label: "Pending"            },
+  in_progress: { bg: "#EDE7F6", color: "#6A1B9A", Icon: AlertCircle,   label: "In Progress"        },
 };
 
 function useOpenSerial() {
@@ -151,20 +153,28 @@ function MyWorkTab() {
 }
 
 // ─── Review Feedback tab (serial-wise) ───────────────────────────────────────
+
+const EP_SUBTABS = [
+  { key: "allotted",  label: "Allotted",  statuses: ["pending", "in_progress"],  color: "#E65100", bg: "#FFF3E0" },
+  { key: "rejected",  label: "Rejected",  statuses: ["rejected"],                color: "#C62828", bg: "#FFEBEE" },
+  { key: "approved",  label: "Approved",  statuses: ["approved"],                color: "#2E7D32", bg: "#E8F5E9" },
+  { key: "suggested", label: "Suggested", statuses: ["edited"],                   color: "#1565C0", bg: "#E3F2FD" },
+];
+
 function ReviewFeedbackTab() {
   const { notifications, markRead } = useApp();
   const openSerial = useOpenSerial();
 
-  const [groups, setGroups]         = useState([]);  // [{project_id, title, episodes, project_type}]
-  const [delegations, setDelegations] = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [expanded, setExpanded]     = useState({});
-  const [newEpIds, setNewEpIds]     = useState(new Set());
-  const [reviewSubTab, setReviewSubTab] = useState("serial");
-  const prevEpIdsRef                = useRef(null);
-  const isMounted                   = useRef(true);
+  const [groups, setGroups]           = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [expanded, setExpanded]       = useState({});
+  const [newEpIds, setNewEpIds]       = useState(new Set());
+  const [reviewSubTab, setReviewSubTab]   = useState("serial");
+  // per-project active sub-tab: { [projectId]: "allotted"|"rejected"|"approved"|"suggested" }
+  const [epSubTabs, setEpSubTabs]     = useState({});
+  const prevEpIdsRef                  = useRef(null);
+  const isMounted                     = useRef(true);
 
-  // Episode IDs with unread notifications from backend
   const unreadEpIds = new Set(
     notifications.filter((n) => !n.is_read && n.entity_type === "episode").map((n) => n.entity_id)
   );
@@ -172,29 +182,26 @@ function ReviewFeedbackTab() {
   const loadData = useCallback(async (isRefresh = false) => {
     try {
       const [projs, dels] = await Promise.all([api.projects(), api.listDelegations()]);
-      if (isMounted.current) setDelegations(dels);
-      // derive type from delegation work_type — Movie Cue Sheet → movie, else serial
-      const movieProjIds = new Set(dels.filter((d) => d.work_type === "Movie Cue Sheet" && d.project_id).map((d) => d.project_id));
+      const movieProjIds  = new Set(dels.filter((d) => d.work_type === "Movie Cue Sheet" && d.project_id).map((d) => d.project_id));
       const result = [];
       for (const p of projs) {
         try {
           const eps = await api.listEpisodes(p.id);
-          const reviewed = eps.filter((e) => ["rejected", "edited", "approved"].includes(e.status));
-          if (reviewed.length > 0) {
+          // Only include projects that have at least one reviewed episode
+          const hasReview = eps.some((e) => ["rejected", "edited", "approved"].includes(e.status));
+          if (hasReview) {
             result.push({
-              project_id: p.id,
-              title: p.title,
+              project_id:   p.id,
+              title:        p.title,
               project_type: movieProjIds.has(p.id) ? "movie" : "serial",
-              episodes: reviewed.sort((a, b) => b.id - a.id),
+              episodes:     eps.sort((a, b) => a.episode_number - b.episode_number),
             });
           }
         } catch (_) {}
       }
       result.sort((a, b) => a.title.localeCompare(b.title));
-
       if (!isMounted.current) return;
 
-      // Track which episode IDs are newly added since last fetch
       if (isRefresh && prevEpIdsRef.current) {
         const allIds = new Set(result.flatMap((g) => g.episodes.map((e) => e.id)));
         const added  = new Set([...allIds].filter((id) => !prevEpIdsRef.current.has(id)));
@@ -210,6 +217,18 @@ function ReviewFeedbackTab() {
         result.forEach((g) => { if (!(g.project_id in next)) next[g.project_id] = true; });
         return next;
       });
+      // Default sub-tab per project: prefer rejected if any, else suggested, else approved, else allotted
+      setEpSubTabs((prev) => {
+        const next = { ...prev };
+        result.forEach((g) => {
+          if (g.project_id in next) return;
+          const hasRejected  = g.episodes.some((e) => e.status === "rejected");
+          const hasSuggested = g.episodes.some((e) => e.status === "edited");
+          const hasApproved  = g.episodes.some((e) => e.status === "approved");
+          next[g.project_id] = hasRejected ? "rejected" : hasSuggested ? "suggested" : hasApproved ? "approved" : "allotted";
+        });
+        return next;
+      });
     } catch (_) {}
   }, []);
 
@@ -219,7 +238,6 @@ function ReviewFeedbackTab() {
     return () => { isMounted.current = false; };
   }, [loadData]);
 
-  // Re-fetch whenever a new notification arrives (notifications poll every 30s)
   const prevNotifCount = useRef(notifications.length);
   useEffect(() => {
     if (notifications.length !== prevNotifCount.current && !loading) {
@@ -230,19 +248,13 @@ function ReviewFeedbackTab() {
 
   const toggle = (pid) => setExpanded((prev) => ({ ...prev, [pid]: !prev[pid] }));
 
-  const clearNew = (pid, epIds) => {
-    setNewEpIds((prev) => {
-      const next = new Set(prev);
-      epIds.forEach((id) => next.delete(id));
-      return next;
-    });
-  };
+  const clearNew = (epIds) =>
+    setNewEpIds((prev) => { const next = new Set(prev); epIds.forEach((id) => next.delete(id)); return next; });
 
-  const markEpNotifsRead = (epIds) => {
+  const markEpNotifsRead = (epIds) =>
     notifications
       .filter((n) => !n.is_read && n.entity_type === "episode" && epIds.includes(n.entity_id))
       .forEach((n) => markRead(n.id));
-  };
 
   if (loading) return <div className="p-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>;
 
@@ -252,6 +264,7 @@ function ReviewFeedbackTab() {
 
   return (
     <div>
+      {/* Serial / Movie top tabs */}
       <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
         {[{ key: "serial", label: "TV Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
           <button key={key} onClick={() => setReviewSubTab(key)}
@@ -269,124 +282,148 @@ function ReviewFeedbackTab() {
           <p className="text-sm" style={{ color: C.sub }}>Reviewed {reviewSubTab === "movie" ? "movies" : "episodes"} will appear here.</p>
         </div>
       ) : (
-      <div className="space-y-3">
-      {filteredGroups.map((g) => {
-        const isOpen   = expanded[g.project_id] ?? true;
-        const epIds    = g.episodes.map((e) => e.id);
-        const newInGroup    = epIds.filter((id) => newEpIds.has(id)).length;
-        const unreadInGroup = epIds.filter((id) => unreadEpIds.has(id)).length;
-        const badge = newInGroup + unreadInGroup;
+        <div className="space-y-3">
+          {filteredGroups.map((g) => {
+            const isOpen = expanded[g.project_id] ?? true;
+            const epIds  = g.episodes.map((e) => e.id);
+            const badge  = epIds.filter((id) => newEpIds.has(id) || unreadEpIds.has(id)).length;
 
-        // Summary counts per status
-        const counts = g.episodes.reduce((acc, ep) => {
-          acc[ep.status] = (acc[ep.status] || 0) + 1;
-          return acc;
-        }, {});
+            // Counts per status for header badges
+            const counts = g.episodes.reduce((acc, ep) => { acc[ep.status] = (acc[ep.status] || 0) + 1; return acc; }, {});
 
-        return (
-          <div key={g.project_id} className="rounded-xl border overflow-hidden"
-            style={{ background: C.white, borderColor: badge > 0 ? C.mint1 : C.mint1 + "44" }}>
-            {/* Serial header */}
-            <button
-              onClick={() => {
-                toggle(g.project_id);
-                if (isOpen) {
-                  clearNew(g.project_id, epIds);
-                  markEpNotifsRead(epIds);
-                }
-              }}
-              className="w-full flex items-center gap-3 px-5 py-4 hover:bg-green-50/30 transition text-left"
-            >
-              {/* Expand icon */}
-              {isOpen
-                ? <ChevronUp className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
-                : <ChevronDown className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
-              }
+            // Active sub-tab for this project
+            const activeSub = epSubTabs[g.project_id] || "rejected";
+            const subDef    = EP_SUBTABS.find((t) => t.key === activeSub) || EP_SUBTABS[1];
+            const subEps    = g.episodes.filter((e) => subDef.statuses.includes(e.status));
 
-              {/* Title + counts */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-sm" style={{ fontFamily: FONTS.serif, color: C.dark }}>
-                    {g.title}
-                  </span>
-                  {badge > 0 && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse"
-                      style={{ background: C.mint1, color: C.dark }}>
-                      {badge} new
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 mt-1 flex-wrap">
-                  {counts.rejected  && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.rejected.bg,  color: REVIEW_STYLE.rejected.color  }}>{counts.rejected} rejected</span>}
-                  {counts.edited    && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.edited.bg,    color: REVIEW_STYLE.edited.color    }}>{counts.edited} suggested</span>}
-                  {counts.approved  && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.approved.bg,  color: REVIEW_STYLE.approved.color  }}>{counts.approved} approved</span>}
-                  <span className="text-[10px]" style={{ color: C.muted }}>{g.episodes.length} episode{g.episodes.length !== 1 ? "s" : ""}</span>
-                </div>
-              </div>
+            return (
+              <div key={g.project_id} className="rounded-xl border overflow-hidden"
+                style={{ background: C.white, borderColor: badge > 0 ? C.mint1 : C.mint1 + "44" }}>
 
-              {/* Open serial button */}
-              <button
-                onClick={(e) => { e.stopPropagation(); openSerial(g.project_id); }}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 hover:opacity-90"
-                style={{ background: C.dark, color: C.mint4 }}
-              >
-                <ExternalLink className="w-3 h-3" /> Open
-              </button>
-            </button>
-
-            {/* Episode list */}
-            {isOpen && (
-              <div className="border-t" style={{ borderColor: C.mint4 + "44" }}>
-                {g.episodes.map((ep, idx) => {
-                  const s       = REVIEW_STYLE[ep.status] || REVIEW_STYLE.rejected;
-                  const isNew   = newEpIds.has(ep.id);
-                  const hasUnread = unreadEpIds.has(ep.id);
-                  return (
-                    <div key={ep.id}
-                      className="px-5 py-3 border-b last:border-0 flex items-start gap-4"
-                      style={{
-                        borderColor: C.mint4 + "33",
-                        background: (isNew || hasUnread) ? C.mint4 + "18" : idx % 2 === 0 ? "#fafffe" : C.white,
-                      }}
-                    >
-                      {/* Status icon */}
-                      <s.Icon className="w-4 h-4 mt-0.5 shrink-0" style={{ color: s.color }} />
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm" style={{ color: C.dark }}>
-                            Ep {ep.episode_number}{ep.title ? ` · ${ep.title}` : ""}
-                          </span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                            style={{ background: s.bg, color: s.color }}>{s.label}</span>
-                          {(isNew || hasUnread) && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
-                              style={{ background: C.mint1, color: C.dark }}>New</span>
-                          )}
-                        </div>
-
-                        {ep.rejection_note && (
-                          <p className="text-xs mt-1.5 px-3 py-1.5 rounded-lg"
-                            style={{ background: "#FFEBEE", color: "#C62828" }}>
-                            <strong>Rejection:</strong> {ep.rejection_note}
-                          </p>
-                        )}
-                        {ep.review_note && (
-                          <p className="text-xs mt-1.5 px-3 py-1.5 rounded-lg"
-                            style={{ background: "#E3F2FD", color: "#1565C0" }}>
-                            <strong>Suggestion:</strong> {ep.review_note}
-                          </p>
-                        )}
-                      </div>
+                {/* Project header row */}
+                <button
+                  onClick={() => {
+                    toggle(g.project_id);
+                    if (isOpen) { clearNew(epIds); markEpNotifsRead(epIds); }
+                  }}
+                  className="w-full flex items-center gap-3 px-5 py-4 hover:bg-green-50/30 transition text-left"
+                >
+                  {isOpen
+                    ? <ChevronUp   className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
+                    : <ChevronDown className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
+                  }
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm" style={{ fontFamily: FONTS.serif, color: C.dark }}>{g.title}</span>
+                      {badge > 0 && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse"
+                          style={{ background: C.mint1, color: C.dark }}>{badge} new</span>
+                      )}
                     </div>
-                  );
-                })}
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {counts.rejected  && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.rejected.bg,  color: REVIEW_STYLE.rejected.color  }}>{counts.rejected} rejected</span>}
+                      {counts.edited    && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.edited.bg,    color: REVIEW_STYLE.edited.color    }}>{counts.edited} suggested</span>}
+                      {counts.approved  && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.approved.bg,  color: REVIEW_STYLE.approved.color  }}>{counts.approved} approved</span>}
+                      <span className="text-[10px]" style={{ color: C.muted }}>{g.episodes.length} ep total</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openSerial(g.project_id); }}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 hover:opacity-90"
+                    style={{ background: C.dark, color: C.mint4 }}
+                  >
+                    <ExternalLink className="w-3 h-3" /> Open
+                  </button>
+                </button>
+
+                {/* Expanded content with 4 sub-tabs */}
+                {isOpen && (
+                  <div className="border-t" style={{ borderColor: C.mint4 + "44" }}>
+
+                    {/* 4 sub-tabs */}
+                    <div className="flex border-b" style={{ borderColor: C.mint4 + "66" }}>
+                      {EP_SUBTABS.map((t) => {
+                        const tabEps   = g.episodes.filter((e) => t.statuses.includes(e.status));
+                        const isActive = activeSub === t.key;
+                        return (
+                          <button
+                            key={t.key}
+                            onClick={() => setEpSubTabs((prev) => ({ ...prev, [g.project_id]: t.key }))}
+                            className="flex-1 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide transition-all"
+                            style={{
+                              color:        isActive ? t.color : C.muted,
+                              background:   isActive ? t.bg    : "transparent",
+                              borderBottom: isActive ? `2px solid ${t.color}` : "2px solid transparent",
+                            }}
+                          >
+                            {t.label}
+                            {tabEps.length > 0 && (
+                              <span
+                                className="ml-1 px-1 py-0.5 rounded-full text-[9px] font-bold"
+                                style={{ background: isActive ? t.color : C.muted + "55", color: isActive ? "#fff" : C.muted }}
+                              >
+                                {tabEps.length}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Episode rows for active sub-tab */}
+                    {subEps.length === 0 ? (
+                      <div className="px-5 py-6 text-center text-xs" style={{ color: C.muted }}>
+                        No {subDef.label.toLowerCase()} episodes in this {g.project_type}.
+                      </div>
+                    ) : (
+                      subEps.map((ep, idx) => {
+                        const s         = REVIEW_STYLE[ep.status] || { bg: C.mint4, color: C.sub, Icon: Clock, label: ep.status };
+                        const isNew     = newEpIds.has(ep.id);
+                        const hasUnread = unreadEpIds.has(ep.id);
+                        return (
+                          <div key={ep.id}
+                            className="px-5 py-3 border-b last:border-0 flex items-start gap-4"
+                            style={{
+                              borderColor: C.mint4 + "33",
+                              background: (isNew || hasUnread) ? C.mint4 + "18" : idx % 2 === 0 ? "#fafffe" : C.white,
+                            }}
+                          >
+                            <s.Icon className="w-4 h-4 mt-0.5 shrink-0" style={{ color: s.color }} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-sm" style={{ color: C.dark }}>
+                                  Ep {ep.episode_number}{ep.title ? ` · ${ep.title}` : ""}
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                  style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                                {(isNew || hasUnread) && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                                    style={{ background: C.mint1, color: C.dark }}>New</span>
+                                )}
+                              </div>
+                              {ep.rejection_note && (
+                                <p className="text-xs mt-1.5 px-3 py-1.5 rounded-lg"
+                                  style={{ background: "#FFEBEE", color: "#C62828" }}>
+                                  <strong>Rejection:</strong> {ep.rejection_note}
+                                </p>
+                              )}
+                              {ep.review_note && (
+                                <p className="text-xs mt-1.5 px-3 py-1.5 rounded-lg"
+                                  style={{ background: "#E3F2FD", color: "#1565C0" }}>
+                                  <strong>Suggestion:</strong> {ep.review_note}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        );
-      })}
-      </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

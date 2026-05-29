@@ -71,9 +71,10 @@ export default function SerialPage() {
 
   const fmtDur = (sec) => {
     if (!sec) return "—";
-    const m = Math.floor(sec / 60);
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
     const s = sec % 60;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   };
 
   const handleImport = async (e) => {
@@ -86,9 +87,13 @@ export default function SerialPage() {
     const errors = [];
     const merged = { meta: {}, episodes: [] };
     const seenEpNums = new Set();
-    setImportProgress({ current: 0, total: files.length });
+    let totalEpisodes = 0;
+
+    setImportProgress({ pct: 0, episodes: 0, filesDone: 0, filesTotal: files.length });
+
     for (let i = 0; i < files.length; i++) {
-      setImportProgress({ current: i + 1, total: files.length });
+      // Mark file i as in-progress (fill up to just before next file boundary)
+      setImportProgress({ pct: Math.round((i / files.length) * 90), episodes: totalEpisodes, filesDone: i, filesTotal: files.length });
       try {
         const data = await api.previewRough(proj.id, files[i]);
         if (data.meta) Object.assign(merged.meta, data.meta);
@@ -96,12 +101,20 @@ export default function SerialPage() {
           if (!seenEpNums.has(ep.episode_number)) {
             seenEpNums.add(ep.episode_number);
             merged.episodes.push(ep);
+            totalEpisodes++;
           }
         }
       } catch (ex) {
         errors.push(`${files[i].name}: ${ex.message}`);
       }
+      // File i done — advance bar proportionally
+      setImportProgress({ pct: Math.round(((i + 1) / files.length) * 90), episodes: totalEpisodes, filesDone: i + 1, filesTotal: files.length });
     }
+
+    // All files done — flash 100% so user sees completion before preview opens
+    setImportProgress({ pct: 100, episodes: totalEpisodes, filesDone: files.length, filesTotal: files.length, done: true });
+    await new Promise((r) => setTimeout(r, 500));
+
     setImportProgress(null);
     setBusy(false);
     if (errors.length) setErr(errors.join("\n"));
@@ -264,7 +277,9 @@ export default function SerialPage() {
                   <div className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>Import Rough Sheet</div>
                   <div className="text-xs" style={{ color: C.sub }}>
                     {busy && importProgress
-                      ? `Parsing file ${importProgress.current} of ${importProgress.total}…`
+                      ? importProgress.done
+                        ? `All files extracted — opening preview…`
+                        : `Parsing file ${importProgress.filesDone + 1} of ${importProgress.filesTotal}…`
                       : "Select one or multiple .xlsx sheets — review extracted data before saving"}
                   </div>
                 </div>
@@ -286,6 +301,34 @@ export default function SerialPage() {
                 <input type="file" accept=".xlsx,.xls" multiple className="sr-only" onChange={handleImport} disabled={busy} />
               </label>
             </div>
+            {busy && importProgress && (
+              <div className="px-6 pb-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px]" style={{ color: C.sub }}>
+                    {importProgress.done
+                      ? `✓ ${importProgress.episodes} episode${importProgress.episodes !== 1 ? "s" : ""} extracted`
+                      : `File ${importProgress.filesDone + (importProgress.pct < 90 ? 1 : 0)} of ${importProgress.filesTotal} — ${importProgress.episodes} episode${importProgress.episodes !== 1 ? "s" : ""} found`}
+                  </span>
+                  <span className="text-[11px] font-mono font-semibold" style={{ color: importProgress.done ? C.ok : C.dark }}>
+                    {importProgress.pct}%
+                  </span>
+                </div>
+                <div className="w-full rounded-full overflow-hidden" style={{ height: 7, background: C.mint1 + "2A" }}>
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${importProgress.pct}%`,
+                      transition: "width 0.35s cubic-bezier(0.4,0,0.2,1)",
+                      backgroundSize: "200% 100%",
+                      backgroundImage: importProgress.done
+                        ? `linear-gradient(90deg, ${C.ok}, #52c41a)`
+                        : `linear-gradient(90deg, ${C.mint1} 0%, ${C.dark} 40%, ${C.mint1} 60%, ${C.dark} 100%)`,
+                      animation: importProgress.done ? "none" : "progress-shimmer 1.6s linear infinite",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
