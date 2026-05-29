@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Dark rounded background matching app dark color -->
+  <rect width="32" height="32" rx="7" fill="#1B3A2D"/>
+
+  <!-- Musical note (eighth note ♪) in white with mint accent stem -->
+  <!-- Note head -->
+  <ellipse cx="12" cy="22" rx="4" ry="3" fill="#FFFFFF" transform="rotate(-15 12 22)"/>
+  <!-- Stem -->
+  <rect x="15.6" y="9" width="2.2" height="14" rx="1.1" fill="#ACE1AF"/>
+  <!-- Flag on stem -->
+  <path d="M17.8 9 Q26 11 23 17 Q20 13 17.8 13 Z" fill="#ACE1AF"/>
+</svg>
