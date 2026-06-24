@@ -26,9 +26,11 @@ COPY --from=builder /install /usr/local
 # Copy app source
 COPY . .
 
-# Non-root user
-RUN groupadd --system app && useradd --system --gid app app \
-    && chown -R app:app /app
+# Non-root user (with a real, writable home so gunicorn's control server can
+# create its runtime socket — avoids "Permission denied: '/home/app'")
+RUN groupadd --system app && useradd --system --gid app --create-home --home-dir /home/app app \
+    && chown -R app:app /app /home/app
+ENV HOME=/home/app
 USER app
 
 EXPOSE 8000

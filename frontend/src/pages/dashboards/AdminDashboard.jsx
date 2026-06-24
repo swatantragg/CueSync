@@ -362,10 +362,21 @@ function UsersTab({ initialRoleFilter = "all" }) {
     catch (ex) { await showAlert(ex.message, { variant: "error" }); }
   };
   const handleDelete = async (uid, name) => {
-    const ok = await showConfirm(`Delete user "${name}"?`, { variant: "danger", confirmLabel: "Delete" });
+    const ok = await showConfirm(
+      `Delete user "${name}"?\n\n` +
+      `This removes their notifications and work delegations, and detaches their activity history.\n\n` +
+      `A user can only be deleted if they don't own any projects or society submissions. ` +
+      `If they do, reassign or delete those first.`,
+      { variant: "danger", confirmLabel: "Delete" }
+    );
     if (!ok) return;
-    try { await api.deleteUser(uid); setUsers((p) => p.filter((x) => x.id !== uid)); }
-    catch (ex) { await showAlert(ex.message, { variant: "error" }); }
+    try {
+      await api.deleteUser(uid);
+      setUsers((p) => p.filter((x) => x.id !== uid));
+    } catch (ex) {
+      // Backend returns a 409 with the exact blocker (e.g. "still owns N project(s)").
+      await showAlert(`Couldn't delete "${name}".\n\n${ex.message}`, { variant: "error" });
+    }
   };
   const handleCreate = async (e) => {
     e.preventDefault();

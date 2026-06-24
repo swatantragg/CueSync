@@ -99,7 +99,7 @@ function DialogCard({ dialog, onDone }) {
             >
               {dialog.title || (dialog.type === "confirm" ? "Confirm Action" : "Notice")}
             </div>
-            <div className="text-xs mt-1.5 leading-relaxed" style={{ color: C.muted }}>
+            <div className="text-xs mt-1.5 leading-relaxed whitespace-pre-line" style={{ color: C.muted }}>
               {dialog.message}
             </div>
             {dialog.detail && (
