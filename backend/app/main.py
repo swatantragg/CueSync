@@ -311,6 +311,20 @@ async def cors_safety_net(request: Request, call_next):
     return response
 
 
+# ── Unhandled-error handler (attaches CORS headers so browsers see the real ────
+#    error instead of a generic "Failed to fetch") ──────────────────────────────
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    print(f"[error] {request.method} {request.url.path}: {exc!r}")
+    headers = {}
+    origin = request.headers.get("origin", "")
+    if origin and (origin in settings.cors_list or _CORS_RE.fullmatch(origin)):
+        headers["access-control-allow-origin"] = origin
+        headers["access-control-allow-credentials"] = "true"
+        headers["vary"] = "Origin"
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"}, headers=headers)
+
+
 @app.get("/")
 async def root():
     return {"app": settings.APP_NAME, "status": "ok"}

@@ -36,6 +36,8 @@ Thumbs.db
 
 # Docker
 .env.docker.local
+# Local-only compose override (forces local backend + dev mode). NEVER deploy to prod.
+docker-compose.override.yml
 
 # Exports / uploads (generated files)
 exports/
