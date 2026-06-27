@@ -32,6 +32,7 @@ from app.models.episode import Episode
 from app.models.library import ContributorLibrary, SongLibrary
 from app.models.project import Project
 from app.models.user import User, UserRole
+from app.models.work_delegation import WorkDelegation
 from app.services.cue_rules import apply_share_rules, usage_code as get_char_code
 from app.services.audit import log_activity
 from app.services.library_sync import (
@@ -99,6 +100,27 @@ async def _enrich_contrib_by_name(db: AsyncSession, contrib: dict) -> dict:
     return result
 
 
+# ── Delegation client lookup (autofill "Submitted By / Client name") ──────────
+
+async def _delegation_client(db: AsyncSession, project_id: int, user_id: int | None = None) -> str | None:
+    """Client name set by the WD when delegating this project.
+
+    Prefers the delegation assigned to ``user_id`` (the uploading editor); falls
+    back to the most recent delegation with a non-empty client for the project.
+    """
+    rows = (await db.execute(
+        select(WorkDelegation)
+        .where(WorkDelegation.project_id == project_id, WorkDelegation.client.isnot(None))
+        .order_by(WorkDelegation.created_at.desc())
+    )).scalars().all()
+    candidates = [r for r in rows if r.client and r.client.strip()]
+    if user_id is not None:
+        for r in candidates:
+            if r.assigned_to == user_id:
+                return r.client.strip()
+    return candidates[0].client.strip() if candidates else None
+
+
 # ── Pydantic schemas for commit payload ───────────────────────────────────────
 
 class ContributorIn(BaseModel):
@@ -130,6 +152,7 @@ class EpisodeIn(BaseModel):
     musical_duration_sec: int | None = None
     bg_instrumental_duration_sec: int | None = None
     bg_vocal_duration_sec: int | None = None
+    cue_submitted_by: str | None = None
     existing_episode_id: int | None = None
     cues: list[CueIn] = []
 
@@ -162,6 +185,13 @@ async def upload_rough(
         if meta.get(k) and not getattr(proj, k, None):
             setattr(proj, k, meta[k])
 
+    # Autofill "Submitted By (Client name)" from the WD's delegation client.
+    deleg_client = await _delegation_client(db, project_id, current.id)
+    if deleg_client and not proj.submitted_by:
+        proj.submitted_by = deleg_client
+    if deleg_client:
+        meta = {**meta, "submitted_by": deleg_client}
+
     created_eps = []
     for ep in parsed["episodes"]:
         existing = (await db.execute(
@@ -178,6 +208,7 @@ async def upload_rough(
             musical_duration_sec=ep["musical_duration_sec"],
             bg_instrumental_duration_sec=ep["bg_instrumental_duration_sec"],
             bg_vocal_duration_sec=ep["bg_vocal_duration_sec"],
+            cue_submitted_by=deleg_client,
         )
         db.add(e)
         await db.flush()
@@ -240,6 +271,11 @@ async def preview_rough(
             raise
         except Exception:
             raise HTTPException(400, "Failed to parse the Excel file. Ensure it is a valid rough sheet.")
+
+        # Autofill "Submitted By (Client name)" from the WD's delegation client.
+        deleg_client = await _delegation_client(db, project_id, current.id)
+        if deleg_client and not parsed["meta"].get("submitted_by"):
+            parsed["meta"]["submitted_by"] = deleg_client
 
         enriched_episodes = []
         for ep in parsed["episodes"]:
@@ -333,6 +369,11 @@ async def commit_rough(
     if not proj:
         raise HTTPException(404, "Project not found")
 
+    # Autofill "Submitted By (Client name)" from the WD's delegation client.
+    deleg_client = await _delegation_client(db, project_id, current.id)
+    if deleg_client and not proj.submitted_by:
+        proj.submitted_by = deleg_client
+
     created_eps = []
     try:
         for ep_data in payload.episodes:
@@ -357,6 +398,7 @@ async def commit_rough(
                 musical_duration_sec=ep_data.musical_duration_sec,
                 bg_instrumental_duration_sec=ep_data.bg_instrumental_duration_sec,
                 bg_vocal_duration_sec=ep_data.bg_vocal_duration_sec,
+                cue_submitted_by=ep_data.cue_submitted_by or deleg_client,
             )
             db.add(e)
             await db.flush()

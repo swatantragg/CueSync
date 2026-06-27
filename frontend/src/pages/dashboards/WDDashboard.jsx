@@ -48,6 +48,15 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
   const [isNewSerial, setIsNewSerial] = useState(false);
   const [saving, setSaving] = useState(false);
   const suggestRef = useRef(null);
+  const [clients, setClients] = useState([]);
+  const [clientSug, setClientSug] = useState(false);
+
+  useEffect(() => { api.suggestClients().then(setClients).catch(() => {}); }, []);
+
+  const filteredClients = clients.filter((c) => {
+    const q = (form.client || "").trim().toLowerCase();
+    return c.toLowerCase().includes(q) && c.toLowerCase() !== q;
+  });
 
   const searchProjects = async (q) => {
     if (!q.trim()) { setSuggestions([]); setShowSuggest(false); setIsNewSerial(false); return; }
@@ -132,9 +141,27 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
           </div>
 
           <div className={`grid gap-4 ${form.work_type === "Movie Cue Sheet" ? "grid-cols-1" : "grid-cols-2"}`}>
-            <div>
+            <div className="relative">
               <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Client</label>
-              <input value={form.client} onChange={(e) => setForm((f) => ({ ...f, client: e.target.value }))} placeholder="Client name" className={inp} style={inpStyle} />
+              <input
+                value={form.client}
+                onChange={(e) => { setForm((f) => ({ ...f, client: e.target.value })); setClientSug(true); }}
+                onFocus={() => setClientSug(true)}
+                onBlur={() => setTimeout(() => setClientSug(false), 150)}
+                placeholder="Client name"
+                className={inp} style={inpStyle}
+              />
+              {clientSug && filteredClients.length > 0 && (
+                <div className="absolute left-0 right-0 z-50 rounded-lg shadow-xl mt-1 overflow-hidden max-h-44 overflow-y-auto" style={{ background: C.mid, border: `1px solid ${C.mint1}44` }}>
+                  {filteredClients.map((c) => (
+                    <button key={c} type="button"
+                      onMouseDown={() => { setForm((f) => ({ ...f, client: c })); setClientSug(false); }}
+                      className="w-full text-left px-4 py-2 hover:opacity-80 text-sm" style={{ color: C.mint4 }}>
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             {form.work_type !== "Movie Cue Sheet" && (
               <div>
