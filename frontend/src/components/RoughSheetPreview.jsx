@@ -97,6 +97,8 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
   const [activeEp, setActiveEp]   = useState(0);
   const [saving,   setSaving]     = useState(false);
   const [err,      setErr]        = useState("");
+  // "Submitted By (Client name)" — autofilled from the WD's delegation client.
+  const [submittedBy, setSubmittedBy] = useState(data.meta?.submitted_by || "");
 
   // ── State updaters ──────────────────────────────────────────────────────────
 
@@ -155,6 +157,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
           musical_duration_sec:        ep.musical_duration_sec ?? null,
           bg_instrumental_duration_sec: ep.bg_instrumental_duration_sec ?? null,
           bg_vocal_duration_sec:       ep.bg_vocal_duration_sec ?? null,
+          cue_submitted_by:            submittedBy.trim() || null,
           existing_episode_id:         ep.existing_episode_id ?? null,
           cues: ep.cues.map((cue, idx) => ({
             song_title:  cue.song_title,
@@ -336,6 +339,13 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                   disabled={!!ep.existing_episode_id}
                   placeholder="00:00:00"
                   onChange={ev => updEp(activeEp, { bg_vocal_duration_sec: _toSec(ev.target.value) })}
+                />
+              </Field>
+              <Field label="Submitted By (Client name)">
+                <Inp
+                  value={submittedBy}
+                  onChange={ev => setSubmittedBy(ev.target.value)}
+                  placeholder="Client name"
                 />
               </Field>
             </div>
