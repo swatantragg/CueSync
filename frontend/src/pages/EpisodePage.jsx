@@ -875,6 +875,7 @@ export default function EpisodePage() {
         })),
       });
       await refreshEpisode();
+      await showAlert(`"${cue.songTitle || "Song"}" saved to the library database.`, { title: "Saved to DB", variant: "success" });
     } catch (e) { await showAlert(e.message, { title: "Library Save Failed", variant: "error" }); }
   };
 

@@ -63,6 +63,8 @@ MIGRATIONS = [
     "SELECT setval('episodes_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM episodes), 1))) FROM episodes_id_seq",
     "SELECT setval('cue_entries_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM cue_entries), 1))) FROM cue_entries_id_seq",
     "SELECT setval('song_library_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM song_library), 1))) FROM song_library_id_seq",
+    "SELECT setval('contributor_library_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM contributor_library), 1))) FROM contributor_library_id_seq",
+    "SELECT setval('member_directory_id_seq', GREATEST(last_value, COALESCE((SELECT MAX(id) FROM member_directory), 1))) FROM member_directory_id_seq",
     # IPRS tracking columns on society_submissions
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS submitted_to_iprs BOOLEAN DEFAULT FALSE NOT NULL",
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS submitted_to_iprs_at TIMESTAMPTZ",
