@@ -37,7 +37,7 @@ export default function App() {
           userSelect: "none",
         }}
       >
-        SK-Version 2.8
+        SK-Version 2.9
       </div>
     </AppProvider>
   );

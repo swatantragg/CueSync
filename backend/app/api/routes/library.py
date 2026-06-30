@@ -106,9 +106,18 @@ async def upsert_song(payload: LibraryUpsertIn, db: AsyncSession = Depends(get_d
     entry = None
     if payload.isrc:
         entry = (await db.execute(select(SongLibrary).where(SongLibrary.isrc == payload.isrc))).scalar_one_or_none()
-    if not entry:
-        if not payload.isrc:
-            entry = (await db.execute(select(SongLibrary).where(SongLibrary.title.ilike(payload.title.strip())))).scalar_one_or_none()
+    if not entry and not payload.isrc:
+        # A title-only match can hit MANY library rows (duplicate titles with no ISRC
+        # are common in the data). scalar_one_or_none() would raise MultipleResultsFound
+        # → 500. Collapse the no-ISRC duplicates into one canonical row first, then fall
+        # back to the lowest-id match if every same-title row carries an ISRC.
+        entry = await reconcile_library(db, payload.title.strip(), None)
+        if not entry:
+            entry = (await db.execute(
+                select(SongLibrary)
+                .where(SongLibrary.title.ilike(payload.title.strip()))
+                .order_by(SongLibrary.id)
+            )).scalars().first()
 
     contributors_json = json.dumps(apply_share_rules(dedup_contributors([c.model_dump() for c in payload.contributors])))
 
