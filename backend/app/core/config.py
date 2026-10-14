@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # Set to false to disable public self-registration
     ALLOW_PUBLIC_SIGNUP: bool = True
 
+    # The single hidden super admin. Promoted at startup if the account exists; created with
+    # SUPER_ADMIN_PASSWORD if it doesn't (skipped when no password is configured).
+    SUPER_ADMIN_EMAIL: str = "swatantra.goongoonalo@gmail.com"
+    SUPER_ADMIN_PASSWORD: str | None = None
+
     # Maximum request body size in MB (excludes file uploads handled by Nginx)
     MAX_BODY_SIZE_MB: int = 10
 

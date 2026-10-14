@@ -23,6 +23,7 @@ from app.services.library_sync import (
     cleanup_song_duplicates,
     normalize_library_contributors_json,
 )
+from app.services.super_admin import ensure_super_admin
 
 _CORS_RE = re.compile(r"http://(?:localhost|127\.0\.0\.1)(?::\d+)?")
 
@@ -72,6 +73,13 @@ MIGRATIONS = [
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS accepted_by_iprs_at TIMESTAMPTZ",
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS last_followup_at TIMESTAMPTZ",
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS followup_count INTEGER DEFAULT 0 NOT NULL",
+]
+
+# Hidden super admin — at most one row may carry the flag. Run in autocommit (not inside
+# MIGRATIONS' shared transaction) because every users query selects this column.
+SUPER_ADMIN_MIGRATIONS = [
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT FALSE NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_users_single_super_admin ON users(is_super_admin) WHERE is_super_admin",
 ]
 
 # ── IPRS followup background task ─────────────────────────────────────────────
@@ -227,6 +235,18 @@ async def lifespan(app: FastAPI):
                 except Exception as me:
                     print(f"[migration] skipped: {me}")
         print("[startup] DB connected, tables ensured")
+        for sql in SUPER_ADMIN_MIGRATIONS:
+            try:
+                async with ac_engine.connect() as conn:
+                    await conn.execute(text(sql))
+            except Exception as me:
+                print(f"[migration] skipped: {me}")
+        try:
+            async with AsyncSession(engine) as db:
+                async with db.begin():
+                    print(f"[startup] super admin: {await ensure_super_admin(db)}")
+        except Exception as se:
+            print(f"[startup] super admin setup skipped: {se}")
         try:
             async with AsyncSession(engine) as db:
                 async with db.begin():

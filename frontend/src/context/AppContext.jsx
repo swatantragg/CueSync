@@ -15,6 +15,8 @@ export function AppProvider({ children }) {
 
   const role = currentUser?.role || "viewer";
   const isAdmin = role === "admin";
+  // Hidden role: only the super admin's own /me payload ever carries this flag.
+  const isSuperAdmin = isAdmin && !!currentUser?.is_super_admin;
   const isWD = role === "work_delegator";
   const isReviewer = role === "reviewer";
   const isEditor = role === "editor";
@@ -112,7 +114,7 @@ export function AppProvider({ children }) {
     activeProject, activeEpisode,
     notifications, setNotifications,
     unreadCount, markRead, markAllRead, fetchNotifications,
-    isAdmin, isWD, isReviewer, isEditor, isPrivileged, role,
+    isAdmin, isSuperAdmin, isWD, isReviewer, isEditor, isPrivileged, role,
     updateProject, updateEpisode,
     goHome, login, signup, logout,
   };

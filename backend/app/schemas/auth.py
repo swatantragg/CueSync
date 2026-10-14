@@ -3,6 +3,16 @@ from pydantic import BaseModel, field_validator
 from app.models.user import UserRole
 
 
+def check_password_strength(v: str) -> str:
+    if len(v) < 8:
+        raise ValueError("Password must be at least 8 characters")
+    if not any(c.isupper() for c in v):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not any(c.isdigit() for c in v):
+        raise ValueError("Password must contain at least one digit")
+    return v
+
+
 class LoginIn(BaseModel):
     email: str
     password: str
@@ -17,13 +27,7 @@ class SignupIn(BaseModel):
     @field_validator("password")
     @classmethod
     def _password_strength(cls, v):
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        if not any(c.isupper() for c in v):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Password must contain at least one digit")
-        return v
+        return check_password_strength(v)
 
     @field_validator("confirm_password")
     @classmethod
@@ -48,13 +52,19 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def _password_strength(cls, v):
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        if not any(c.isupper() for c in v):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Password must contain at least one digit")
-        return v
+        return check_password_strength(v)
+
+
+class UserUpdate(BaseModel):
+    """Super-admin-only edit of another user's details. Omitted fields stay unchanged."""
+    full_name: str | None = None
+    email: str | None = None
+    password: str | None = None
+
+    @field_validator("password")
+    @classmethod
+    def _password_strength(cls, v):
+        return v if v is None else check_password_strength(v)
 
 
 class UserOut(BaseModel):
@@ -63,6 +73,7 @@ class UserOut(BaseModel):
     full_name: str
     role: UserRole
     is_active: bool
+    is_super_admin: bool = False
 
     class Config:
         from_attributes = True

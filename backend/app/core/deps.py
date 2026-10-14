@@ -44,3 +44,9 @@ def require_roles(*roles: UserRole):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Insufficient privileges")
         return user
     return _checker
+
+
+async def require_super_admin(user: User = Depends(get_current_user)) -> User:
+    if not user.is_super_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Insufficient privileges")
+    return user

@@ -151,6 +151,7 @@ export const api = {
   // ── Users ───────────────────────────────────────────────────────────────────
   listUsers: () => request("/api/users/"),
   listEditors: () => request("/api/users/editors"),
+  updateUser: (uid, payload) => request(`/api/users/${uid}`, { method: "PUT", body: payload }),
   updateUserRole: (uid, role) => request(`/api/users/${uid}/role`, { method: "PUT", body: { role } }),
   toggleUserActive: (uid, is_active) => request(`/api/users/${uid}/active`, { method: "PUT", body: { is_active } }),
   deleteUser: (uid) => request(`/api/users/${uid}`, { method: "DELETE" }),

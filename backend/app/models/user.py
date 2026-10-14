@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, Integer, String, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -27,4 +27,7 @@ class User(Base):
         default=UserRole.VIEWER, nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Hidden flag on top of role=admin. Exactly one account (settings.SUPER_ADMIN_EMAIL) holds it;
+    # other admins see this user as a plain admin.
+    is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

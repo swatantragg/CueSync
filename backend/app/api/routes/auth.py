@@ -13,6 +13,7 @@ from app.models.user import User, UserRole
 from app.schemas.auth import AuthResponse, SignupIn, TokenOut, UserOut
 from app.services.token_blacklist import blacklist_token
 from app.services.login_tracker import clear_failed_logins, is_account_locked, record_failed_login
+from app.services.super_admin import is_super_admin_email
 
 router = APIRouter()
 
@@ -64,7 +65,8 @@ async def signup(payload: SignupIn, response: Response, db: AsyncSession = Depen
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Public registration is disabled")
     email = payload.email.strip().lower()
     existing = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    if existing:
+    # The super admin email is reserved — never claimable through public signup.
+    if existing or is_super_admin_email(email):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Email already registered")
     user = User(
         email=email,

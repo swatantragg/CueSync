@@ -28,6 +28,8 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      # Only used to create the hidden super admin if that account doesn't exist yet
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
     depends_on:
       redis:
         condition: service_healthy

@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import {
   Users, Tv, CheckCircle2, Clock, Search, X, Trash2,
   UserCog, Music2, FileText, ChevronLeft, ChevronRight,
-  CalendarDays, History, ArrowLeft, Layers, ChevronDown, Film,
+  CalendarDays, History, ArrowLeft, Layers, ChevronDown, Film, Pencil, ShieldCheck,
 } from "lucide-react";
 import { C, FONTS } from "../../styles/palette";
 import DashboardShell from "./DashboardShell";
 import ProjectsTab from "./ProjectsTab";
-import { api, tokenStore } from "../../utils/api";
+import { api, tokenStore, userStore } from "../../utils/api";
 import { showAlert, showConfirm } from "../../components/Dialog";
+import { useApp } from "../../context/AppContext";
 
 const ROLES = ["admin", "work_delegator", "reviewer", "editor", "viewer"];
 const ROLE_LABEL = {
@@ -343,6 +344,7 @@ function OverviewTab({ navigate }) {
 
 // ─── Users tab (with role filter tabs) ───────────────────────────────────────
 function UsersTab({ initialRoleFilter = "all" }) {
+  const { currentUser, setCurrentUser, isSuperAdmin } = useApp();
   const [users, setUsers]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [searchQ, setSearchQ]   = useState("");
@@ -350,6 +352,7 @@ function UsersTab({ initialRoleFilter = "all" }) {
   const [form, setForm]         = useState({ email: "", full_name: "", password: "", role: "editor" });
   const [saving, setSaving]     = useState(false);
   const [roleFilter, setRoleFilter] = useState(initialRoleFilter);
+  const [editing, setEditing]   = useState(null); // super admin only: { id, full_name, email, password }
 
   useEffect(() => { api.listUsers().then(setUsers).catch(() => {}).finally(() => setLoading(false)); }, []);
 
@@ -377,6 +380,24 @@ function UsersTab({ initialRoleFilter = "all" }) {
       // Backend returns a 409 with the exact blocker (e.g. "still owns N project(s)").
       await showAlert(`Couldn't delete "${name}".\n\n${ex.message}`, { variant: "error" });
     }
+  };
+  const handleEdit = async (e) => {
+    e.preventDefault();
+    if (!editing.full_name.trim() || !editing.email.trim()) return;
+    setSaving(true);
+    try {
+      const payload = { full_name: editing.full_name, email: editing.email };
+      if (editing.password) payload.password = editing.password;
+      const u = await api.updateUser(editing.id, payload);
+      setUsers((p) => p.map((x) => x.id === u.id ? u : x));
+      if (u.id === currentUser?.id) {
+        const me = { ...currentUser, ...u };
+        userStore.set(me); setCurrentUser(me);
+      }
+      setEditing(null);
+      await showAlert(payload.password ? "User details and password updated." : "User details updated.", { variant: "success" });
+    } catch (ex) { await showAlert(ex.message || "Update failed", { variant: "error" }); }
+    finally { setSaving(false); }
   };
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -436,7 +457,7 @@ function UsersTab({ initialRoleFilter = "all" }) {
             style={{ borderColor: C.mint1 + "44", background: C.white, color: C.dark }} />
           {searchQ && <button onClick={() => setSearchQ("")} className="absolute right-2 top-1/2 -translate-y-1/2"><X className="w-3 h-3" style={{ color: C.sub }} /></button>}
         </div>
-        <button onClick={() => setCreating(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90" style={{ background: C.dark, color: C.mint4 }}>
+        <button onClick={() => { setEditing(null); setCreating(true); }} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90" style={{ background: C.dark, color: C.mint4 }}>
           <UserCog className="w-4 h-4" />Add User
         </button>
       </div>
@@ -455,6 +476,23 @@ function UsersTab({ initialRoleFilter = "all" }) {
               <button type="button" onClick={() => setCreating(false)} className="px-4 py-2 text-sm rounded-lg" style={{ color: C.sub }}>Cancel</button>
               <button type="submit" disabled={saving} className="px-4 py-2 text-sm rounded-lg font-medium disabled:opacity-50" style={{ background: C.dark, color: C.mint4 }}>
                 {saving ? "Creating…" : "Create"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {editing && (
+        <div className="rounded-xl border p-5 mb-4" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+          <h4 className="font-semibold mb-3" style={{ fontFamily: FONTS.serif }}>Edit User</h4>
+          <form onSubmit={handleEdit} className="grid grid-cols-3 gap-3">
+            <input value={editing.full_name} onChange={(e) => setEditing((f) => ({ ...f, full_name: e.target.value }))} placeholder="Full name" className={inp} style={inpStyle} />
+            <input value={editing.email} onChange={(e) => setEditing((f) => ({ ...f, email: e.target.value }))} placeholder="Email" type="email" className={inp} style={inpStyle} />
+            <input value={editing.password} onChange={(e) => setEditing((f) => ({ ...f, password: e.target.value }))} placeholder="New password (leave blank to keep)" type="password" autoComplete="new-password" className={inp} style={inpStyle} />
+            <div className="col-span-3 flex gap-2 justify-end">
+              <button type="button" onClick={() => setEditing(null)} className="px-4 py-2 text-sm rounded-lg" style={{ color: C.sub }}>Cancel</button>
+              <button type="submit" disabled={saving} className="px-4 py-2 text-sm rounded-lg font-medium disabled:opacity-50" style={{ background: C.dark, color: C.mint4 }}>
+                {saving ? "Saving…" : "Save"}
               </button>
             </div>
           </form>
@@ -484,11 +522,18 @@ function UsersTab({ initialRoleFilter = "all" }) {
                 <td className="px-5 py-3 font-medium" style={{ color: C.dark }}>{u.full_name}</td>
                 <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>{u.email}</td>
                 <td className="px-5 py-3">
-                  <select value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                    className="text-xs px-2 py-1 rounded-lg focus:outline-none"
-                    style={{ background: ROLE_COLOR[u.role]?.bg, color: ROLE_COLOR[u.role]?.color, border: "none" }}>
-                    {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                  </select>
+                  {/* is_super_admin only ever arrives for the super admin's own session */}
+                  {u.is_super_admin ? (
+                    <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg font-medium" style={{ background: ROLE_COLOR.admin.bg, color: ROLE_COLOR.admin.color }}>
+                      <ShieldCheck className="w-3 h-3" />Super Admin
+                    </span>
+                  ) : (
+                    <select value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                      className="text-xs px-2 py-1 rounded-lg focus:outline-none"
+                      style={{ background: ROLE_COLOR[u.role]?.bg, color: ROLE_COLOR[u.role]?.color, border: "none" }}>
+                      {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                    </select>
+                  )}
                 </td>
                 <td className="px-5 py-3 text-center">
                   <button onClick={() => handleToggleActive(u.id, !u.is_active)}
@@ -497,7 +542,13 @@ function UsersTab({ initialRoleFilter = "all" }) {
                     <div className="w-3 h-3 bg-white rounded-full absolute top-1 transition-all" style={{ left: u.is_active ? "calc(100% - 16px)" : "4px" }} />
                   </button>
                 </td>
-                <td className="px-5 py-3 text-right">
+                <td className="px-5 py-3 text-right whitespace-nowrap">
+                  {isSuperAdmin && (
+                    <button onClick={() => { setCreating(false); setEditing({ id: u.id, full_name: u.full_name, email: u.email, password: "" }); }}
+                      className="p-1.5 rounded-lg hover:bg-green-50" title="Edit user / change password">
+                      <Pencil className="w-3.5 h-3.5" style={{ color: C.dark }} />
+                    </button>
+                  )}
                   <button onClick={() => handleDelete(u.id, u.full_name)} className="p-1.5 rounded-lg hover:bg-red-50" title="Delete user">
                     <Trash2 className="w-3.5 h-3.5" style={{ color: C.danger }} />
                   </button>

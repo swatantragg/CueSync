@@ -6,9 +6,10 @@ import Notifications from "./Notifications";
 import HealthBadge from "./HealthBadge";
 
 export default function Header() {
-  const { currentUser, role, isAdmin, activeProject, activeEpisode, unreadCount, goHome, logout, setActiveEpisodeId, setScreen } = useApp();
+  const { currentUser, role, isAdmin, isSuperAdmin, activeProject, activeEpisode, unreadCount, goHome, logout, setActiveEpisodeId, setScreen } = useApp();
   const [showNotifs, setShowNotifs] = useState(false);
-  const roleLabel = { admin: "Admin", work_delegator: "Work Delegator", reviewer: "Reviewer", editor: "Editor", viewer: "Viewer" }[role] || role;
+  const roleLabel = isSuperAdmin ? "Super Admin"
+    : { admin: "Admin", work_delegator: "Work Delegator", reviewer: "Reviewer", editor: "Editor", viewer: "Viewer" }[role] || role;
 
   return (
     <header className="sticky top-0 z-30 border-b" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
