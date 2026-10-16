@@ -3,9 +3,10 @@ import {
   X, Check, AlertCircle, ChevronDown, ChevronRight,
   Database, Plus, Trash2, Save,
 } from "lucide-react";
-import { C, FONTS } from "../styles/palette";
+import { C, FONTS, alpha, T } from "../styles/palette";
 import { api } from "../utils/api";
 import { applyShareRules } from "../utils/cueRules";
+import Select from "./Select";
 
 const USAGE_OPTIONS = [
   { value: "bi",           label: "BI - BG Instrumental" },
@@ -18,10 +19,10 @@ const USAGE_OPTIONS = [
 ];
 
 const MATCH_BADGE = {
-  code:  { bg: "#E8F5E9", color: "#2E7D32", label: "code" },
-  isrc:  { bg: "#E3F2FD", color: "#1565C0", label: "ISRC" },
-  title: { bg: "#FFF8E1", color: "#E65100", label: "title" },
-  none:  { bg: "#F5F5F5", color: "#9E9E9E", label: "no match" },
+  code:  { bg: T.greenBg, color: T.green, label: "code" },
+  isrc:  { bg: T.blueBg, color: T.blue, label: "ISRC" },
+  title: { bg: T.amberBg, color: T.orange, label: "title" },
+  none:  { bg: T.neutralBg, color: T.grayLight, label: "no match" },
 };
 
 function _toSec(v) {
@@ -49,7 +50,7 @@ function _secToHMS(sec) {
 function Field({ label, children }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wide mb-1" style={{ color: C.sub }}>{label}</div>
+      <div className="text-[0.625rem] uppercase tracking-wide mb-1" style={{ color: C.sub }}>{label}</div>
       {children}
     </div>
   );
@@ -71,15 +72,15 @@ function Inp({ value, onChange, type = "text", placeholder, disabled }) {
 
 function Sel({ value, onChange, disabled }) {
   return (
-    <select
+    <Select
       value={value}
       onChange={onChange}
       disabled={disabled}
-      className="w-full border rounded-lg px-2 py-1.5 text-xs focus:outline-none disabled:opacity-50"
+      className="w-full border rounded-lg px-2 py-1.5 text-xs focus:outline-none"
       style={{ borderColor: C.mint1, background: C.white, color: C.dark }}
     >
       {USAGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    </Select>
   );
 }
 
@@ -195,7 +196,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <div
         className="flex items-center justify-between px-6 py-3 border-b shrink-0"
-        style={{ borderColor: C.mint1 + "66", background: C.white }}
+        style={{ borderColor: alpha(C.mint1, "66"), background: C.white }}
       >
         <div>
           <div className="font-semibold text-base" style={{ fontFamily: FONTS.serif, color: C.dark }}>
@@ -211,7 +212,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
         </div>
 
         {err && (
-          <div className="text-xs px-3 py-2 rounded-lg mx-4 max-w-xs" style={{ color: C.danger, background: "#FFEBEE", border: "1px solid #EF9A9A" }}>
+          <div className="text-xs px-3 py-2 rounded-lg mx-4 max-w-xs" style={{ color: C.danger, background: T.redBg, border: `1px solid ${T.redBorder}` }}>
             {err}
           </div>
         )}
@@ -244,7 +245,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
         {/* Episode sidebar */}
         <div
           className="w-44 shrink-0 border-r overflow-y-auto py-1"
-          style={{ borderColor: C.mint1 + "44", background: C.mint4 + "55" }}
+          style={{ borderColor: alpha(C.mint1, "44"), background: alpha(C.mint4, "55") }}
         >
           {episodes.map((e, i) => {
             const isActive = i === activeEp;
@@ -255,7 +256,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                 onClick={() => setActiveEp(i)}
                 className="w-full text-left px-3 py-2.5 transition"
                 style={{
-                  background: isActive ? C.mint1 + "88" : "transparent",
+                  background: isActive ? alpha(C.mint1, "88") : "transparent",
                   borderLeft: isActive ? `3px solid ${C.dark}` : "3px solid transparent",
                 }}
               >
@@ -264,12 +265,12 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                     Ep {String(e.episode_number).padStart(2, "0")}
                   </span>
                   {skipped && (
-                    <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: "#FFF3E0", color: C.warn }}>
+                    <span className="text-[0.5625rem] px-1 py-0.5 rounded" style={{ background: T.orangeBg, color: C.warn }}>
                       exists
                     </span>
                   )}
                 </div>
-                <div className="text-[10px] mt-0.5" style={{ color: C.muted }}>
+                <div className="text-[0.625rem] mt-0.5" style={{ color: C.muted }}>
                   {e.cues.length} cues
                 </div>
               </button>
@@ -283,14 +284,14 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
 
             {/* Existing warning */}
             {ep.existing_episode_id && (
-              <div className="mb-4 px-4 py-3 rounded-xl flex items-center gap-2 text-xs" style={{ background: "#FFF3E0", color: C.warn, border: "1px solid #FFE082" }}>
+              <div className="mb-4 px-4 py-3 rounded-xl flex items-center gap-2 text-xs" style={{ background: T.orangeBg, color: C.warn, border: `1px solid ${T.amberBorder}` }}>
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 Episode {ep.episode_number} already exists in DB — these fields are read-only and this episode will be skipped on save.
               </div>
             )}
 
             {/* Episode meta */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 p-4 rounded-xl border" style={{ borderColor: C.mint1 + "55", background: C.white }}>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 p-4 rounded-xl border" style={{ borderColor: alpha(C.mint1, "55"), background: C.white }}>
               <Field label="Episode #">
                 <Inp value={ep.episode_number} disabled onChange={()=>{}} />
               </Field>
@@ -351,11 +352,11 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
             </div>
 
             {/* Cue list */}
-            <div className="rounded-xl border overflow-hidden" style={{ borderColor: C.mint1 + "55" }}>
+            <div className="rounded-xl border overflow-hidden" style={{ borderColor: alpha(C.mint1, "55") }}>
 
               {/* Column headers */}
               <div
-                className="grid px-3 py-2 text-[10px] font-semibold uppercase tracking-wider"
+                className="grid px-3 py-2 text-[0.625rem] font-semibold uppercase tracking-wider"
                 style={{
                   gridTemplateColumns: "20px 1fr 110px 70px 90px 110px 90px 90px",
                   background: C.mint4,
@@ -376,7 +377,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                 const badge = MATCH_BADGE[cue.library_match] || MATCH_BADGE.none;
                 const locked = !!ep.existing_episode_id;
                 return (
-                  <div key={ci} className="border-t" style={{ borderColor: C.mint1 + "33" }}>
+                  <div key={ci} className="border-t" style={{ borderColor: alpha(C.mint1, "33") }}>
 
                     {/* Cue row */}
                     <div
@@ -433,13 +434,13 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                       {/* Match badge */}
                       <div className="flex items-center gap-1">
                         <span
-                          className="text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"
+                          className="text-[0.625rem] px-2 py-0.5 rounded-full flex items-center gap-1"
                           style={{ background: badge.bg, color: badge.color }}
                         >
                           {cue.library_match !== "none" && <Database className="w-2.5 h-2.5" />}
                           {badge.label}
                         </span>
-                        <span className="text-[10px]" style={{ color: C.muted }}>
+                        <span className="text-[0.625rem]" style={{ color: C.muted }}>
                           {cue.contributors.length}c
                         </span>
                       </div>
@@ -449,15 +450,15 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                     {cue._open && (
                       <div
                         className="mx-3 mb-3 rounded-xl border overflow-hidden"
-                        style={{ borderColor: C.mint1 + "44", background: C.mint4 + "55" }}
+                        style={{ borderColor: alpha(C.mint1, "44"), background: alpha(C.mint4, "55") }}
                       >
                         {/* Contrib header */}
                         <div
-                          className="grid px-3 py-1.5 text-[10px] uppercase tracking-wider border-b"
+                          className="grid px-3 py-1.5 text-[0.625rem] uppercase tracking-wider border-b"
                           style={{
                             gridTemplateColumns: "2fr 1fr 1fr 80px 140px 24px",
                             color: C.sub,
-                            borderColor: C.mint1 + "44",
+                            borderColor: alpha(C.mint1, "44"),
                           }}
                         >
                           <span>Name</span>
@@ -474,7 +475,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                             className="grid items-center px-3 py-1.5 gap-2 border-b last:border-0"
                             style={{
                               gridTemplateColumns: "2fr 1fr 1fr 80px 140px 24px",
-                              borderColor: C.mint1 + "22",
+                              borderColor: alpha(C.mint1, "22"),
                             }}
                           >
                             <div className="flex items-center gap-1.5">

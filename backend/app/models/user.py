@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, Enum, Integer, String, false
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import Base, utcnow
 
 
 class UserRole(str, enum.Enum):
@@ -30,4 +30,8 @@ class User(Base):
     # Hidden flag on top of role=admin. Exactly one account (settings.SUPER_ADMIN_EMAIL) holds it;
     # other admins see this user as a plain admin.
     is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    # Set when an admin creates the account (or resets its password); cleared once the user picks their own.
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    # Last app version whose "what's new" popup this user dismissed.
+    last_seen_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

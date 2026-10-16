@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import Base, utcnow
 
 
 class SongLibrary(Base):
@@ -18,8 +18,8 @@ class SongLibrary(Base):
     singer: Mapped[str | None] = mapped_column(String(255))
     contributors_json: Mapped[str | None] = mapped_column(Text)
     alt_titles: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class ContributorLibrary(Base):
@@ -33,7 +33,7 @@ class ContributorLibrary(Base):
     ipi_number: Mapped[str | None] = mapped_column(String(50))
     cae_number: Mapped[str | None] = mapped_column(String(50))
     alt_names: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class MemberDirectory(Base):

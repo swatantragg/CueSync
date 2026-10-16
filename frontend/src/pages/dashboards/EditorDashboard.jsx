@@ -3,23 +3,24 @@ import {
   CheckCircle2, XCircle, MessageSquare, Clock, AlertCircle,
   ChevronDown, ChevronUp, ExternalLink,
 } from "lucide-react";
-import { C, FONTS } from "../../styles/palette";
+import { C, FONTS, alpha, T } from "../../styles/palette";
+import Select from "../../components/Select";
 import DashboardShell from "./DashboardShell";
 import { api } from "../../utils/api";
 import { useApp } from "../../context/AppContext";
 
 const STATUS_STYLE = {
-  pending:     { bg: "#FFF3E0", color: "#E65100", label: "Pending",    Icon: Clock         },
-  in_progress: { bg: "#E3F2FD", color: "#1565C0", label: "In Progress", Icon: AlertCircle  },
-  completed:   { bg: "#E8F5E9", color: "#2E7D32", label: "Completed",   Icon: CheckCircle2 },
+  pending:     { bg: T.orangeBg, color: T.orange, label: "Pending",    Icon: Clock         },
+  in_progress: { bg: T.blueBg, color: T.blue, label: "In Progress", Icon: AlertCircle  },
+  completed:   { bg: T.greenBg, color: T.green, label: "Completed",   Icon: CheckCircle2 },
 };
 
 const REVIEW_STYLE = {
-  rejected:    { bg: "#FFEBEE", color: "#C62828", Icon: XCircle,        label: "Rejected"           },
-  edited:      { bg: "#E3F2FD", color: "#1565C0", Icon: MessageSquare,  label: "Changes Suggested"  },
-  approved:    { bg: "#E8F5E9", color: "#2E7D32", Icon: CheckCircle2,   label: "Approved"           },
-  pending:     { bg: "#FFF3E0", color: "#E65100", Icon: Clock,          label: "Pending"            },
-  in_progress: { bg: "#EDE7F6", color: "#6A1B9A", Icon: AlertCircle,   label: "In Progress"        },
+  rejected:    { bg: T.redBg, color: T.red, Icon: XCircle,        label: "Rejected"           },
+  edited:      { bg: T.blueBg, color: T.blue, Icon: MessageSquare,  label: "Changes Suggested"  },
+  approved:    { bg: T.greenBg, color: T.green, Icon: CheckCircle2,   label: "Approved"           },
+  pending:     { bg: T.orangeBg, color: T.orange, Icon: Clock,          label: "Pending"            },
+  in_progress: { bg: T.violetBg, color: T.purple2, Icon: AlertCircle,   label: "In Progress"        },
 };
 
 function useOpenSerial() {
@@ -69,7 +70,7 @@ function MyWorkTab() {
 
   if (delegations.length === 0) {
     return (
-      <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+      <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
         <div className="text-4xl mb-3">📋</div>
         <div className="font-semibold mb-1" style={{ fontFamily: FONTS.serif }}>No work assigned yet</div>
         <p className="text-sm" style={{ color: C.sub }}>Work delegator will assign tasks here.</p>
@@ -79,17 +80,17 @@ function MyWorkTab() {
 
   return (
     <div>
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {[{ key: "serial", label: "TV Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
           <button key={key} onClick={() => setWorkSubTab(key)}
-            className="px-5 py-1.5 rounded-lg text-xs font-medium transition-all"
-            style={{ background: workSubTab === key ? C.dark : "transparent", color: workSubTab === key ? C.mint4 : C.sub }}>
+            className="px-5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style={{ background: workSubTab === key ? C.dark : "transparent", color: workSubTab === key ? C.mint4 : C.mid }}>
             {label}
           </button>
         ))}
       </div>
       {filtered.length === 0 ? (
-        <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>
+        <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>
           No {workSubTab === "movie" ? "movie" : "serial"} assignments yet.
         </div>
       ) : (
@@ -99,12 +100,12 @@ function MyWorkTab() {
             const pct = d.week_target ? Math.min(100, Math.round((d.completed / d.week_target) * 100)) : 0;
             const movie = isMovie(d);
             return (
-              <div key={d.id} className="rounded-xl border p-5" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+              <div key={d.id} className="rounded-xl border p-5" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-semibold" style={{ fontFamily: FONTS.serif, color: C.dark }}>{d.serial_name}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded font-medium" style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                      <span className="text-[0.625rem] px-2 py-0.5 rounded font-medium" style={{ background: s.bg, color: s.color }}>{s.label}</span>
                     </div>
                     <div className="flex flex-wrap gap-3 text-xs" style={{ color: C.sub }}>
                       {d.work_type    && <span>{d.work_type}</span>}
@@ -130,11 +131,11 @@ function MyWorkTab() {
                   )}
                 </div>
                 <div className="flex items-center justify-between mt-4">
-                  <select value={d.status} onChange={(e) => handleStatusUpdate(d.id, e.target.value)}
+                  <Select value={d.status} onChange={(e) => handleStatusUpdate(d.id, e.target.value)}
                     className="text-xs px-3 py-1.5 rounded-lg focus:outline-none"
-                    style={{ background: s.bg, color: s.color, border: "none", fontWeight: 500 }}>
+                    style={{ background: s.bg, color: s.color, border: `1px solid ${alpha(s.color, "33")}`, fontWeight: 600 }}>
                     {Object.entries(STATUS_STYLE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
+                  </Select>
                   {d.project_id && (
                     <button onClick={() => openSerial(d.project_id)}
                       className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-90"
@@ -155,10 +156,10 @@ function MyWorkTab() {
 // ─── Review Feedback tab (serial-wise) ───────────────────────────────────────
 
 const EP_SUBTABS = [
-  { key: "allotted",  label: "Allotted",  statuses: ["pending", "in_progress"],  color: "#E65100", bg: "#FFF3E0" },
-  { key: "rejected",  label: "Rejected",  statuses: ["rejected"],                color: "#C62828", bg: "#FFEBEE" },
-  { key: "approved",  label: "Approved",  statuses: ["approved"],                color: "#2E7D32", bg: "#E8F5E9" },
-  { key: "suggested", label: "Suggested", statuses: ["edited"],                   color: "#1565C0", bg: "#E3F2FD" },
+  { key: "allotted",  label: "Allotted",  statuses: ["pending", "in_progress"],  color: T.orange, bg: T.orangeBg },
+  { key: "rejected",  label: "Rejected",  statuses: ["rejected"],                color: T.red, bg: T.redBg },
+  { key: "approved",  label: "Approved",  statuses: ["approved"],                color: T.green, bg: T.greenBg },
+  { key: "suggested", label: "Suggested", statuses: ["edited"],                   color: T.blue, bg: T.blueBg },
 ];
 
 function ReviewFeedbackTab() {
@@ -265,18 +266,18 @@ function ReviewFeedbackTab() {
   return (
     <div>
       {/* Serial / Movie top tabs */}
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {[{ key: "serial", label: "TV Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
           <button key={key} onClick={() => setReviewSubTab(key)}
-            className="px-5 py-1.5 rounded-lg text-xs font-medium transition-all"
-            style={{ background: reviewSubTab === key ? C.dark : "transparent", color: reviewSubTab === key ? C.mint4 : C.sub }}>
+            className="px-5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style={{ background: reviewSubTab === key ? C.dark : "transparent", color: reviewSubTab === key ? C.mint4 : C.mid }}>
             {label}
           </button>
         ))}
       </div>
 
       {filteredGroups.length === 0 ? (
-        <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <div className="text-4xl mb-3">✅</div>
           <div className="font-semibold mb-1" style={{ fontFamily: FONTS.serif }}>No feedback yet</div>
           <p className="text-sm" style={{ color: C.sub }}>Reviewed {reviewSubTab === "movie" ? "movies" : "episodes"} will appear here.</p>
@@ -298,7 +299,7 @@ function ReviewFeedbackTab() {
 
             return (
               <div key={g.project_id} className="rounded-xl border overflow-hidden"
-                style={{ background: C.white, borderColor: badge > 0 ? C.mint1 : C.mint1 + "44" }}>
+                style={{ background: C.white, borderColor: badge > 0 ? C.mint1 : alpha(C.mint1, "44") }}>
 
                 {/* Project header row */}
                 <button
@@ -316,15 +317,15 @@ function ReviewFeedbackTab() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm" style={{ fontFamily: FONTS.serif, color: C.dark }}>{g.title}</span>
                       {badge > 0 && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse"
+                        <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-bold animate-pulse"
                           style={{ background: C.mint1, color: C.dark }}>{badge} new</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      {counts.rejected  && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.rejected.bg,  color: REVIEW_STYLE.rejected.color  }}>{counts.rejected} rejected</span>}
-                      {counts.edited    && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.edited.bg,    color: REVIEW_STYLE.edited.color    }}>{counts.edited} suggested</span>}
-                      {counts.approved  && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.approved.bg,  color: REVIEW_STYLE.approved.color  }}>{counts.approved} approved</span>}
-                      <span className="text-[10px]" style={{ color: C.muted }}>{g.episodes.length} ep total</span>
+                      {counts.rejected  && <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.rejected.bg,  color: REVIEW_STYLE.rejected.color  }}>{counts.rejected} rejected</span>}
+                      {counts.edited    && <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.edited.bg,    color: REVIEW_STYLE.edited.color    }}>{counts.edited} suggested</span>}
+                      {counts.approved  && <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium" style={{ background: REVIEW_STYLE.approved.bg,  color: REVIEW_STYLE.approved.color  }}>{counts.approved} approved</span>}
+                      <span className="text-[0.625rem]" style={{ color: C.muted }}>{g.episodes.length} ep total</span>
                     </div>
                   </div>
                   <button
@@ -338,10 +339,10 @@ function ReviewFeedbackTab() {
 
                 {/* Expanded content with 4 sub-tabs */}
                 {isOpen && (
-                  <div className="border-t" style={{ borderColor: C.mint4 + "44" }}>
+                  <div className="border-t" style={{ borderColor: alpha(C.mint4, "44") }}>
 
                     {/* 4 sub-tabs */}
-                    <div className="flex border-b" style={{ borderColor: C.mint4 + "66" }}>
+                    <div className="flex border-b" style={{ borderColor: alpha(C.mint4, "66") }}>
                       {EP_SUBTABS.map((t) => {
                         const tabEps   = g.episodes.filter((e) => t.statuses.includes(e.status));
                         const isActive = activeSub === t.key;
@@ -349,7 +350,7 @@ function ReviewFeedbackTab() {
                           <button
                             key={t.key}
                             onClick={() => setEpSubTabs((prev) => ({ ...prev, [g.project_id]: t.key }))}
-                            className="flex-1 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide transition-all"
+                            className="flex-1 px-3 py-2 text-[0.625rem] font-semibold uppercase tracking-wide transition-all"
                             style={{
                               color:        isActive ? t.color : C.muted,
                               background:   isActive ? t.bg    : "transparent",
@@ -359,8 +360,8 @@ function ReviewFeedbackTab() {
                             {t.label}
                             {tabEps.length > 0 && (
                               <span
-                                className="ml-1 px-1 py-0.5 rounded-full text-[9px] font-bold"
-                                style={{ background: isActive ? t.color : C.muted + "55", color: isActive ? "#fff" : C.muted }}
+                                className="ml-1 px-1 py-0.5 rounded-full text-[0.5625rem] font-bold"
+                                style={{ background: isActive ? t.color : alpha(C.muted, "55"), color: isActive ? C.white : C.muted }}
                               >
                                 {tabEps.length}
                               </span>
@@ -384,8 +385,8 @@ function ReviewFeedbackTab() {
                           <div key={ep.id}
                             className="px-5 py-3 border-b last:border-0 flex items-start gap-4"
                             style={{
-                              borderColor: C.mint4 + "33",
-                              background: (isNew || hasUnread) ? C.mint4 + "18" : idx % 2 === 0 ? "#fafffe" : C.white,
+                              borderColor: alpha(C.mint4, "33"),
+                              background: (isNew || hasUnread) ? alpha(C.mint4, "18") : idx % 2 === 0 ? alpha(C.mint4, "33") : C.white,
                             }}
                           >
                             <s.Icon className="w-4 h-4 mt-0.5 shrink-0" style={{ color: s.color }} />
@@ -394,22 +395,22 @@ function ReviewFeedbackTab() {
                                 <span className="font-medium text-sm" style={{ color: C.dark }}>
                                   Ep {ep.episode_number}{ep.title ? ` · ${ep.title}` : ""}
                                 </span>
-                                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium"
                                   style={{ background: s.bg, color: s.color }}>{s.label}</span>
                                 {(isNew || hasUnread) && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                                  <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-bold"
                                     style={{ background: C.mint1, color: C.dark }}>New</span>
                                 )}
                               </div>
                               {ep.rejection_note && (
                                 <p className="text-xs mt-1.5 px-3 py-1.5 rounded-lg"
-                                  style={{ background: "#FFEBEE", color: "#C62828" }}>
+                                  style={{ background: T.redBg, color: T.red }}>
                                   <strong>Rejection:</strong> {ep.rejection_note}
                                 </p>
                               )}
                               {ep.review_note && (
                                 <p className="text-xs mt-1.5 px-3 py-1.5 rounded-lg"
-                                  style={{ background: "#E3F2FD", color: "#1565C0" }}>
+                                  style={{ background: T.blueBg, color: T.blue }}>
                                   <strong>Suggestion:</strong> {ep.review_note}
                                 </p>
                               )}

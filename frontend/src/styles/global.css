@@ -1,10 +1,66 @@
 @import "tailwindcss";
 
-html { font-size: 19px; }
+/* Root size is overridden at runtime from Settings → Font size (see utils/prefs.js). */
+html { font-size: 20px; }
 html, body, #root { margin: 0; padding: 0; min-height: 100vh; }
-body { font-family: 'DM Sans', system-ui, -apple-system, sans-serif; }
+body { font-family: 'DM Sans', system-ui, -apple-system, sans-serif; background: var(--c-light, #F6FFF8); color: var(--c-dark, #1B3A2D); }
 
 @keyframes progress-shimmer {
   0%   { background-position: -200% center; }
   100% { background-position:  200% center; }
 }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(16px) scale(0.98); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes toast-bar {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.cs-pop { animation: pop-in 120ms ease-out; }
+
+.cs-scroll { scrollbar-width: thin; }
+.cs-scroll::-webkit-scrollbar { width: 8px; }
+.cs-scroll::-webkit-scrollbar-thumb { border-radius: 8px; background: rgba(0, 0, 0, 0.18); }
+
+/* Tailwind v4 borders default to currentColor; dividers take the colour set on their parent instead. */
+.divide-x > *, .divide-y > * { border-color: inherit; }
+
+/* Dark panels (modals, review/export panels, login, selected calendar cells) keep the original
+   light-mode palette — which is designed for a dark surface — in both light and dark mode. */
+.cs-dark {
+  --c-mint1: var(--cd-mint1);
+  --c-mint2: var(--cd-mint2);
+  --c-mint3: var(--cd-mint3);
+  --c-mint4: var(--cd-mint4);
+  --c-dark: var(--cd-dark);
+  --c-mid: var(--cd-mid);
+  --c-light: var(--cd-light);
+  --c-white: var(--cd-white);
+  --c-sub: var(--cd-sub);
+  --c-muted: var(--cd-muted);
+  --c-danger: var(--cd-danger);
+  --c-warn: var(--cd-warn);
+  --c-ok: var(--cd-ok);
+  --c-blue: var(--cd-blue);
+  color-scheme: light;
+}
+
+/* Dark mode: Tailwind colour utilities used for hovers/backgrounds. */
+html[data-mode="dark"] {
+  --color-white: #FFFFFF;
+  --color-black: #FFFFFF;
+  --color-gray-50: #1F2A26;
+  --color-gray-100: #26322D;
+  --color-green-50: #2A4A39;
+  --color-red-50: #3B1A1E;
+}
+html[data-mode="dark"] .cs-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); }
+html[data-mode="dark"] ::placeholder { color: var(--c-muted); opacity: 1; }
+

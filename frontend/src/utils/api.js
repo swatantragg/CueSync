@@ -62,12 +62,13 @@ async function request(path, { method = "GET", body, form, auth = true } = {}) {
 export const api = {
   base: BASE,
   health: () => request("/health", { auth: false }),
-  signup: (payload) => request("/api/auth/signup", { method: "POST", body: payload, auth: false }),
   login: (email, password) => {
     const form = new URLSearchParams({ username: email, password });
     return request("/api/auth/login", { method: "POST", form, auth: false });
   },
   me: () => request("/api/auth/me"),
+  changePassword: (payload) => request("/api/auth/change-password", { method: "POST", body: payload }),
+  markVersionSeen: (version) => request("/api/auth/seen-version", { method: "POST", body: { version } }),
   projects: () => request("/api/projects/"),
   getProject: (id) => request(`/api/projects/${id}`),
   createProject: (payload) => request("/api/projects/", { method: "POST", body: payload }),
@@ -94,6 +95,7 @@ export const api = {
   approveEpisode: (eid) => request(`/api/episodes/${eid}/approve`, { method: "POST" }),
   rejectEpisode: (eid, note) => request(`/api/episodes/${eid}/reject`, { method: "POST", body: { note } }),
   suggestEpisode: (eid, note) => request(`/api/episodes/${eid}/suggest`, { method: "POST", body: { note } }),
+  markEpisodeOpened: (eid) => request(`/api/episodes/${eid}/open`, { method: "POST" }),
   listEpisodeActivity: (eid) => request(`/api/activity/episode/${eid}`),
   listProjectActivity: (pid) => request(`/api/activity/project/${pid}`),
   logout: () => request("/api/auth/logout", { method: "POST" }).catch(() => {}),
@@ -150,6 +152,7 @@ export const api = {
 
   // ── Users ───────────────────────────────────────────────────────────────────
   listUsers: () => request("/api/users/"),
+  createUser: (payload) => request("/api/users/", { method: "POST", body: payload }),
   listEditors: () => request("/api/users/editors"),
   updateUser: (uid, payload) => request(`/api/users/${uid}`, { method: "PUT", body: payload }),
   updateUserRole: (uid, role) => request(`/api/users/${uid}/role`, { method: "PUT", body: { role } }),
@@ -187,6 +190,7 @@ export const api = {
   searchByBgComposer: (q) => request(`/api/projects/search/bg-composer?q=${encodeURIComponent(q || "")}`),
   submittedEpisodes: () => request("/api/activity/submitted-episodes"),
   editorActivityLog: (uid) => request(`/api/activity/editor/${uid}`),
+  loginActivity: (limit = 500) => request(`/api/activity/logins?limit=${limit}`),
 
   // ── Reviewer serial/movie view ───────────────────────────────────────────────
   reviewerSerials: () => request("/api/activity/reviewer-serials"),

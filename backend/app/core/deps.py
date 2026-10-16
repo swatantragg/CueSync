@@ -10,6 +10,9 @@ from sqlalchemy import select
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
+# Only these stay reachable until a user replaces the password an admin assigned them.
+_PASSWORD_CHANGE_ALLOWED = {"/api/auth/me", "/api/auth/change-password", "/api/auth/logout", "/api/users/me"}
+
 
 async def get_current_user(
     request: Request,
@@ -35,6 +38,8 @@ async def get_current_user(
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or inactive")
+    if user.must_change_password and request.url.path.rstrip("/") not in _PASSWORD_CHANGE_ALLOWED:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Password change required")
     return user
 
 

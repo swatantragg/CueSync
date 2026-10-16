@@ -1,5 +1,5 @@
 import { Download } from "lucide-react";
-import { C, FONTS } from "../styles/palette";
+import { C, FONTS, alpha } from "../styles/palette";
 
 export default function ExpBtn({ label, sub, icon, onClick }) {
   return (
@@ -15,7 +15,7 @@ export default function ExpBtn({ label, sub, icon, onClick }) {
         <Download className="w-4 h-4 opacity-40 group-hover:opacity-100" style={{ color: C.mint1 }} />
       </div>
       <div className="font-semibold text-lg" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>{label}</div>
-      <div className="text-xs mt-1" style={{ color: C.mint1 + "88" }}>{sub}</div>
+      <div className="text-xs mt-1" style={{ color: alpha(C.mint1, "88") }}>{sub}</div>
     </button>
   );
 }

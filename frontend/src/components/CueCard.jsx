@@ -1,12 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Copy, Database, Plus, Save, Trash2, X } from "lucide-react";
 import { showConfirm } from "./Dialog";
-import { C, FONTS } from "../styles/palette";
+import { C, FONTS, alpha, T } from "../styles/palette";
 import { iprsCode, prsCode, ascapCode } from "../constants/usage";
 import Fld from "./Fld";
 import Inp from "./Inp";
 import InpSm from "./InpSm";
 import { api } from "../utils/api";
+import Select from "./Select";
 
 const CONTRIB_ROLES = ["CA", "Composer", "Author", "Publisher", "Performer", "Arranger"];
 const USAGE_OPTIONS = [
@@ -25,14 +26,14 @@ const ROLE_ORDER = { CA: 0, Composer: 1, Author: 2, Publisher: 3, Arranger: 4, P
 
 function RoleSelect({ value, onChange, readOnly }) {
   return (
-    <select
+    <Select
       value={value || "Composer"}
       onChange={(e) => onChange?.(e.target.value)}
       disabled={readOnly}
       className="w-full border rounded-lg px-2 py-1.5 text-xs focus:outline-none"
       style={{
-        borderColor: C.mint1 + "44",
-        background: readOnly ? "#f9fafb" : C.white,
+        borderColor: alpha(C.mint1, "44"),
+        background: readOnly ? T.neutralBg : C.white,
         color: C.dark,
         fontFamily: FONTS.sans,
       }}
@@ -40,21 +41,21 @@ function RoleSelect({ value, onChange, readOnly }) {
       {CONTRIB_ROLES.map((r) => (
         <option key={r} value={r}>{r}</option>
       ))}
-    </select>
+    </Select>
   );
 }
 
 function UsageSelect({ value, onChange, readOnly }) {
   const normalized = { background: "bi", instrumental: "bi", vocal: "bv" }[value?.toLowerCase()] || value || "bi";
   return (
-    <select
+    <Select
       value={normalized}
       onChange={(e) => onChange?.(e.target.value)}
       disabled={readOnly}
       className="w-full border rounded-lg px-2 py-2 text-sm focus:outline-none"
       style={{
-        borderColor: C.mint1 + "44",
-        background: readOnly ? "#f9fafb" : C.white,
+        borderColor: alpha(C.mint1, "44"),
+        background: readOnly ? T.neutralBg : C.white,
         color: C.dark,
         fontFamily: FONTS.sans,
       }}
@@ -62,7 +63,7 @@ function UsageSelect({ value, onChange, readOnly }) {
       {USAGE_OPTIONS.map(([v, label]) => (
         <option key={v} value={v}>{label}</option>
       ))}
-    </select>
+    </Select>
   );
 }
 
@@ -70,7 +71,7 @@ function ContribDropdown({ suggestions, onSelect, onClose }) {
   if (!suggestions || suggestions.length === 0) return null;
   return (
     <div
-      className="absolute z-50 rounded-xl shadow-2xl"
+      className="cs-dark absolute z-50 rounded-xl shadow-2xl"
       style={{
         top: "calc(100% + 2px)", left: 0, right: 0,
         background: C.dark, border: `1px solid ${C.mid}`,
@@ -83,16 +84,16 @@ function ContribDropdown({ suggestions, onSelect, onClose }) {
           <button
             key={i}
             className="w-full text-left px-3 py-2.5 flex flex-col hover:opacity-70 transition-opacity border-b"
-            style={{ borderColor: C.mid + "66" }}
+            style={{ borderColor: alpha(C.mid, "66") }}
             onMouseDown={(e) => { e.preventDefault(); onSelect(s); onClose(); }}
           >
             <div className="text-xs font-semibold" style={{ color: C.mint1 }}>{s.name}</div>
             {altNames.length > 0 && (
-              <div className="text-[10px] mt-0.5" style={{ color: C.muted }}>
+              <div className="text-[0.625rem] mt-0.5" style={{ color: C.muted }}>
                 Also known as: {altNames.join(" · ")}
               </div>
             )}
-            <div className="text-[10px] flex gap-2 mt-0.5" style={{ color: C.muted }}>
+            <div className="text-[0.625rem] flex gap-2 mt-0.5" style={{ color: C.muted }}>
               <span>{s.role}</span>
               <span>·</span>
               <span>{s.society || "—"}</span>
@@ -110,10 +111,10 @@ function SongDropdown({ suggestions, onSelect, onClose }) {
   if (!suggestions || suggestions.length === 0) return null;
   return (
     <div
-      className="absolute z-50 rounded-xl shadow-2xl"
+      className="cs-dark absolute z-50 rounded-xl shadow-2xl"
       style={{
         top: "calc(100% + 2px)", left: 0, right: 0,
-        background: C.dark, border: `1px solid ${C.mint1}55`,
+        background: C.dark, border: `1px solid ${alpha(C.mint1, "55")}`,
         minWidth: 280, maxHeight: 280, overflowY: "auto",
       }}
     >
@@ -123,17 +124,17 @@ function SongDropdown({ suggestions, onSelect, onClose }) {
           <button
             key={i}
             className="w-full text-left px-3 py-2.5 flex flex-col hover:opacity-70 transition-opacity border-b"
-            style={{ borderColor: C.mid + "66" }}
+            style={{ borderColor: alpha(C.mid, "66") }}
             onMouseDown={(e) => { e.preventDefault(); onSelect(s); onClose(); }}
           >
             <div className="text-xs font-semibold" style={{ color: C.mint1 }}>{s.title}</div>
-            <div className="text-[10px] flex gap-3 mt-0.5 flex-wrap" style={{ color: C.muted }}>
+            <div className="text-[0.625rem] flex gap-3 mt-0.5 flex-wrap" style={{ color: C.muted }}>
               {s.isrc && <span style={{ fontFamily: "monospace" }}>ISRC: {s.isrc}</span>}
               {s.song_code && <span style={{ fontFamily: "monospace" }}>Code: {s.song_code}</span>}
               {s.singer && <span>{s.singer}</span>}
             </div>
             {contribs.length > 0 && (
-              <div className="text-[10px] mt-0.5 truncate" style={{ color: C.muted }}>
+              <div className="text-[0.625rem] mt-0.5 truncate" style={{ color: C.muted }}>
                 {contribs.slice(0, 3).map((c) => `${c.role}: ${c.name}`).join(" · ")}
               </div>
             )}
@@ -288,23 +289,23 @@ export default function CueCard({
   };
 
   return (
-    <div className="rounded-2xl border overflow-visible" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+    <div className="rounded-2xl border overflow-visible" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-5 py-3" style={{ background: C.mint4 + "88" }}>
+      <div className="flex items-center justify-between px-5 py-3" style={{ background: alpha(C.mint4, "88") }}>
         <div className="flex items-center gap-3 flex-wrap">
           <span className="font-mono text-xs px-2.5 py-1 rounded-lg font-medium" style={{ background: C.dark, color: C.mint1 }}>
             SONG {String(idx + 1).padStart(2, "0")}
           </span>
           <span className="text-sm font-medium truncate max-w-xs" style={{ fontFamily: FONTS.serif }}>{cue.songTitle || "Untitled"}</span>
-          <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: C.mint3, fontFamily: FONTS.mono }}>
+          <span className="px-1.5 py-0.5 rounded text-[0.625rem]" style={{ background: C.mint3, fontFamily: FONTS.mono }}>
             IPRS:{iprsCode(cue.usageType)} · PRS:{prsCode(cue.usageType)} · ASCAP:{ascapCode(cue.usageType)}
           </span>
           {ok ? (
-            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg" style={{ color: C.ok, background: "#D8F3DC" }}>
+            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg" style={{ color: C.ok, background: T.greenBg2 }}>
               <CheckCircle2 className="w-3 h-3" />100%
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg" style={{ color: C.danger, background: "#FFDDD2" }}>
+            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg" style={{ color: C.danger, background: T.peachBg }}>
               <AlertCircle className="w-3 h-3" />{sum}%
             </span>
           )}
@@ -315,7 +316,7 @@ export default function CueCard({
               onClick={() => onDuplicate(cue.id)}
               className="p-1.5 rounded-lg hover:opacity-80 transition"
               title="Duplicate this song"
-              style={{ color: C.sub, background: C.mint4, border: `1px solid ${C.mint1}55` }}
+              style={{ color: C.sub, background: C.mint4, border: `1px solid ${alpha(C.mint1, "55")}` }}
             >
               <Copy className="w-3.5 h-3.5" />
             </button>
@@ -334,7 +335,7 @@ export default function CueCard({
           <button
             onClick={async () => { if (await showConfirm(`Remove Song ${idx + 1} — "${cue.songTitle || "Untitled"}"?`, { title: "Remove Song", confirmLabel: "Remove", variant: "danger" })) onRemove(cue.id); }}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg opacity-50 hover:opacity-100"
-            style={{ color: C.danger, background: "#FFDDD2" }}
+            style={{ color: C.danger, background: T.peachBg }}
           >
             <Trash2 className="w-3.5 h-3.5" />Remove
           </button>
@@ -412,14 +413,14 @@ export default function CueCard({
         <div className="flex items-center justify-between mb-2">
           <h4 className="text-xs uppercase tracking-widest font-semibold" style={{ color: C.sub }}>Contributors</h4>
           <div className="flex items-center gap-2">
-            <span className="text-xs px-2 py-1 rounded-lg" style={{ color: ok ? C.ok : C.danger, background: ok ? "#D8F3DC" : "#FFDDD2" }}>
+            <span className="text-xs px-2 py-1 rounded-lg" style={{ color: ok ? C.ok : C.danger, background: ok ? T.greenBg2 : T.peachBg }}>
               Total: {sum}% {ok ? "✓" : "(need 100%)"}
             </span>
             {anyChecked && (
               <button
                 onClick={deleteSelected}
                 className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-90"
-                style={{ background: "#FFDDD2", color: C.danger }}
+                style={{ background: T.peachBg, color: C.danger }}
               >
                 <Trash2 className="w-3 h-3" />Delete {selected.size} selected
               </button>
@@ -427,10 +428,10 @@ export default function CueCard({
           </div>
         </div>
 
-        <div className="rounded-xl border overflow-visible" style={{ borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border overflow-visible" style={{ borderColor: alpha(C.mint1, "44") }}>
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] uppercase tracking-wider" style={{ background: C.mint4 + "55", color: C.sub }}>
+              <tr className="text-[0.625rem] uppercase tracking-wider" style={{ background: alpha(C.mint4, "55"), color: C.sub }}>
                 <th className="w-7" />
                 <th className="text-left px-3 py-2">Name</th>
                 <th className="text-left px-3 py-2 w-32">Role</th>
@@ -460,8 +461,8 @@ export default function CueCard({
                     key={co.id}
                     className="border-t"
                     style={{
-                      borderColor: C.mint4 + "88",
-                      background: selected.has(co.id) ? C.mint4 + "99" : isPerformer ? "#fafafa" : undefined,
+                      borderColor: alpha(C.mint4, "88"),
+                      background: selected.has(co.id) ? alpha(C.mint4, "99") : isPerformer ? T.neutralBg : undefined,
                     }}
                   >
                     {/* + insert below */}
@@ -469,7 +470,7 @@ export default function CueCard({
                       <button
                         onClick={() => onContribAdd(cue.id, co.id)}
                         className="w-5 h-5 flex items-center justify-center rounded hover:opacity-70"
-                        style={{ color: C.ok, background: "#D8F3DC" }}
+                        style={{ color: C.ok, background: T.greenBg2 }}
                         title="Insert row below"
                         tabIndex={-1}
                       >

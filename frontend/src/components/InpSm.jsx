@@ -1,4 +1,4 @@
-import { C, FONTS } from "../styles/palette";
+import { C, FONTS, alpha } from "../styles/palette";
 
 export default function InpSm({ value, onChange, onBlur, mono, placeholder, readOnly }) {
   return (
@@ -9,12 +9,12 @@ export default function InpSm({ value, onChange, onBlur, mono, placeholder, read
       readOnly={readOnly}
       className={`w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none ${readOnly ? "bg-gray-50 cursor-default" : ""}`}
       style={{
-        borderColor: C.mint1 + "44",
+        borderColor: alpha(C.mint1, "44"),
         fontFamily: mono ? FONTS.mono : undefined,
-        fontSize: mono ? 12 : undefined,
+        fontSize: mono ? "0.75rem" : undefined,
       }}
       onFocus={(e) => { if (!readOnly) e.target.style.borderColor = C.mint1; }}
-      onBlur={(e) => { e.target.style.borderColor = C.mint1 + "44"; onBlur?.(e.target.value); }}
+      onBlur={(e) => { e.target.style.borderColor = alpha(C.mint1, "44"); onBlur?.(e.target.value); }}
     />
   );
 }

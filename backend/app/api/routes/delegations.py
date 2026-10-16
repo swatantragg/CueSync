@@ -10,6 +10,7 @@ from app.models.notification import Notification
 from app.models.project import Project
 from app.models.user import User, UserRole
 from app.models.work_delegation import WorkDelegation
+from app.services.audit import ADMIN_ONLY_ACTIONS
 
 router = APIRouter()
 
@@ -66,6 +67,15 @@ def _row(d: WorkDelegation, assignee: User | None = None, creator: User | None =
         "created_at": d.created_at.isoformat() if d.created_at else None,
         "updated_at": d.updated_at.isoformat() if d.updated_at else None,
     }
+
+
+def _allocation_body(work_type: str | None, episode_range: str | None, week_target: int | None) -> str:
+    parts = [work_type or "Work"]
+    if episode_range:
+        parts.append(f"Episodes {episode_range}")
+    if week_target:
+        parts.append(f"Target {week_target}")
+    return " · ".join(parts)
 
 
 async def _enrich(db: AsyncSession, rows: list[WorkDelegation]) -> list[dict]:
@@ -128,6 +138,13 @@ async def create_delegation(
             user_id=payload.assigned_to,
             title=f"New work assigned: {payload.serial_name}",
             body=f"Assigned by {current.full_name}. Target: {payload.week_target or '?'} episodes. Range: {payload.episode_range or 'N/A'}",
+            entity_type="delegation",
+            entity_id=d.id,
+        ))
+        db.add(Notification(
+            user_id=current.id,
+            title=f"{payload.serial_name} allocated to {assignee.full_name}",
+            body=_allocation_body(payload.work_type, payload.episode_range, payload.week_target),
             entity_type="delegation",
             entity_id=d.id,
         ))
@@ -331,8 +348,12 @@ async def reviewer_calendar(year: int = Query(..., ge=2020, le=2100), db: AsyncS
     }
 
 
-@router.get("/activity/editor/{user_id}", dependencies=[Depends(require_roles(*WD_ROLES))])
-async def editor_activity(user_id: int, db: AsyncSession = Depends(get_db)):
+@router.get("/activity/editor/{user_id}")
+async def editor_activity(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(require_roles(*WD_ROLES)),
+):
     from app.models.episode import Episode as EpisodeModel
 
     user = await db.get(User, user_id)
@@ -345,8 +366,9 @@ async def editor_activity(user_id: int, db: AsyncSession = Depends(get_db)):
     )).scalars().all()
     delegation_list = await _enrich(db, list(delegations))
 
+    hidden = [] if current.role == UserRole.ADMIN else [AuditLog.action.not_in(ADMIN_ONLY_ACTIONS)]
     rows = (await db.execute(
-        select(AuditLog).where(AuditLog.user_id == user_id)
+        select(AuditLog).where(AuditLog.user_id == user_id, *hidden)
         .order_by(AuditLog.created_at.desc()).limit(500)
     )).scalars().all()
 
@@ -500,6 +522,13 @@ async def update_delegation(
                 user_id=payload.assigned_to,
                 title=f"Work re-assigned to you: {d.serial_name}",
                 body=f"Assigned by {current.full_name}.",
+                entity_type="delegation",
+                entity_id=d.id,
+            ))
+            db.add(Notification(
+                user_id=current.id,
+                title=f"{d.serial_name} allocated to {new_assignee.full_name}",
+                body=_allocation_body(d.work_type, d.episode_range, d.week_target),
                 entity_type="delegation",
                 entity_id=d.id,
             ))

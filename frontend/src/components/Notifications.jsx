@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CheckCircle2, XCircle, Info, MessageSquare, Briefcase } from "lucide-react";
-import { C, FONTS } from "../styles/palette";
+import { C, FONTS, alpha, T } from "../styles/palette";
 import { useApp } from "../context/AppContext";
 
 function timeAgo(iso) {
@@ -30,11 +30,12 @@ const TABS = [
 ];
 
 const CAT_STYLE = {
-  allotted:  { color: "#E65100", bg: "#FFF3E0", Icon: Briefcase     },
-  rejected:  { color: "#C62828", bg: "#FFEBEE", Icon: XCircle       },
-  approved:  { color: "#2E7D32", bg: "#E8F5E9", Icon: CheckCircle2  },
-  suggested: { color: "#1565C0", bg: "#E3F2FD", Icon: MessageSquare },
-  other:     { color: C.sub,     bg: C.mint4,   Icon: Info          },
+  allotted:  { color: T.orange, bg: T.orangeBg, Icon: Briefcase     },
+  rejected:  { color: T.red, bg: T.redBg, Icon: XCircle       },
+  approved:  { color: T.green, bg: T.greenBg, Icon: CheckCircle2  },
+  suggested: { color: T.blue, bg: T.blueBg, Icon: MessageSquare },
+  // Getters so a theme switch is picked up without a reload.
+  other:     { get color() { return C.sub; }, get bg() { return C.mint4; }, Icon: Info },
 };
 
 function NotifIcon({ n }) {
@@ -58,14 +59,14 @@ export default function Notifications({ onClose }) {
   return (
     <div
       className="absolute right-0 top-12 rounded-2xl border shadow-2xl z-50 overflow-hidden flex flex-col"
-      style={{ background: C.white, borderColor: C.mint1 + "44", width: 400, maxHeight: 540 }}
+      style={{ background: C.white, borderColor: alpha(C.mint1, "44"), width: "min(26rem, calc(100vw - 2rem))", maxHeight: "min(32rem, calc(100vh - 6rem))" }}
     >
       {/* Header */}
-      <div className="px-4 py-3 border-b flex items-center justify-between shrink-0" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
+      <div className="px-4 py-3 border-b flex items-center justify-between shrink-0" style={{ borderColor: C.mint4, background: alpha(C.mint4, "66") }}>
         <span className="font-semibold text-sm" style={{ fontFamily: FONTS.serif }}>Notifications</span>
         <button
           onClick={() => { markAllRead(); onClose?.(); }}
-          className="text-[10px] uppercase tracking-wider hover:underline"
+          className="text-[0.625rem] uppercase tracking-wider hover:underline"
           style={{ color: C.sub }}
         >
           Mark all read
@@ -73,7 +74,7 @@ export default function Notifications({ onClose }) {
       </div>
 
       {/* Category tabs */}
-      <div className="flex border-b shrink-0" style={{ borderColor: C.mint4 + "88" }}>
+      <div className="flex border-b shrink-0" style={{ borderColor: alpha(C.mint4, "88") }}>
         {TABS.map(({ key, label }) => {
           const count    = unreadCount(key);
           const isActive = activeTab === key;
@@ -82,18 +83,18 @@ export default function Notifications({ onClose }) {
             <button
               key={key}
               onClick={() => setActiveTab(key)}
-              className="flex-1 px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wide transition-all whitespace-nowrap"
+              className="flex-1 px-2 py-2.5 text-[0.625rem] font-semibold uppercase tracking-wide transition-all whitespace-nowrap"
               style={{
                 color:        isActive ? (key === "all" ? C.dark : cs.color) : C.muted,
-                background:   isActive ? (key === "all" ? C.mint4 + "88" : cs.bg) : "transparent",
+                background:   isActive ? (key === "all" ? alpha(C.mint4, "88") : cs.bg) : "transparent",
                 borderBottom: isActive ? `2px solid ${key === "all" ? C.dark : cs.color}` : "2px solid transparent",
               }}
             >
               {label}
               {count > 0 && (
                 <span
-                  className="ml-1 px-1 py-0.5 rounded-full text-[9px] font-bold"
-                  style={{ background: key === "all" ? C.danger : cs.color, color: "#fff" }}
+                  className="ml-1 px-1 py-0.5 rounded-full text-[0.5625rem] font-bold"
+                  style={{ background: key === "all" ? C.danger : cs.color, color: C.white }}
                 >
                   {count}
                 </span>
@@ -117,7 +118,7 @@ export default function Notifications({ onClose }) {
               <div
                 key={n.id}
                 className="px-4 py-3 border-b last:border-0 cursor-pointer hover:bg-gray-50 transition"
-                style={{ borderColor: C.mint4 + "88", background: n.is_read ? "" : cs.bg + "55" }}
+                style={{ borderColor: alpha(C.mint4, "88"), background: n.is_read ? "" : alpha(cs.bg, "55") }}
                 onClick={() => markRead(n.id)}
               >
                 <div className="flex items-start gap-2.5">
@@ -125,7 +126,7 @@ export default function Notifications({ onClose }) {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium" style={{ color: C.dark }}>{n.title}</div>
                     {n.body && <div className="text-xs mt-0.5 line-clamp-2" style={{ color: C.sub }}>{n.body}</div>}
-                    <div className="text-[10px] mt-1" style={{ color: C.muted }}>{timeAgo(n.at)}</div>
+                    <div className="text-[0.625rem] mt-1" style={{ color: C.muted }}>{timeAgo(n.at)}</div>
                   </div>
                   {!n.is_read && (
                     <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: cs.color }} />

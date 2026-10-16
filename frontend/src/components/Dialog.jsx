@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Trash2, X, Info, CheckCircle2, AlertCircle, ShieldOff } from "lucide-react";
-import { C, FONTS } from "../styles/palette";
+import { C, FONTS, T } from "../styles/palette";
 
 // ── Imperative API ────────────────────────────────────────────────────────────
 let _push = null;
@@ -22,44 +22,45 @@ const VARIANTS = {
   danger: {
     Icon: Trash2,
     iconColor: C.danger,
-    iconBg: "#FFEBEE",
+    iconBg: T.redBg,
     btnBg: C.danger,
     btnColor: "#fff",
   },
   error: {
     Icon: AlertCircle,
     iconColor: C.danger,
-    iconBg: "#FFEBEE",
+    iconBg: T.redBg,
     btnBg: C.danger,
     btnColor: "#fff",
   },
   warn: {
     Icon: AlertTriangle,
     iconColor: "#E67E22",
-    iconBg: "#FFF8E1",
+    iconBg: T.amberBg,
     btnBg: "#E67E22",
     btnColor: "#fff",
   },
+  // Getters so a theme switch is picked up without a reload.
   info: {
     Icon: Info,
-    iconColor: C.sub,
-    iconBg: C.mint4,
-    btnBg: C.dark,
-    btnColor: C.mint4,
+    get iconColor() { return C.sub; },
+    get iconBg() { return C.mint4; },
+    get btnBg() { return C.dark; },
+    get btnColor() { return C.mint4; },
   },
   success: {
     Icon: CheckCircle2,
     iconColor: C.ok,
-    iconBg: "#E8F5E9",
+    iconBg: T.greenBg,
     btnBg: C.ok,
     btnColor: "#fff",
   },
   privilege: {
     Icon: ShieldOff,
     iconColor: C.danger,
-    iconBg: "#FFEBEE",
-    btnBg: C.mint1,
-    btnColor: C.dark,
+    iconBg: T.redBg,
+    get btnBg() { return C.mint1; },
+    get btnColor() { return C.dark; },
   },
 };
 
@@ -80,7 +81,7 @@ function DialogCard({ dialog, onDone }) {
       onClick={onBackdrop}
     >
       <div
-        className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"
+        className="cs-dark w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"
         style={{ background: C.dark, border: `1px solid ${C.mid}` }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -103,7 +104,7 @@ function DialogCard({ dialog, onDone }) {
               {dialog.message}
             </div>
             {dialog.detail && (
-              <div className="text-[11px] mt-1.5 leading-relaxed opacity-70" style={{ color: C.muted }}>
+              <div className="text-[0.6875rem] mt-1.5 leading-relaxed opacity-70" style={{ color: C.muted }}>
                 {dialog.detail}
               </div>
             )}

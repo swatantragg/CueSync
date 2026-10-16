@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import Base, utcnow
 
 
 class WorkDelegation(Base):
@@ -22,5 +22,5 @@ class WorkDelegation(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     assigned_to: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { XCircle, CheckCircle2, History, Send, Check, Package, ChevronLeft, ChevronRight, Save, ArrowLeft, MessageSquare, List, Copy, Plus } from "lucide-react";
 import { showAlert } from "../components/Dialog";
 import { api } from "../utils/api";
-import { C, FONTS } from "../styles/palette";
+import { C, FONTS, alpha, T } from "../styles/palette";
 import Header from "../components/Header";
 import StatusBadge from "../components/StatusBadge";
 import SectionTitle from "../components/SectionTitle";
@@ -58,67 +58,88 @@ function CopyEpisodesModal({ episodes, currentEpId, onCopy, onClose }) {
     setRangeError("");
   };
 
+  const allIds = targets.map((e) => e.id);
+  const allChecked = allIds.length > 0 && allIds.every((id) => checked.has(id));
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose}>
       <div
-        className="rounded-2xl shadow-2xl flex flex-col"
-        style={{ background: C.dark, border: `1px solid ${C.mid}`, width: 360, maxHeight: 580 }}
+        className="cs-dark cs-pop rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        style={{ background: C.dark, border: `1px solid ${C.mid}`, width: "min(26rem, 100%)", maxHeight: "min(40rem, calc(100vh - 2rem))" }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Copy cue details"
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: C.mid }}>
-          <div>
-            <div className="font-semibold text-base" style={{ color: C.mint1, fontFamily: FONTS.serif }}>Copy Cue Details</div>
-            <div className="text-[10px] mt-0.5" style={{ color: C.muted }}>Select episodes to copy to</div>
+        <div className="px-5 py-4 border-b flex items-start justify-between gap-3 shrink-0" style={{ borderColor: C.mid }}>
+          <div className="min-w-0">
+            <div className="font-semibold text-lg leading-tight" style={{ color: C.mint1, fontFamily: FONTS.serif }}>Copy Cue Details</div>
+            <div className="text-xs mt-1" style={{ color: C.muted }}>Choose the episodes that should receive this episode's cue details</div>
           </div>
-          <button onClick={onClose} style={{ color: C.muted }} className="hover:opacity-70"><XCircle className="w-4 h-4" /></button>
+          <button onClick={onClose} style={{ color: C.muted }} className="p-1 -m-1 rounded-lg hover:opacity-70 shrink-0" aria-label="Close"><XCircle className="w-5 h-5" /></button>
         </div>
 
         {/* Range input */}
-        <div className="px-5 pt-3 pb-3 border-b shrink-0" style={{ borderColor: C.mid }}>
-          <div className="text-[10px] uppercase tracking-wide mb-1.5" style={{ color: C.muted }}>Select by range</div>
-          <div className="flex items-center gap-2">
+        <div className="px-5 py-4 border-b shrink-0" style={{ borderColor: C.mid }}>
+          <label htmlFor="copy-range" className="block text-[0.625rem] font-semibold uppercase tracking-widest mb-2" style={{ color: C.muted }}>Select by range</label>
+          <div className="flex items-stretch gap-2">
             <input
+              id="copy-range"
               type="text"
               value={rangeInput}
               onChange={(e) => handleRangeInput(e.target.value)}
-              placeholder="e.g. 1-5"
-              className="flex-1 border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmRange(); } }}
+              placeholder="e.g. 52-60"
+              className="flex-1 min-w-0 border rounded-xl px-3 py-2 text-sm focus:outline-none"
               style={{ borderColor: rangePreview.size ? C.mint1 : C.mid, background: "rgba(255,255,255,0.07)", color: C.mint4 }}
             />
-            {rangePreview.size > 0 && (
-              <button
-                onClick={confirmRange}
-                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-80 transition"
-                style={{ background: C.mint1, color: C.dark }}
-              >
-                Confirm {rangePreview.size}
-              </button>
-            )}
+            <button
+              onClick={confirmRange}
+              disabled={!rangePreview.size}
+              className="shrink-0 px-4 rounded-xl text-sm font-semibold whitespace-nowrap hover:opacity-90 transition disabled:opacity-35 disabled:cursor-not-allowed"
+              style={{ background: C.mint1, color: C.dark }}
+            >
+              {rangePreview.size ? `Select ${rangePreview.size}` : "Select"}
+            </button>
           </div>
           {rangePreview.size > 0 && (
-            <div className="text-[10px] mt-1.5 flex items-center gap-1" style={{ color: C.mint1 }}>
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: C.mint1 }} />
-              {rangePreview.size} episode{rangePreview.size !== 1 ? "s" : ""} highlighted — verify below then click Confirm to select
+            <div className="text-xs mt-2 flex items-start gap-1.5" style={{ color: C.mint1 }}>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ background: C.mint1 }} />
+              <span>{rangePreview.size} episode{rangePreview.size !== 1 ? "s" : ""} highlighted — check the list, then press Select (or Enter).</span>
             </div>
           )}
           {rangeError && (
-            <div className="text-[10px] mt-1" style={{ color: "#EF5350" }}>{rangeError}</div>
+            <div className="text-xs mt-2" style={{ color: "#EF9A9A" }}>{rangeError}</div>
           )}
         </div>
 
+        {/* Select-all bar */}
+        <div className="px-5 py-2 flex items-center justify-between shrink-0 text-xs" style={{ background: "rgba(255,255,255,0.04)", color: C.muted }}>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={allChecked}
+              onChange={() => setChecked(allChecked ? new Set() : new Set(allIds))}
+              style={{ accentColor: C.mint1 }}
+            />
+            Select all ({targets.length})
+          </label>
+          <span style={{ color: checked.size ? C.mint1 : C.muted }}>{checked.size} selected</span>
+        </div>
+
         {/* Episode list */}
-        <div className="flex-1 overflow-y-auto py-1" style={{ maxHeight: 360 }}>
+        <div className="cs-scroll flex-1 min-h-0 overflow-y-auto py-1">
           {targets.map((e) => {
             const isHighlighted = rangePreview.has(e.id);
             const isChecked     = checked.has(e.id);
             return (
               <label
                 key={e.id}
-                className="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-all"
+                className="flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-colors"
                 style={{
-                  background:  isHighlighted ? `${C.mint1}18` : "transparent",
-                  borderLeft:  isHighlighted ? `3px solid ${C.mint1}` : "3px solid transparent",
+                  background:  isHighlighted ? `${alpha(C.mint1, "18")}` : isChecked ? "rgba(255,255,255,0.04)" : "transparent",
+                  boxShadow:   isHighlighted ? `inset 3px 0 0 ${C.mint1}` : "none",
                 }}
               >
                 <input
@@ -126,16 +147,17 @@ function CopyEpisodesModal({ episodes, currentEpId, onCopy, onClose }) {
                   checked={isChecked}
                   onChange={() => toggle(e.id)}
                   style={{ accentColor: C.mint1 }}
+                  className="shrink-0"
                 />
-                <span className="font-mono text-xs" style={{ color: isHighlighted ? C.mint1 : C.sub, minWidth: 28 }}>
+                <span className="font-mono text-sm shrink-0 w-8" style={{ color: isHighlighted ? C.mint1 : C.muted }}>
                   {String(e.number).padStart(2, "0")}
                 </span>
-                <span className="text-xs flex-1 truncate" style={{ color: isHighlighted ? C.mint1 : C.mint4 }}>
+                <span className="text-sm flex-1 min-w-0 truncate" style={{ color: isHighlighted ? C.mint1 : C.mint4 }}>
                   {e.airDate || e.title || `Episode ${e.number}`}
                 </span>
                 {isHighlighted && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full shrink-0 font-medium" style={{ background: `${C.mint1}30`, color: C.mint1 }}>
-                    preview
+                  <span className="text-[0.625rem] px-2 py-0.5 rounded-full shrink-0 font-semibold" style={{ background: `${alpha(C.mint1, "30")}`, color: C.mint1 }}>
+                    in range
                   </span>
                 )}
               </label>
@@ -144,14 +166,21 @@ function CopyEpisodesModal({ episodes, currentEpId, onCopy, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t shrink-0" style={{ borderColor: C.mid }}>
+        <div className="px-5 py-4 border-t flex items-center gap-3 shrink-0" style={{ borderColor: C.mid }}>
+          <button
+            onClick={onClose}
+            className="px-4 py-2.5 rounded-xl text-sm font-medium hover:opacity-80"
+            style={{ color: C.mint4, background: "rgba(255,255,255,0.07)" }}
+          >
+            Cancel
+          </button>
           <button
             disabled={checked.size === 0}
             onClick={() => { onCopy([...checked]); onClose(); }}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 hover:opacity-80 transition"
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition"
             style={{ background: C.mint1, color: C.dark }}
           >
-            Copy to {checked.size > 0 ? `${checked.size} episode${checked.size > 1 ? "s" : ""}` : "Selected"}
+            Copy to {checked.size > 0 ? `${checked.size} episode${checked.size > 1 ? "s" : ""}` : "selected episodes"}
           </button>
         </div>
       </div>
@@ -166,13 +195,13 @@ function CopyToast({ episodes, onDismiss }) {
   }, [onDismiss]);
   return (
     <div
-      className="fixed bottom-6 right-6 z-50 rounded-2xl shadow-2xl px-5 py-4 flex items-start gap-3"
-      style={{ background: C.dark, border: `1px solid ${C.mint1}55`, maxWidth: 300 }}
+      className="cs-dark fixed bottom-8 right-6 z-50 rounded-2xl shadow-2xl px-5 py-4 flex items-start gap-3"
+      style={{ background: C.dark, border: `1px solid ${alpha(C.mint1, "55")}`, maxWidth: "20rem" }}
     >
       <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" style={{ color: C.mint1 }} />
       <div>
         <div className="text-xs font-semibold mb-1" style={{ color: C.mint1 }}>Cue details copied</div>
-        <div className="text-[10px]" style={{ color: C.muted }}>
+        <div className="text-[0.625rem]" style={{ color: C.muted }}>
           Ep {episodes.map((n) => String(n).padStart(2, "0")).join(", Ep ")}
         </div>
       </div>
@@ -190,7 +219,7 @@ function EpNavRow({ id, className, style, prevEp, nextEp, epIdx, sortedEps, curr
         disabled={!prevEp}
         onClick={onPrev}
         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-25 hover:opacity-75 transition-opacity"
-        style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark, minWidth: 130 }}
+        style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "55")}`, color: C.dark, minWidth: 130 }}
       >
         <ChevronLeft className="w-4 h-4 shrink-0" />
         <span className="truncate">
@@ -208,7 +237,7 @@ function EpNavRow({ id, className, style, prevEp, nextEp, epIdx, sortedEps, curr
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium hover:opacity-75 transition-opacity"
           style={{
             background: showEpPicker === pickerKey ? C.dark : C.mint4,
-            border: `1px solid ${C.mint1}44`,
+            border: `1px solid ${alpha(C.mint1, "44")}`,
             color: showEpPicker === pickerKey ? C.mint1 : C.sub,
           }}
           title="Jump to any episode"
@@ -226,7 +255,7 @@ function EpNavRow({ id, className, style, prevEp, nextEp, epIdx, sortedEps, curr
         disabled={!nextEp}
         onClick={onNext}
         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-25 hover:opacity-75 transition-opacity justify-end"
-        style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark, minWidth: 130 }}
+        style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "55")}`, color: C.dark, minWidth: 130 }}
       >
         <span className="truncate">
           {nextEp ? `Ep ${String(nextEp.number).padStart(2, "0")}` : "—"}
@@ -241,7 +270,7 @@ function EpNavRow({ id, className, style, prevEp, nextEp, epIdx, sortedEps, curr
 function EpPickerDropdown({ sortedEps, currentEpId, onPick }) {
   return (
     <div
-      className="absolute z-50 rounded-xl shadow-2xl flex flex-col"
+      className="cs-dark absolute z-50 rounded-xl shadow-2xl flex flex-col"
       style={{
         top: "calc(100% + 8px)",
         left: "50%",
@@ -254,7 +283,7 @@ function EpPickerDropdown({ sortedEps, currentEpId, onPick }) {
       }}
     >
       <div
-        className="px-4 py-2.5 text-[10px] uppercase tracking-widest font-semibold shrink-0"
+        className="px-4 py-2.5 text-[0.625rem] uppercase tracking-widest font-semibold shrink-0"
         style={{ borderBottom: `1px solid ${C.mid}`, color: C.mint1 }}
       >
         Jump to Episode
@@ -374,6 +403,7 @@ export default function EpisodePage() {
     if (!activeEpisode?.id || !activeProject?.id) return;
     setLoading(true);
     try {
+      if (isReviewer) await api.markEpisodeOpened(activeEpisode.id).catch(() => {});
       await flushAll().catch(() => {}); // best-effort flush on navigation
       const [epRow, cues, projRow] = await Promise.all([
         api.getEpisode(activeEpisode.id),
@@ -642,7 +672,8 @@ export default function EpisodePage() {
   };
   const uploader = USERS_DB.find((u) => u.id === ep.uploadedBy);
   const uploadRow = [...activity].reverse().find((r) => r.action === "upload");
-  const lastEditor = activity.find((r) => r.action !== "upload") || activity[0];
+  const lastEditor = activity.find((r) => r.action !== "upload" && r.action !== "review_open");
+  const reviewOpen = activity.find((r) => r.action === "review_open"); // only present for admins
   const fmtAt = (iso) => {
     if (!iso) return "";
     try { const d = new Date(iso); return d.toLocaleString(); } catch { return iso; }
@@ -895,7 +926,7 @@ export default function EpisodePage() {
 
       {showApproveConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
-          <div className="rounded-2xl w-full max-w-md shadow-2xl overflow-hidden" style={{ background: C.dark }}>
+          <div className="cs-dark rounded-2xl w-full max-w-md shadow-2xl overflow-hidden" style={{ background: C.dark }}>
             <div className="px-6 py-4 border-b" style={{ borderColor: C.mid }}>
               <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>
                 Unsaved Changes
@@ -916,7 +947,7 @@ export default function EpisodePage() {
               <button
                 onClick={handleApproveWithoutSaving}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium"
-                style={{ background: C.mid, color: C.mint4, border: `1px solid ${C.mint1}33` }}
+                style={{ background: C.mid, color: C.mint4, border: `1px solid ${alpha(C.mint1, "33")}` }}
               >
                 <Check className="w-4 h-4" />Approve Without Saving
               </button>
@@ -938,7 +969,7 @@ export default function EpisodePage() {
         </div>
       )}
       <main className="max-w-7xl mx-auto px-6 py-10">
-        <button onClick={async () => { await flushAll().catch(() => {}); setActiveEpisodeId(null); setScreen("serial"); }} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}>
+        <button onClick={async () => { await flushAll().catch(() => {}); setActiveEpisodeId(null); setScreen("serial"); }} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "55")}`, color: C.dark }}>
           <ArrowLeft className="w-3.5 h-3.5" /> {proj.type === "movie" ? "Back to Cue Sheet" : "Back to Episodes"}
         </button>
         <div className="flex items-start justify-between mb-6">
@@ -954,34 +985,35 @@ export default function EpisodePage() {
           <StatusBadge status={ep.status} />
         </div>
 
-        <div className="rounded-2xl border mb-6 overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-          <div className="px-5 py-3 border-b flex items-center gap-2 flex-wrap" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
+        <div className="rounded-2xl border mb-6 overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+          <div className="px-5 py-3 border-b flex items-center gap-2 flex-wrap" style={{ borderColor: C.mint4, background: alpha(C.mint4, "66") }}>
             <History className="w-4 h-4" style={{ color: C.sub }} />
             <span className="text-sm font-semibold" style={{ fontFamily: FONTS.serif }}>Activity Log</span>
             <span className="ml-auto flex items-center gap-4 text-xs" style={{ color: C.sub }}>
               {uploadRow && <span>Uploaded by <strong>{uploadRow.user_name}</strong> · {fmtAt(uploadRow.at)}</span>}
               {lastEditor && lastEditor !== uploadRow && <span>Last edit by <strong>{lastEditor.user_name}</strong> · {fmtAt(lastEditor.at)}</span>}
+              {reviewOpen && <span>Opened by <strong>{reviewOpen.user_name}</strong> · {fmtAt(reviewOpen.at)}</span>}
             </span>
           </div>
-          <div className={"divide-y " + (showAllActivity ? "max-h-96 overflow-auto" : "")} style={{ borderColor: C.mint4 + "88" }}>
+          <div className={"divide-y " + (showAllActivity ? "max-h-96 overflow-auto" : "")} style={{ borderColor: alpha(C.mint4, "88") }}>
             {activity.length === 0 && (
               <div className="px-5 py-4 text-xs" style={{ color: C.sub }}>No activity yet.</div>
             )}
             {(showAllActivity ? activity : activity.slice(0, 5)).map((h, i) => (
-              <div key={h.id} className="px-5 py-2.5 flex items-center gap-3 text-xs" style={{ background: i === 0 ? C.mint4 + "44" : "" }}>
-                <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[8px] font-bold shrink-0" style={{ background: h.user_id === currentUser?.id ? C.dark : C.mint1, color: h.user_id === currentUser?.id ? C.mint1 : C.dark }}>
+              <div key={h.id} className="px-5 py-2.5 flex items-center gap-3 text-xs" style={{ background: i === 0 ? alpha(C.mint4, "44") : "" }}>
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[0.5rem] font-bold shrink-0" style={{ background: h.user_id === currentUser?.id ? C.dark : C.mint1, color: h.user_id === currentUser?.id ? C.mint1 : C.dark }}>
                   {initialsOf(h.user_name)}
                 </div>
                 <span className="font-medium" style={{ color: C.dark }}>{h.user_name}</span>
-                {h.user_role && <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: C.mint4, color: C.sub }}>{h.user_role}</span>}
+                {h.user_role && <span className="text-[0.5625rem] px-1.5 py-0.5 rounded" style={{ background: C.mint4, color: C.sub }}>{h.user_role}</span>}
                 <span style={{ color: C.sub }}>{h.details || h.action}</span>
-                <span className="ml-auto" style={{ color: C.muted, fontFamily: FONTS.mono, fontSize: 10 }}>{fmtAt(h.at)}</span>
-                {i === 0 && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: C.mint1, color: C.dark }}>LATEST</span>}
+                <span className="ml-auto" style={{ color: C.muted, fontFamily: FONTS.mono, fontSize: "0.625rem" }}>{fmtAt(h.at)}</span>
+                {i === 0 && <span className="text-[0.5625rem] px-1.5 py-0.5 rounded font-medium" style={{ background: C.mint1, color: C.dark }}>LATEST</span>}
               </div>
             ))}
           </div>
           {activity.length > 5 && (
-            <div className="px-5 py-2 border-t flex items-center justify-center" style={{ borderColor: C.mint4 + "88", background: C.mint4 + "22" }}>
+            <div className="px-5 py-2 border-t flex items-center justify-center" style={{ borderColor: alpha(C.mint4, "88"), background: alpha(C.mint4, "22") }}>
               <button
                 onClick={() => setShowAllActivity((v) => !v)}
                 className="text-xs font-medium px-3 py-1.5 rounded-lg hover:opacity-80"
@@ -1008,20 +1040,20 @@ export default function EpisodePage() {
         )}
 
         {ep.status === "rejected" && ep.rejectionNote && (
-          <div className="rounded-2xl border px-5 py-4 mb-6 flex items-start gap-3" style={{ background: "#FFEBEE", borderColor: "#EF9A9A" }}>
+          <div className="rounded-2xl border px-5 py-4 mb-6 flex items-start gap-3" style={{ background: T.redBg, borderColor: T.redBorder }}>
             <XCircle className="w-5 h-5 shrink-0 mt-0.5" style={{ color: C.danger }} />
             <div>
               <div className="font-semibold text-sm mb-1" style={{ color: C.danger }}>Rejected — changes required</div>
-              <p className="text-sm leading-relaxed" style={{ color: "#B71C1C" }}>{ep.rejectionNote}</p>
+              <p className="text-sm leading-relaxed" style={{ color: T.redDeep }}>{ep.rejectionNote}</p>
             </div>
           </div>
         )}
         {ep.reviewNote && (
-          <div className="rounded-2xl border px-5 py-4 mb-6 flex items-start gap-3" style={{ background: "#FFF8E1", borderColor: "#FFE082" }}>
-            <MessageSquare className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#F57C00" }} />
+          <div className="rounded-2xl border px-5 py-4 mb-6 flex items-start gap-3" style={{ background: T.amberBg, borderColor: T.amberBorder }}>
+            <MessageSquare className="w-5 h-5 shrink-0 mt-0.5" style={{ color: T.orange2 }} />
             <div>
-              <div className="font-semibold text-sm mb-1" style={{ color: "#E65100" }}>Admin suggested changes</div>
-              <p className="text-sm leading-relaxed" style={{ color: "#BF360C" }}>{ep.reviewNote}</p>
+              <div className="font-semibold text-sm mb-1" style={{ color: T.orange }}>Admin suggested changes</div>
+              <p className="text-sm leading-relaxed" style={{ color: T.orangeDeep }}>{ep.reviewNote}</p>
             </div>
           </div>
         )}
@@ -1029,7 +1061,7 @@ export default function EpisodePage() {
         <div className="mb-3">
           <SectionTitle title="Cue Details" />
         </div>
-        <div className="rounded-2xl border p-6 mb-3" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-2xl border p-6 mb-3" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           {(() => { const cd = ep.cueDetails || {}; return (
           <div className="grid grid-cols-4 gap-4">
             <Fld label={proj.type === "movie" ? "Movie Title" : "Serial Title"} tag="auto"><Inp value={cd.serialTitle} onChange={(v) => editEpCue("serialTitle", v)} /></Fld>
@@ -1063,7 +1095,7 @@ export default function EpisodePage() {
         )}
 
         <SectionTitle title={proj.type === "movie" ? "Movie Details" : "Episode Details"} />
-        <div className="rounded-2xl border p-6 mb-6" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-2xl border p-6 mb-6" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <div className="grid grid-cols-4 gap-4">
             {proj.type !== "movie" && <Fld label="Episode #" tag="auto"><Inp value={ep.number} onChange={(v) => editEp("number", Number(v) || ep.number)} /></Fld>}
             <Fld label={proj.type === "movie" ? "Movie Title" : "Episode Title"} tag="auto"><Inp value={ep.title} onChange={(v) => editEp("title", v)} /></Fld>
@@ -1105,7 +1137,7 @@ export default function EpisodePage() {
         </div>
 
         {!canReviewRole && (ep.status === "in_progress" || ep.status === "pending" || ep.status === "rejected" || ep.status === "edited") && (
-          <div className="rounded-2xl border p-6 mb-6 flex items-center justify-between" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+          <div className="rounded-2xl border p-6 mb-6 flex items-center justify-between" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
             <div>
               <div className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>Ready to submit?</div>
               <div className="text-xs mt-1" style={{ color: C.sub }}>Once submitted, a reviewer will approve or request changes.</div>
@@ -1133,15 +1165,15 @@ export default function EpisodePage() {
         )}
 
         {ep.status === "submitted" && !canReviewRole && (
-          <div className="rounded-2xl border p-6 mb-6 text-center" style={{ background: "#F3E5F5", borderColor: "#CE93D8" }}>
-            <Send className="w-6 h-6 mx-auto mb-2" style={{ color: "#7B1FA2" }} />
-            <div className="font-semibold" style={{ color: "#7B1FA2" }}>Submitted — awaiting review</div>
-            <div className="text-xs mt-1" style={{ color: "#9C27B0" }}>You'll be notified once a reviewer approves or requests changes.</div>
+          <div className="rounded-2xl border p-6 mb-6 text-center" style={{ background: T.purpleBg, borderColor: T.purpleBorder }}>
+            <Send className="w-6 h-6 mx-auto mb-2" style={{ color: T.purple }} />
+            <div className="font-semibold" style={{ color: T.purple }}>Submitted — awaiting review</div>
+            <div className="text-xs mt-1" style={{ color: T.purple3 }}>You'll be notified once a reviewer approves or requests changes.</div>
           </div>
         )}
 
         {ep.status === "approved" && !canReviewRole && (
-          <div className="rounded-2xl border p-6 mb-6 text-center" style={{ background: "#E8F5E9", borderColor: "#A5D6A7" }}>
+          <div className="rounded-2xl border p-6 mb-6 text-center" style={{ background: T.greenBg, borderColor: T.greenBorder }}>
             <CheckCircle2 className="w-6 h-6 mx-auto mb-2" style={{ color: C.ok }} />
             <div className="font-semibold" style={{ color: C.ok }}>Approved</div>
             <div className="text-xs mt-1" style={{ color: C.mid }}>Cue sheets are ready for export.</div>
@@ -1149,14 +1181,14 @@ export default function EpisodePage() {
         )}
 
         {canReviewRole && (ep.status === "submitted" || ep.status === "edited") && (
-          <div className="rounded-2xl overflow-hidden mb-6" style={{ background: C.dark }}>
+          <div className="cs-dark rounded-2xl overflow-hidden mb-6" style={{ background: C.dark }}>
             <div className="px-6 py-5 border-b" style={{ borderColor: C.mid }}>
               <div className="font-semibold text-xl" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>Review</div>
-              <div className="text-xs mt-1" style={{ color: C.mint1 + "88" }}>Approve to enable export, reject with a note, or suggest changes without rejecting.</div>
+              <div className="text-xs mt-1" style={{ color: alpha(C.mint1, "88") }}>Approve to enable export, reject with a note, or suggest changes without rejecting.</div>
             </div>
             <div className="p-6 space-y-5">
               <div>
-                <label className="text-xs uppercase tracking-widest block mb-2" style={{ color: C.mint1 + "88" }}>Rejection note (required to reject)</label>
+                <label className="text-xs uppercase tracking-widest block mb-2" style={{ color: alpha(C.mint1, "88") }}>Rejection note (required to reject)</label>
                 <textarea
                   value={adminReviewNote}
                   onChange={(e) => setAdminReviewNote(e.target.value)}
@@ -1167,7 +1199,7 @@ export default function EpisodePage() {
                 />
               </div>
               <div>
-                <label className="text-xs uppercase tracking-widest block mb-2" style={{ color: C.mint1 + "88" }}>Suggest changes (user can keep editing)</label>
+                <label className="text-xs uppercase tracking-widest block mb-2" style={{ color: alpha(C.mint1, "88") }}>Suggest changes (user can keep editing)</label>
                 <textarea
                   value={suggestNote}
                   onChange={(e) => setSuggestNote(e.target.value)}
@@ -1178,7 +1210,7 @@ export default function EpisodePage() {
                 />
               </div>
               <div className="flex items-center gap-3 flex-wrap">
-                <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium disabled:opacity-40 hover:opacity-90 transition" style={{ background: C.mid, color: C.mint4, border: `1px solid ${C.mint1}44` }}>
+                <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium disabled:opacity-40 hover:opacity-90 transition" style={{ background: C.mid, color: C.mint4, border: `1px solid ${alpha(C.mint1, "44")}` }}>
                   <Save className="w-4 h-4" />{saving ? "Saving…" : "Save Changes"}
                 </button>
                 <button onClick={handleApprove} className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium hover:opacity-90 transition" style={{ background: C.ok, color: C.white }}>
@@ -1196,13 +1228,13 @@ export default function EpisodePage() {
         )}
 
         {canReviewRole && ep.status === "approved" && (
-          <div className="rounded-2xl overflow-hidden mb-6" style={{ background: C.dark }}>
+          <div className="cs-dark rounded-2xl overflow-hidden mb-6" style={{ background: C.dark }}>
             <div className="px-6 py-5 flex items-center justify-between border-b" style={{ borderColor: C.mid }}>
               <div className="flex items-center gap-3">
                 <Package className="w-5 h-5" style={{ color: C.mint1 }} />
                 <div>
                   <div className="font-semibold text-xl" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>Export Cue Sheets</div>
-                  <div className="text-xs mt-0.5" style={{ color: C.mint1 + "88" }}>Approved — download in society template format</div>
+                  <div className="text-xs mt-0.5" style={{ color: alpha(C.mint1, "88") }}>Approved — download in society template format</div>
                 </div>
               </div>
               <span className="text-xs px-3 py-1.5 rounded-lg" style={{ background: "#27AE6033", border: "1px solid #27AE60", color: "#7DCEA0" }}>Ready to export</span>

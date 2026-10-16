@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -24,3 +26,8 @@ class Base(DeclarativeBase):
 async def get_db() -> AsyncSession:
     async with SessionLocal() as session:
         yield session
+
+
+def utcnow() -> datetime:
+    """Timezone-aware UTC now. Naive datetime.utcnow() is shifted by asyncpg using the host's local zone."""
+    return datetime.now(timezone.utc)

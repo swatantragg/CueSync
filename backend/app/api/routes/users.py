@@ -13,7 +13,7 @@ from app.models.project import Project
 from app.models.society_submission import SocietySubmission
 from app.models.user import User, UserRole
 from app.models.work_delegation import WorkDelegation
-from app.schemas.auth import UserCreate, UserOut, UserUpdate
+from app.schemas.auth import AdminUserOut, UserCreate, UserOut, UserUpdate
 from app.services.login_tracker import clear_failed_logins
 from app.services.super_admin import is_super_admin_email
 
@@ -28,39 +28,52 @@ class ActiveUpdateIn(BaseModel):
     is_active: bool
 
 
+def _admin_view(u: User, viewer: User) -> AdminUserOut:
+    out = AdminUserOut.model_validate(u).model_copy(update={"is_protected": u.is_super_admin})
+    # Regular admins see the super admin as a plain (protected) admin.
+    return out if viewer.is_super_admin else out.model_copy(update={"is_super_admin": False})
+
+
 # Deliberately says "protected admin", not "super admin" — the role stays hidden from other admins.
 def _guard_super_admin(user: User, action: str) -> None:
     if user.is_super_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, f"This admin account is protected and cannot be {action}.")
 
 
-@router.post("/", response_model=UserOut, dependencies=[Depends(require_roles(UserRole.ADMIN))])
-async def create_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
-    existing = (await db.execute(select(User).where(User.email == payload.email))).scalar_one_or_none()
-    if existing or is_super_admin_email(payload.email):
+@router.post("/", response_model=AdminUserOut)
+async def create_user(
+    payload: UserCreate,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(require_roles(UserRole.ADMIN)),
+):
+    email = payload.email.strip().lower()
+    name = payload.full_name.strip()
+    if not email or not name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Name and email are required")
+    existing = (await db.execute(select(User).where(func.lower(User.email) == email))).scalar_one_or_none()
+    if existing or is_super_admin_email(email):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Email exists")
     user = User(
-        email=payload.email,
-        full_name=payload.full_name,
+        email=email,
+        full_name=name,
         hashed_password=hash_password(payload.password),
         role=payload.role,
+        # The admin knows this password, so the user must replace it on first sign-in.
+        must_change_password=True,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return user
+    return _admin_view(user, current)
 
 
-@router.get("/", response_model=list[UserOut])
+@router.get("/", response_model=list[AdminUserOut])
 async def list_users(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(require_roles(UserRole.ADMIN)),
 ):
     users = (await db.execute(select(User).order_by(User.id))).scalars().all()
-    if current.is_super_admin:
-        return users
-    # Regular admins see the super admin as a plain admin.
-    return [UserOut.model_validate(u).model_copy(update={"is_super_admin": False}) for u in users]
+    return [_admin_view(u, current) for u in users]
 
 
 @router.get("/editors", response_model=list[UserOut])
@@ -81,8 +94,13 @@ async def me(current: User = Depends(get_current_user)):
     return current
 
 
-@router.put("/{user_id}/role", response_model=UserOut, dependencies=[Depends(require_roles(UserRole.ADMIN))])
-async def update_user_role(user_id: int, payload: RoleUpdateIn, db: AsyncSession = Depends(get_db)):
+@router.put("/{user_id}/role", response_model=AdminUserOut)
+async def update_user_role(
+    user_id: int,
+    payload: RoleUpdateIn,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(require_roles(UserRole.ADMIN)),
+):
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(404)
@@ -91,14 +109,19 @@ async def update_user_role(user_id: int, payload: RoleUpdateIn, db: AsyncSession
         user.role = payload.role
         await db.commit()
         await db.refresh(user)
-        return user
+        return _admin_view(user, current)
     except Exception:
         await db.rollback()
         raise HTTPException(500, "Role update failed. Please try again.")
 
 
-@router.put("/{user_id}", response_model=UserOut, dependencies=[Depends(require_super_admin)])
-async def update_user(user_id: int, payload: UserUpdate, db: AsyncSession = Depends(get_db)):
+@router.put("/{user_id}", response_model=AdminUserOut)
+async def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(require_super_admin),
+):
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
@@ -126,6 +149,9 @@ async def update_user(user_id: int, payload: UserUpdate, db: AsyncSession = Depe
 
     if payload.password:
         user.hashed_password = hash_password(payload.password)
+        # A password set by someone else must be replaced by its owner on next sign-in.
+        if user.id != current.id:
+            user.must_change_password = True
 
     try:
         await db.commit()
@@ -136,20 +162,27 @@ async def update_user(user_id: int, payload: UserUpdate, db: AsyncSession = Depe
     if payload.password:
         # A fresh password should also lift any lockout from earlier failed attempts.
         await clear_failed_logins(user.email)
-    return user
+    return _admin_view(user, current)
 
 
-@router.put("/{user_id}/active", response_model=UserOut, dependencies=[Depends(require_roles(UserRole.ADMIN))])
-async def toggle_user_active(user_id: int, payload: ActiveUpdateIn, db: AsyncSession = Depends(get_db)):
+@router.put("/{user_id}/active", response_model=AdminUserOut)
+async def toggle_user_active(
+    user_id: int,
+    payload: ActiveUpdateIn,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(require_roles(UserRole.ADMIN)),
+):
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(404)
     _guard_super_admin(user, "deactivated")
+    if user.id == current.id and not payload.is_active:
+        raise HTTPException(400, "You cannot deactivate your own account.")
     try:
         user.is_active = payload.is_active
         await db.commit()
         await db.refresh(user)
-        return user
+        return _admin_view(user, current)
     except Exception:
         await db.rollback()
         raise HTTPException(500, "Status update failed. Please try again.")

@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import Base, utcnow
 
 
 class UsageType(str, enum.Enum):
@@ -43,8 +43,8 @@ class CueEntry(Base):
     library_id: Mapped[int | None] = mapped_column(ForeignKey("song_library.id", ondelete="SET NULL"), index=True)
 
     order_index: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     episode = relationship("Episode", back_populates="cues")
     contributors = relationship("Contributor", back_populates="cue", cascade="all, delete-orphan")

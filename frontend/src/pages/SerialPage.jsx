@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Upload, FileSpreadsheet, ChevronRight, Trash2, ArrowLeft, Check, XCircle, MessageSquare, X, Search } from "lucide-react";
 import { showAlert, showConfirm } from "../components/Dialog";
-import { C, FONTS } from "../styles/palette";
+import { C, FONTS, alpha, T } from "../styles/palette";
 import Header from "../components/Header";
 import MetaCard from "../components/MetaCard";
 import StatusBadge from "../components/StatusBadge";
 import RoughSheetPreview from "../components/RoughSheetPreview";
 import { api } from "../utils/api";
+import { ACTION_LABEL, fmtDateTime, timeAgo } from "../utils/format";
 import { useApp } from "../context/AppContext";
 
 export default function SerialPage() {
-  const { activeProject, activeProjectId, isAdmin, isReviewer, updateProject, setProjects, setActiveProjectId, setActiveEpisodeId, setScreen, goHome, role } = useApp();
+  const { activeProject, activeProjectId, isAdmin, isReviewer, updateProject, setProjects, setActiveProjectId, setActiveEpisodeId, setScreen, goHome } = useApp();
   const canReviewRole = isAdmin || isReviewer;
   const [busy, setBusy] = useState(false);
   const [importProgress, setImportProgress] = useState(null);
@@ -45,6 +46,10 @@ export default function SerialPage() {
         ...e, id: e.id, number: e.episode_number, airDate: e.air_date,
         totalDuration: e.total_duration_sec, musicalDuration: e.musical_duration_sec,
         status: e.status || "pending", rejectionNote: e.rejection_note, reviewNote: e.review_note,
+        songCount: e.song_count ?? 0, reviewOpened: e.review_opened !== false,
+        lastActivity: e.last_activity_at ? {
+          at: e.last_activity_at, by: e.last_activity_by, action: e.last_activity_action, details: e.last_activity_details,
+        } : null,
         editHistory: [], cues: [],
       })),
     }));
@@ -61,8 +66,8 @@ export default function SerialPage() {
   }, [activeProject?.id, activeProjectId]);
 
   if (!activeProject && bootstrapping) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: "#f8f9fa" }}>
-      <span className="text-sm" style={{ color: "#6B7280" }}>Loading…</span>
+    <div className="min-h-screen flex items-center justify-center" style={{ background: C.light }}>
+      <span className="text-sm" style={{ color: T.grayMid }}>Loading…</span>
     </div>
   );
 
@@ -200,7 +205,7 @@ export default function SerialPage() {
 
       {reviewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
-          <div className="rounded-2xl p-6 w-full max-w-md shadow-2xl" style={{ background: C.dark }}>
+          <div className="cs-dark rounded-2xl p-6 w-full max-w-md shadow-2xl" style={{ background: C.dark }}>
             <div className="flex items-center justify-between mb-4">
               <div className="font-semibold text-lg" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>
                 {reviewModal.action === "reject" ? "Reject" : "Suggest Changes"} — Ep {String(reviewModal.ep.number).padStart(2, "0")}
@@ -238,7 +243,7 @@ export default function SerialPage() {
       )}
 
       <main className="max-w-7xl mx-auto px-6 py-10">
-        <button onClick={goHome} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${C.mint1}55`, color: C.dark }}>
+        <button onClick={goHome} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "55")}`, color: C.dark }}>
           <ArrowLeft className="w-3.5 h-3.5" /> Back
         </button>
         <div className="flex items-end justify-between mb-8">
@@ -255,19 +260,19 @@ export default function SerialPage() {
         )}
 
         {importResult && (
-          <div className="mb-4 text-sm rounded-xl px-4 py-3 flex items-center justify-between" style={{ color: "#2E7D32", background: "#E8F5E9", border: "1px solid #A5D6A7" }}>
+          <div className="mb-4 text-sm rounded-xl px-4 py-3 flex items-center justify-between" style={{ color: T.green, background: T.greenBg, border: `1px solid ${T.greenBorder}` }}>
             {importResult}
             <button onClick={() => setImportResult(null)} className="ml-4 opacity-60 hover:opacity-100">×</button>
           </div>
         )}
         {err && (
-          <div className="mb-4 text-sm whitespace-pre-line rounded-xl px-4 py-3" style={{ color: C.danger, background: "#FFEBEE", border: "1px solid #EF9A9A" }}>
+          <div className="mb-4 text-sm whitespace-pre-line rounded-xl px-4 py-3" style={{ color: C.danger, background: T.redBg, border: `1px solid ${T.redBorder}` }}>
             {err}
           </div>
         )}
 
         {!canReviewRole && (
-          <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: C.mint1 + "66", background: C.mint4 + "88" }}>
+          <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: alpha(C.mint1, "66"), background: alpha(C.mint4, "88") }}>
             <div className="px-6 py-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: C.mint1 }}>
@@ -304,16 +309,16 @@ export default function SerialPage() {
             {busy && importProgress && (
               <div className="px-6 pb-4">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[11px]" style={{ color: C.sub }}>
+                  <span className="text-[0.6875rem]" style={{ color: C.sub }}>
                     {importProgress.done
                       ? `✓ ${importProgress.episodes} episode${importProgress.episodes !== 1 ? "s" : ""} extracted`
                       : `File ${importProgress.filesDone + (importProgress.pct < 90 ? 1 : 0)} of ${importProgress.filesTotal} — ${importProgress.episodes} episode${importProgress.episodes !== 1 ? "s" : ""} found`}
                   </span>
-                  <span className="text-[11px] font-mono font-semibold" style={{ color: importProgress.done ? C.ok : C.dark }}>
+                  <span className="text-[0.6875rem] font-mono font-semibold" style={{ color: importProgress.done ? C.ok : C.dark }}>
                     {importProgress.pct}%
                   </span>
                 </div>
-                <div className="w-full rounded-full overflow-hidden" style={{ height: 7, background: C.mint1 + "2A" }}>
+                <div className="w-full rounded-full overflow-hidden" style={{ height: 7, background: alpha(C.mint1, "2A") }}>
                   <div
                     className="h-full rounded-full"
                     style={{
@@ -332,8 +337,8 @@ export default function SerialPage() {
           </div>
         )}
 
-        <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-          <div className="px-6 py-4 border-b flex flex-wrap items-center gap-3 justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
+        <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+          <div className="px-6 py-4 border-b flex flex-wrap items-center gap-3 justify-between" style={{ borderColor: C.mint4, background: alpha(C.mint4, "66") }}>
             <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>
               {proj.type === "movie" ? "Movie Cue Sheet" : `Episodes (${filteredEps.length}${searchQ ? ` of ${proj.episodes.length}` : ""})`}
             </h3>
@@ -348,7 +353,7 @@ export default function SerialPage() {
                   onChange={(e) => { setSearchQ(e.target.value); setPage(1); }}
                   placeholder="Search by ep. number or title…"
                   className="pl-8 pr-3 py-1.5 text-xs rounded-lg border focus:outline-none"
-                  style={{ borderColor: C.mint1 + "44", background: C.white, color: C.dark, width: 230 }}
+                  style={{ borderColor: alpha(C.mint1, "44"), background: C.white, color: C.dark, width: 230 }}
                 />
                 {searchQ && (
                   <button onClick={() => setSearchQ("")} className="absolute right-2 top-1/2 -translate-y-1/2 hover:opacity-70" style={{ color: C.sub }}>
@@ -363,13 +368,13 @@ export default function SerialPage() {
                   onClick={handleDeleteSelected}
                   disabled={deleting}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
-                  style={{ background: "#FFEBEE", color: C.danger, border: `1px solid #EF9A9A` }}
+                  style={{ background: T.redBg, color: C.danger, border: `1px solid ${T.redBorder}` }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />{deleting ? "Deleting…" : `Delete ${selected.size} selected`}
                 </button>
               )}
               {canReviewRole && proj.episodes.filter((e) => e.status === "submitted" || e.status === "edited").length > 0 && (
-                <span className="text-xs px-2.5 py-1 rounded-lg font-medium" style={{ background: "#F3E5F5", color: "#7B1FA2" }}>
+                <span className="text-xs px-2.5 py-1 rounded-lg font-medium" style={{ background: T.purpleBg, color: T.purple }}>
                   {proj.episodes.filter((e) => e.status === "submitted" || e.status === "edited").length} pending review
                 </span>
               )}
@@ -391,7 +396,7 @@ export default function SerialPage() {
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-[10px] uppercase tracking-wider" style={{ borderColor: C.mint4, color: C.sub, background: C.mint4 + "33" }}>
+              <tr className="border-b text-[0.625rem] uppercase tracking-wider" style={{ borderColor: C.mint4, color: C.sub, background: alpha(C.mint4, "33") }}>
                 {proj.type !== "movie" && <th className="text-left px-5 py-3 w-16">Ep.</th>}
                 <th className="text-left px-5 py-3">Title</th>
                 <th className="text-left px-5 py-3">Air Date</th>
@@ -418,23 +423,36 @@ export default function SerialPage() {
                 </tr>
               )}
               {pageEps.map((ep) => {
-                const lastEdit = ep.editHistory?.[ep.editHistory.length - 1];
+                const last = ep.lastActivity;
                 const canReview = canReviewRole && (ep.status === "submitted" || ep.status === "edited");
+                // Reviewers unlock the quick review actions by opening the cue sheet first.
+                const reviewLocked = isReviewer && !ep.reviewOpened;
+                const lockTitle = "Open the cue sheet first to review it";
                 const isSelected = selected.has(ep.id);
                 return (
                   <tr
                     key={ep.id}
                     className="border-b last:border-0 hover:bg-green-50/30 transition cursor-pointer"
-                    style={{ borderColor: C.mint4 + "88", background: isSelected ? C.mint4 + "99" : canReview ? "#F3E5F511" : undefined }}
+                    style={{ borderColor: alpha(C.mint4, "88"), background: isSelected ? alpha(C.mint4, "99") : canReview ? alpha(T.purpleBg, "11") : undefined }}
                     onClick={() => { setActiveEpisodeId(ep.id); setScreen("episode"); }}
                   >
                     {proj.type !== "movie" && <td className="px-5 py-3 font-mono text-sm">{String(ep.number).padStart(2, "0")}</td>}
                     <td className="px-5 py-3 text-xs font-medium" style={{ color: C.dark }}>{ep.title || "—"}</td>
                     <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{ep.airDate || "—"}</td>
                     <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{fmtDur(ep.totalDuration)}</td>
-                    <td className="px-5 py-3" style={{ color: C.sub }}>{ep.cues.length}</td>
+                    <td className="px-5 py-3 font-medium" style={{ color: C.dark }}>{ep.songCount ?? ep.cues.length}</td>
                     <td className="px-5 py-3"><StatusBadge status={ep.status} /></td>
-                    <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>{lastEdit ? `${lastEdit.name} · ${lastEdit.at}` : "—"}</td>
+                    <td className="px-5 py-3 text-xs" title={last ? `${last.details || ACTION_LABEL[last.action] || last.action} — ${fmtDateTime(last.at)}` : undefined}>
+                      {last ? (
+                        <div className="leading-snug">
+                          <div className="truncate max-w-[14rem]" style={{ color: C.dark }}>
+                            <span className="font-semibold">{last.by || "System"}</span>
+                            <span style={{ color: C.sub }}> · {ACTION_LABEL[last.action] || last.action}</span>
+                          </div>
+                          <div style={{ color: C.muted }}>{timeAgo(last.at)}</div>
+                        </div>
+                      ) : <span style={{ color: C.muted }}>—</span>}
+                    </td>
                     <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
                         {!canReviewRole && (
@@ -457,22 +475,25 @@ export default function SerialPage() {
                           <>
                             <button
                               onClick={() => handleApprove(ep)}
-                              className="p-1.5 rounded-lg hover:opacity-80 transition"
-                              title="Approve"
-                              style={{ background: "#E8F5E9", border: "1px solid #A5D6A7" }}
+                              disabled={reviewLocked}
+                              className="p-1.5 rounded-lg hover:opacity-80 transition disabled:opacity-35 disabled:cursor-not-allowed"
+                              title={reviewLocked ? lockTitle : "Approve"}
+                              style={{ background: T.greenBg, border: `1px solid ${T.greenBorder}` }}
                             ><Check className="w-4 h-4" style={{ color: C.ok }} /></button>
                             <button
                               onClick={() => setReviewModal({ ep, action: "reject", note: "" })}
-                              className="p-1.5 rounded-lg hover:opacity-80 transition"
-                              title="Reject"
-                              style={{ background: "#FFEBEE", border: "1px solid #EF9A9A" }}
+                              disabled={reviewLocked}
+                              className="p-1.5 rounded-lg hover:opacity-80 transition disabled:opacity-35 disabled:cursor-not-allowed"
+                              title={reviewLocked ? lockTitle : "Reject"}
+                              style={{ background: T.redBg, border: `1px solid ${T.redBorder}` }}
                             ><XCircle className="w-4 h-4" style={{ color: C.danger }} /></button>
                             <button
                               onClick={() => setReviewModal({ ep, action: "suggest", note: "" })}
-                              className="p-1.5 rounded-lg hover:opacity-80 transition"
-                              title="Suggest changes"
-                              style={{ background: "#FFF8E1", border: "1px solid #FFE082" }}
-                            ><MessageSquare className="w-4 h-4" style={{ color: "#F57C00" }} /></button>
+                              disabled={reviewLocked}
+                              className="p-1.5 rounded-lg hover:opacity-80 transition disabled:opacity-35 disabled:cursor-not-allowed"
+                              title={reviewLocked ? lockTitle : "Suggest changes"}
+                              style={{ background: T.amberBg, border: `1px solid ${T.amberBorder}` }}
+                            ><MessageSquare className="w-4 h-4" style={{ color: T.orange2 }} /></button>
                           </>
                         )}
 
@@ -481,7 +502,7 @@ export default function SerialPage() {
                           className="text-xs uppercase tracking-wider flex items-center gap-1 font-medium hover:gap-2 transition-all ml-1"
                           style={{ color: C.dark }}
                         >
-                          {canReviewRole ? "Review" : "Open"} <ChevronRight className="w-3.5 h-3.5" />
+                          {canReviewRole ? (canReview ? "Review" : "View") : "Open"} <ChevronRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>

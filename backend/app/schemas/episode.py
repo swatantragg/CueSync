@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -41,6 +43,16 @@ class EpisodeOut(EpisodeBase):
 
     class Config:
         from_attributes = True
+
+
+class EpisodeListOut(EpisodeOut):
+    song_count: int = 0
+    last_activity_at: datetime | None = None
+    last_activity_by: str | None = None
+    last_activity_action: str | None = None
+    last_activity_details: str | None = None
+    # Reviewers: whether they opened this cue sheet since its latest submission (always true for others).
+    review_opened: bool = True
 
 
 class ReviewNoteIn(BaseModel):

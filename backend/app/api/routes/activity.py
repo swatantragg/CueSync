@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,10 +9,16 @@ from app.models.cue import CueEntry
 from app.models.episode import Episode
 from app.models.project import Project
 from app.models.user import User, UserRole
+from app.services.audit import ADMIN_ONLY_ACTIONS, reviewer_opened_ids
 
 _REVIEWER_ROLES = (UserRole.ADMIN, UserRole.REVIEWER)
 
 router = APIRouter()
+
+
+def _visible(current: User) -> list:
+    """Extra filters hiding admin-only audit rows from non-admin viewers."""
+    return [] if current.role == UserRole.ADMIN else [AuditLog.action.not_in(ADMIN_ONLY_ACTIONS)]
 
 
 def _user_meta(u: User | None) -> dict:
@@ -25,12 +31,13 @@ def _user_meta(u: User | None) -> dict:
 async def episode_activity(
     episode_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     rows = (await db.execute(
         select(AuditLog).where(
             AuditLog.entity == "episode",
             AuditLog.entity_id == episode_id,
+            *_visible(current),
         ).order_by(AuditLog.created_at.desc()).limit(200)
     )).scalars().all()
     uids = {r.user_id for r in rows if r.user_id}
@@ -42,11 +49,12 @@ async def episode_activity(
 async def project_activity(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     rows = (await db.execute(
         select(AuditLog).where(
             AuditLog.entity.in_(("project", "episode")),
+            *_visible(current),
         ).order_by(AuditLog.created_at.desc()).limit(500)
     )).scalars().all()
     uids = {r.user_id for r in rows if r.user_id}
@@ -66,11 +74,15 @@ async def submitted_episodes(
     )).scalars().all()
     pids = {r.project_id for r in rows}
     projects = {p.id: p for p in (await db.execute(select(Project).where(Project.id.in_(pids)))).scalars().all()} if pids else {}
+    ids = [ep.id for ep in rows]
+    opened = await reviewer_opened_ids(db, current.id, ids) if current.role == UserRole.REVIEWER else set(ids)
     return [{
         "id": ep.id, "episode_number": ep.episode_number, "title": ep.title,
         "status": ep.status, "project_id": ep.project_id,
         "project_title": projects[ep.project_id].title if ep.project_id in projects else None,
+        "project_type": projects[ep.project_id].type.value if ep.project_id in projects else None,
         "air_date": ep.air_date,
+        "opened": ep.id in opened,
     } for ep in rows]
 
 
@@ -162,6 +174,7 @@ async def reviewer_serial_episodes(
             .group_by(CueEntry.episode_id)
         )).all()
         song_counts = {r.episode_id: r.cnt for r in rows}
+    opened = await reviewer_opened_ids(db, current.id, ep_ids) if current.role == UserRole.REVIEWER else set(ep_ids)
     return {
         "project_id":    proj.id,
         "project_title": proj.title,
@@ -175,14 +188,19 @@ async def reviewer_serial_episodes(
             "air_date":          str(ep.air_date) if ep.air_date else None,
             "total_duration_sec": ep.total_duration_sec,
             "song_count":        song_counts.get(ep.id, 0),
+            "opened":            ep.id in opened,
         } for ep in eps],
     }
 
 
-@router.get("/editor/{user_id}", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.WORK_DELEGATOR))])
-async def editor_activity_log(user_id: int, db: AsyncSession = Depends(get_db)):
+@router.get("/editor/{user_id}")
+async def editor_activity_log(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(require_roles(UserRole.ADMIN, UserRole.WORK_DELEGATOR)),
+):
     rows = (await db.execute(
-        select(AuditLog).where(AuditLog.user_id == user_id)
+        select(AuditLog).where(AuditLog.user_id == user_id, *_visible(current))
         .order_by(AuditLog.created_at.desc()).limit(200)
     )).scalars().all()
     user = await db.get(User, user_id)
@@ -190,3 +208,24 @@ async def editor_activity_log(user_id: int, db: AsyncSession = Depends(get_db)):
         "user": {"id": user.id, "full_name": user.full_name, "email": user.email, "role": user.role.value} if user else None,
         "activity": [{"id": r.id, "action": r.action, "entity": r.entity, "entity_id": r.entity_id, "details": r.details, "at": r.created_at.isoformat() if r.created_at else None} for r in rows],
     }
+
+
+@router.get("/logins")
+async def login_activity(
+    limit: int = Query(500, ge=1, le=2000),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(require_roles(UserRole.ADMIN)),
+):
+    """Sign-in / sign-out / password-change history for every account (admins only)."""
+    rows = (await db.execute(
+        select(AuditLog).where(AuditLog.entity == "user", AuditLog.action.in_(("login", "logout", "password_change")))
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)
+    )).scalars().all()
+    uids = {r.user_id for r in rows if r.user_id}
+    users = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(uids)))).scalars().all()} if uids else {}
+    return [{
+        **_user_meta(users.get(r.user_id)),
+        **({} if users.get(r.user_id) else {"user_name": "Deleted user"}),
+        "id": r.id, "action": r.action, "details": r.details,
+        "at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]

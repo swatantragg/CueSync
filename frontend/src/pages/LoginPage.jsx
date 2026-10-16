@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { C } from "../styles/palette";
 import { useApp } from "../context/AppContext";
 import AuthShell, { AuthField, AuthButton } from "../components/AuthShell";
 
 export default function LoginPage() {
-  const { login, setScreen } = useApp();
+  const { login } = useApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -20,14 +19,7 @@ export default function LoginPage() {
     <AuthShell
       title="Sign in"
       subtitle="Welcome back — enter your credentials"
-      footer={
-        <>
-          No account?{" "}
-          <button onClick={() => setScreen("signup")} className="underline hover:opacity-80" style={{ color: C.mint1 }}>
-            Create one
-          </button>
-        </>
-      }
+      footer="Accounts are created by your administrator. Contact them if you need access."
     >
       <form onSubmit={onSubmit}>
         <AuthField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@company.com" autoComplete="email" />

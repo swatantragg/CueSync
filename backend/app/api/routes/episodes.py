@@ -1,16 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
+from app.models.audit import AuditLog
 from app.models.cue import Contributor, CueEntry
 from app.models.episode import Episode
 from app.models.notification import Notification
 from app.models.user import User, UserRole
-from app.schemas.episode import EpisodeCloneIn, EpisodeCreate, EpisodeOut, EpisodeUpdate, ReviewNoteIn
-from app.services.audit import log_activity
+from app.schemas.episode import EpisodeCloneIn, EpisodeCreate, EpisodeListOut, EpisodeOut, EpisodeUpdate, ReviewNoteIn
+from app.services.audit import ADMIN_ONLY_ACTIONS, REVIEW_OPEN, log_activity, reviewer_opened_ids
 
 router = APIRouter()
 
@@ -24,9 +25,48 @@ async def create_episode(project_id: int, payload: EpisodeCreate, db: AsyncSessi
     return ep
 
 
-@router.get("/project/{project_id}", response_model=list[EpisodeOut])
-async def list_episodes(project_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
-    return (await db.execute(select(Episode).where(Episode.project_id == project_id).order_by(Episode.episode_number))).scalars().all()
+@router.get("/project/{project_id}", response_model=list[EpisodeListOut])
+async def list_episodes(project_id: int, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+    eps = (await db.execute(
+        select(Episode).where(Episode.project_id == project_id).order_by(Episode.episode_number)
+    )).scalars().all()
+    ids = [e.id for e in eps]
+    if not ids:
+        return []
+
+    song_counts = dict((await db.execute(
+        select(CueEntry.episode_id, func.count(CueEntry.id))
+        .where(CueEntry.episode_id.in_(ids)).group_by(CueEntry.episode_id)
+    )).all())
+
+    # Latest audit row per episode; admin-only actions stay hidden from everyone else.
+    conds = [AuditLog.entity == "episode", AuditLog.entity_id.in_(ids)]
+    if current.role != UserRole.ADMIN:
+        conds.append(AuditLog.action.not_in(ADMIN_ONLY_ACTIONS))
+    latest = (await db.execute(
+        select(AuditLog).where(*conds)
+        .order_by(AuditLog.entity_id, AuditLog.created_at.desc(), AuditLog.id.desc())
+        .distinct(AuditLog.entity_id)
+    )).scalars().all()
+    latest_by_ep = {r.entity_id: r for r in latest}
+    uids = {r.user_id for r in latest if r.user_id}
+    names = dict((await db.execute(select(User.id, User.full_name).where(User.id.in_(uids)))).all()) if uids else {}
+
+    opened = await reviewer_opened_ids(db, current.id, ids) if current.role == UserRole.REVIEWER else set(ids)
+
+    out = []
+    for e in eps:
+        row = EpisodeListOut.model_validate(e)
+        act = latest_by_ep.get(e.id)
+        out.append(row.model_copy(update={
+            "song_count": song_counts.get(e.id, 0),
+            "last_activity_at": act.created_at if act else None,
+            "last_activity_by": (names.get(act.user_id) if act.user_id else "System") if act else None,
+            "last_activity_action": act.action if act else None,
+            "last_activity_details": act.details if act else None,
+            "review_opened": e.id in opened,
+        }))
+    return out
 
 
 @router.get("/{eid}", response_model=EpisodeOut)
@@ -71,12 +111,35 @@ async def _notify_reviewers(db: AsyncSession, msg: str, entity_id: int):
 
 async def _notify_episode_editors(db: AsyncSession, ep: "Episode", msg: str, body: str | None = None):
     """Notify editors who have touched this episode."""
-    from app.models.audit import AuditLog
     editor_ids = {r.user_id for r in (await db.execute(
-        select(AuditLog).where(AuditLog.entity == "episode", AuditLog.entity_id == ep.id)
+        select(AuditLog).where(
+            AuditLog.entity == "episode", AuditLog.entity_id == ep.id,
+            AuditLog.action.not_in(ADMIN_ONLY_ACTIONS),
+        )
     )).scalars().all() if r.user_id}
     for uid in editor_ids:
         db.add(Notification(user_id=uid, title=msg, body=body, entity_type="episode", entity_id=ep.id))
+
+
+async def _require_opened(db: AsyncSession, current: User, eid: int) -> None:
+    """Reviewers must open the cue sheet before they can approve, reject or suggest changes."""
+    if current.role == UserRole.REVIEWER and eid not in await reviewer_opened_ids(db, current.id, [eid]):
+        raise HTTPException(409, "Open the cue sheet before reviewing it.")
+
+
+@router.post("/{eid}/open")
+async def open_for_review(eid: int, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+    """Records a reviewer opening a submitted cue sheet (admin-only activity) and unlocks review."""
+    ep = await db.get(Episode, eid)
+    if not ep:
+        raise HTTPException(404)
+    if current.role != UserRole.REVIEWER:
+        return {"opened": True, "recorded": False}
+    if eid in await reviewer_opened_ids(db, current.id, [eid]):
+        return {"opened": True, "recorded": False}
+    await log_activity(db, current.id, REVIEW_OPEN, "episode", eid, "Opened cue sheet for review")
+    await db.commit()
+    return {"opened": True, "recorded": True}
 
 
 @router.post("/{eid}/submit", response_model=EpisodeOut, dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.EDITOR))])
@@ -98,6 +161,7 @@ async def approve_episode(eid: int, db: AsyncSession = Depends(get_db), current:
     ep = await db.get(Episode, eid)
     if not ep:
         raise HTTPException(404)
+    await _require_opened(db, current, eid)
     ep.status = "approved"
     ep.rejection_note = None
     await log_activity(db, current.id, "approve", "episode", eid, "Approved episode")
@@ -112,6 +176,7 @@ async def reject_episode(eid: int, payload: ReviewNoteIn, db: AsyncSession = Dep
     ep = await db.get(Episode, eid)
     if not ep:
         raise HTTPException(404)
+    await _require_opened(db, current, eid)
     if not payload.note.strip():
         raise HTTPException(400, "Rejection note required")
     ep.status = "rejected"
@@ -128,6 +193,7 @@ async def suggest_changes(eid: int, payload: ReviewNoteIn, db: AsyncSession = De
     ep = await db.get(Episode, eid)
     if not ep:
         raise HTTPException(404)
+    await _require_opened(db, current, eid)
     if not payload.note.strip():
         raise HTTPException(400, "Suggestion note required")
     ep.status = "edited"

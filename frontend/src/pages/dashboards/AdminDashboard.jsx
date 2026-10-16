@@ -3,11 +3,16 @@ import {
   Users, Tv, CheckCircle2, Clock, Search, X, Trash2,
   UserCog, Music2, FileText, ChevronLeft, ChevronRight,
   CalendarDays, History, ArrowLeft, Layers, ChevronDown, Film, Pencil, ShieldCheck,
+  LogIn, LogOut, KeyRound, Lock,
 } from "lucide-react";
-import { C, FONTS } from "../../styles/palette";
+import { C, FONTS, alpha, T } from "../../styles/palette";
+import Select from "../../components/Select";
 import DashboardShell from "./DashboardShell";
 import ProjectsTab from "./ProjectsTab";
-import { api, tokenStore, userStore } from "../../utils/api";
+import { api, userStore } from "../../utils/api";
+import PasswordInput, { PasswordRules } from "../../components/PasswordInput";
+import { isStrongPassword } from "../../utils/password";
+import { ACTION_LABEL, fmtDateTime, timeAgo } from "../../utils/format";
 import { showAlert, showConfirm } from "../../components/Dialog";
 import { useApp } from "../../context/AppContext";
 
@@ -17,11 +22,11 @@ const ROLE_LABEL = {
   reviewer: "Reviewer", editor: "Editor", viewer: "Viewer",
 };
 const ROLE_COLOR = {
-  admin:          { bg: "#EDE7F6", color: "#4527A0" },
-  work_delegator: { bg: "#E3F2FD", color: "#1565C0" },
-  reviewer:       { bg: "#E8F5E9", color: "#2E7D32" },
-  editor:         { bg: "#FFF3E0", color: "#E65100" },
-  viewer:         { bg: "#F3F4F6", color: "#374151" },
+  admin:          { bg: T.violetBg, color: T.violet },
+  work_delegator: { bg: T.blueBg, color: T.blue },
+  reviewer:       { bg: T.greenBg, color: T.green },
+  editor:         { bg: T.orangeBg, color: T.orange },
+  viewer:         { bg: T.grayBg, color: T.gray },
 };
 
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -37,7 +42,7 @@ function MiniPager({ entries, children, pageSize = PG }) {
     <>
       {children(paged, (page - 1) * pageSize)}
       {total > 1 && (
-        <div className="px-4 py-2 border-t flex items-center justify-between" style={{ borderColor: C.mint4 + "44" }}>
+        <div className="px-4 py-2 border-t flex items-center justify-between" style={{ borderColor: alpha(C.mint4, "44") }}>
           <span className="text-xs" style={{ color: C.sub }}>Page {page}/{total} · {entries.length} entries</span>
           <div className="flex gap-1">
             <button onClick={() => setPage(1)} disabled={page === 1} className="px-1.5 py-0.5 text-xs rounded disabled:opacity-30 hover:bg-black/5" style={{ color: C.sub }}>«</button>
@@ -57,9 +62,9 @@ function StatCard({ icon: Icon, label, value, sub, color, onClick }) {
     <div
       onClick={onClick}
       className={`rounded-xl border p-5 flex items-start gap-4 ${onClick ? "cursor-pointer hover:shadow-md hover:border-opacity-80 transition-all" : ""}`}
-      style={{ background: C.white, borderColor: onClick ? (color || C.mint1) + "66" : C.mint1 + "44" }}
+      style={{ background: C.white, borderColor: onClick ? alpha(color || C.mint1, "66") : alpha(C.mint1, "44") }}
     >
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: (color || C.mint4) + "33" }}>
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: alpha(color || C.mint4, "33") }}>
         <Icon className="w-5 h-5" style={{ color: color || C.dark }} />
       </div>
       <div className="flex-1 min-w-0">
@@ -106,8 +111,8 @@ function OverviewCalendar() {
   const weekTgts   = selectedMonth ? (calData?.week_target?.[String(selectedMonth)] ?? {}) : {};
 
   return (
-    <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-      <div className="px-5 py-3 border-b flex items-center justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "33" }}>
+    <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+      <div className="px-5 py-3 border-b flex items-center justify-between" style={{ borderColor: C.mint4, background: alpha(C.mint4, "33") }}>
         <div className="font-semibold text-sm" style={{ fontFamily: FONTS.serif, color: C.dark }}>Activity Calendar</div>
         <div className="flex gap-1">
           {years.map((y) => (
@@ -136,32 +141,32 @@ function OverviewCalendar() {
                     const hasActivity = mt.sub > 0 || mt.app > 0 || mt.soc > 0;
                     return (
                       <button key={m} onClick={() => setSelectedMonth(isSel ? null : m)}
-                        className="flex-1 rounded-xl border p-2.5 text-left transition-all hover:shadow-sm"
+                        className={`${isSel ? "cs-dark " : ""}flex-1 rounded-xl border p-2.5 text-left transition-all hover:shadow-sm`}
                         style={{
-                          background:  isSel ? C.dark : isCurrent ? C.mint4 + "cc" : C.white,
-                          borderColor: isSel ? C.mint1 : isCurrent ? C.mint1 : hasActivity ? C.mint1 + "77" : C.mint1 + "33",
+                          background:  isSel ? C.dark : isCurrent ? alpha(C.mint4, "cc") : C.white,
+                          borderColor: isSel ? C.mint1 : isCurrent ? C.mint1 : hasActivity ? alpha(C.mint1, "77") : alpha(C.mint1, "33"),
                           borderWidth: isCurrent && !isSel ? 2 : 1,
                         }}>
                         <div className="flex items-center justify-between mb-2">
-                          <div className="text-[10px] font-bold uppercase tracking-widest" style={{ color: isSel ? C.mint1 : C.sub }}>
+                          <div className="text-[0.625rem] font-bold uppercase tracking-widest" style={{ color: isSel ? C.mint1 : C.sub }}>
                             {MONTH_NAMES[m - 1]}
                           </div>
                           {isCurrent && !isSel && (
-                            <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full" style={{ background: C.mint1, color: C.dark }}>Now</span>
+                            <span className="text-[0.5rem] font-bold uppercase px-1.5 py-0.5 rounded-full" style={{ background: C.mint1, color: C.dark }}>Now</span>
                           )}
                         </div>
                         <div className="grid grid-cols-3 gap-x-2 gap-y-1.5">
                           {[
-                            { v: mt.target, l: "Tgt",  c: isSel ? "#fde68a" : "#E65100" },
+                            { v: mt.target, l: "Tgt",  c: isSel ? "#fde68a" : T.orange },
                             { v: mt.sub,    l: "Sub",  c: isSel ? C.mint4   : C.dark    },
                             { v: mt.app,    l: "Rev",  c: isSel ? "#86efac" : C.ok      },
                             { v: mt.pend,   l: "Pend", c: isSel ? "#fca5a5" : C.danger  },
-                            { v: mt.soc,    l: "Soc",  c: isSel ? "#d8b4fe" : "#7B1FA2" },
-                            { v: mt.acc,    l: "Acc",  c: isSel ? "#6ee7b7" : "#0D9488" },
+                            { v: mt.soc,    l: "Soc",  c: isSel ? "#d8b4fe" : T.purple },
+                            { v: mt.acc,    l: "Acc",  c: isSel ? "#6ee7b7" : T.teal },
                           ].map(({ v, l, c }) => (
                             <div key={l}>
                               <div className="text-sm font-bold leading-none" style={{ color: c }}>{v}</div>
-                              <div className="text-[9px] font-semibold uppercase mt-0.5" style={{ color: c + "bb" }}>{l}</div>
+                              <div className="text-[0.5625rem] font-semibold uppercase mt-0.5" style={{ color: alpha(c, "bb") }}>{l}</div>
                             </div>
                           ))}
                         </div>
@@ -170,20 +175,20 @@ function OverviewCalendar() {
                   })}
                   {/* Quarter */}
                   <div className="w-20 shrink-0 rounded-xl border p-2.5 flex flex-col justify-center"
-                    style={{ background: C.mint4 + "33", borderColor: C.mint4 + "55" }}>
-                    <div className="text-[10px] font-bold uppercase tracking-widest mb-1.5 text-center" style={{ color: C.sub }}>Q{qi+1}</div>
+                    style={{ background: alpha(C.mint4, "33"), borderColor: alpha(C.mint4, "55") }}>
+                    <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-1.5 text-center" style={{ color: C.sub }}>Q{qi+1}</div>
                     <div className="grid grid-cols-2 gap-1 text-center">
                       {[
-                        { v: qt.target, c: "#E65100", l: "Tgt"  },
+                        { v: qt.target, c: T.orange, l: "Tgt"  },
                         { v: qt.sub,    c: C.dark,    l: "Sub"  },
                         { v: qt.app,    c: C.ok,      l: "Rev"  },
                         { v: qt.pend,   c: C.danger,  l: "Pend" },
-                        { v: qt.soc,    c: "#7B1FA2", l: "Soc"  },
-                        { v: qt.acc,    c: "#0D9488", l: "Acc"  },
+                        { v: qt.soc,    c: T.purple, l: "Soc"  },
+                        { v: qt.acc,    c: T.teal, l: "Acc"  },
                       ].map(({ v, c, l }) => (
                         <div key={l}>
                           <div className="text-sm font-bold" style={{ color: c }}>{v}</div>
-                          <div className="text-[9px] font-semibold uppercase mt-0.5" style={{ color: c + "aa" }}>{l}</div>
+                          <div className="text-[0.5625rem] font-semibold uppercase mt-0.5" style={{ color: alpha(c, "aa") }}>{l}</div>
                         </div>
                       ))}
                     </div>
@@ -195,51 +200,51 @@ function OverviewCalendar() {
         )}
 
         {/* Legend */}
-        <div className="mt-3 flex gap-4 flex-wrap pt-3 border-t" style={{ borderColor: C.mint4 + "55" }}>
+        <div className="mt-3 flex gap-4 flex-wrap pt-3 border-t" style={{ borderColor: alpha(C.mint4, "55") }}>
           {[
-            { l: "Target",      c: "#E65100" }, { l: "Submitted",     c: C.dark    },
+            { l: "Target",      c: T.orange }, { l: "Submitted",     c: C.dark    },
             { l: "Reviewed",    c: C.ok      }, { l: "Pending",       c: C.danger  },
-            { l: "To Society",  c: "#7B1FA2" }, { l: "Soc. Accepted", c: "#0D9488" },
+            { l: "To Society",  c: T.purple }, { l: "Soc. Accepted", c: T.teal },
           ].map(({ l, c }) => (
             <div key={l} className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full" style={{ background: c }} />
-              <span className="text-[10px]" style={{ color: C.sub }}>{l}</span>
+              <span className="text-[0.625rem]" style={{ color: C.sub }}>{l}</span>
             </div>
           ))}
         </div>
 
         {/* Month detail */}
         {selectedMonth && selData !== null && selMt && (
-          <div className="mt-4 rounded-xl border overflow-hidden" style={{ borderColor: C.mint1 + "44" }}>
+          <div className="mt-4 rounded-xl border overflow-hidden" style={{ borderColor: alpha(C.mint1, "44") }}>
             <div className="px-4 py-3 border-b flex items-center justify-between"
-              style={{ borderColor: C.mint4, background: C.mint4 + "33" }}>
+              style={{ borderColor: C.mint4, background: alpha(C.mint4, "33") }}>
               <div className="font-semibold text-sm" style={{ color: C.dark }}>
                 {MONTH_FULL[selectedMonth - 1]} {selectedYear}
               </div>
               <div className="flex gap-4 flex-wrap justify-end">
                 {[
-                  { l: "Target",      v: selMt.target, c: "#E65100" },
+                  { l: "Target",      v: selMt.target, c: T.orange },
                   { l: "Submitted",   v: selMt.sub,    c: C.dark    },
                   { l: "Reviewed",    v: selMt.app,    c: C.ok      },
                   { l: "Pending",     v: selMt.pend,   c: C.danger  },
-                  { l: "To Society",  v: selMt.soc,    c: "#7B1FA2" },
-                  { l: "Soc. Accepted", v: selMt.acc,  c: "#0D9488" },
+                  { l: "To Society",  v: selMt.soc,    c: T.purple },
+                  { l: "Soc. Accepted", v: selMt.acc,  c: T.teal },
                 ].map(({ l, v, c }) => (
                   <div key={l} className="text-center">
                     <div className="text-base font-bold" style={{ color: c }}>{v}</div>
-                    <div className="text-[10px] font-semibold uppercase tracking-wide mt-0.5" style={{ color: c + "bb" }}>{l}</div>
+                    <div className="text-[0.625rem] font-semibold uppercase tracking-wide mt-0.5" style={{ color: alpha(c, "bb") }}>{l}</div>
                   </div>
                 ))}
               </div>
             </div>
             <div className="p-4">
-              <div className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: C.sub }}>Weekly Breakdown</div>
+              <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-3" style={{ color: C.sub }}>Weekly Breakdown</div>
               {Object.entries(selData.weeks || {}).length === 0 ? (
                 <div className="text-xs text-center py-3" style={{ color: C.sub }}>No weekly data</div>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b" style={{ borderColor: C.mint4 + "88" }}>
+                    <tr className="border-b" style={{ borderColor: alpha(C.mint4, "88") }}>
                       {["Week","Target","Submitted","Reviewed","Pending"].map((h) => (
                         <th key={h} className="text-left pb-2 pr-6 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>{h}</th>
                       ))}
@@ -252,9 +257,9 @@ function OverviewCalendar() {
                       const wTgt  = weekTgts[wk]  || 0;
                       const wPend = Math.max(0, wSub - wApp);
                       return (
-                        <tr key={wk} className="border-b last:border-0" style={{ borderColor: C.mint4 + "44" }}>
+                        <tr key={wk} className="border-b last:border-0" style={{ borderColor: alpha(C.mint4, "44") }}>
                           <td className="py-2 pr-6 font-semibold" style={{ color: C.dark }}>Week {wk}</td>
-                          <td className="py-2 pr-6 font-bold" style={{ color: "#E65100" }}>{wTgt || "—"}</td>
+                          <td className="py-2 pr-6 font-bold" style={{ color: T.orange }}>{wTgt || "—"}</td>
                           <td className="py-2 pr-6 font-bold" style={{ color: C.dark }}>{wSub}</td>
                           <td className="py-2 pr-6 font-bold" style={{ color: C.ok }}>{wApp}</td>
                           <td className="py-2 font-bold" style={{ color: wPend > 0 ? C.danger : C.ok }}>{wPend}</td>
@@ -285,7 +290,7 @@ function OverviewTab({ navigate }) {
       <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <StatCard icon={Tv}           label="Total Serials"  value={stats.total_serials ?? stats.total_projects}
           onClick={() => navigate("projects", { projectSubTab: "serial" })} />
-        <StatCard icon={Film}         label="Total Movies"   value={stats.total_movies ?? 0} color="#7B1FA2"
+        <StatCard icon={Film}         label="Total Movies"   value={stats.total_movies ?? 0} color={T.purple}
           onClick={() => navigate("projects", { projectSubTab: "movie" })} />
         <StatCard icon={CheckCircle2} label="Approved"       value={stats.episodes.approved}  sub="episodes" color={C.ok}
           onClick={() => navigate("activity", { activityTab: "editors" })} />
@@ -293,24 +298,24 @@ function OverviewTab({ navigate }) {
           onClick={() => navigate("activity", { activityTab: "editors" })} />
         <StatCard icon={Users}        label="Total Users"    value={totalUsers}
           onClick={() => navigate("users")} />
-        <StatCard icon={FileText}     label="Clients"        value="View" color="#1565C0"
+        <StatCard icon={FileText}     label="Clients"        value="View" color={T.blue}
           onClick={() => navigate("activity", { activityTab: "clients" })} />
       </div>
 
       {/* Episodes by Status + Users by Role */}
       <div className="grid grid-cols-2 gap-6">
-        <div className="rounded-xl border p-5" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border p-5" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <h4 className="font-semibold mb-4" style={{ fontFamily: FONTS.serif }}>Episodes by Status</h4>
           {[
             { label: "Approved",  val: stats.episodes.approved,  color: C.ok,      tab: "activity", activityTab: "editors" },
-            { label: "Submitted", val: stats.episodes.submitted, color: "#7B1FA2", tab: "activity", activityTab: "editors" },
+            { label: "Submitted", val: stats.episodes.submitted, color: T.purple, tab: "activity", activityTab: "editors" },
             { label: "Rejected",  val: stats.episodes.rejected,  color: C.danger,  tab: "activity", activityTab: "editors" },
             { label: "Pending",   val: stats.episodes.pending,   color: C.sub,     tab: "activity", activityTab: "editors" },
           ].map((r) => (
             <div key={r.label}
               onClick={() => navigate(r.tab, { activityTab: r.activityTab })}
               className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-green-50/30 rounded px-2 -mx-2 transition"
-              style={{ borderColor: C.mint4 + "55" }}>
+              style={{ borderColor: alpha(C.mint4, "55") }}>
               <span className="text-sm" style={{ color: C.dark }}>{r.label}</span>
               <div className="flex items-center gap-2">
                 <span className="font-bold" style={{ color: r.color }}>{r.val}</span>
@@ -319,13 +324,13 @@ function OverviewTab({ navigate }) {
             </div>
           ))}
         </div>
-        <div className="rounded-xl border p-5" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border p-5" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <h4 className="font-semibold mb-4" style={{ fontFamily: FONTS.serif }}>Users by Role</h4>
           {ROLES.map((r) => (
             <div key={r}
               onClick={() => navigate("users", { usersRoleFilter: r })}
               className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-green-50/30 rounded px-2 -mx-2 transition"
-              style={{ borderColor: C.mint4 + "55" }}>
+              style={{ borderColor: alpha(C.mint4, "55") }}>
               <span className="text-xs px-2 py-0.5 rounded font-medium" style={{ background: ROLE_COLOR[r]?.bg, color: ROLE_COLOR[r]?.color }}>{ROLE_LABEL[r]}</span>
               <div className="flex items-center gap-2">
                 <span className="font-bold" style={{ color: C.dark }}>{stats.users_by_role[r] || 0}</span>
@@ -384,6 +389,10 @@ function UsersTab({ initialRoleFilter = "all" }) {
   const handleEdit = async (e) => {
     e.preventDefault();
     if (!editing.full_name.trim() || !editing.email.trim()) return;
+    if (editing.password && !isStrongPassword(editing.password)) {
+      await showAlert("The new password doesn't meet the requirements shown under the field.", { variant: "warn" });
+      return;
+    }
     setSaving(true);
     try {
       const payload = { full_name: editing.full_name, email: editing.email };
@@ -401,19 +410,18 @@ function UsersTab({ initialRoleFilter = "all" }) {
   };
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!form.email || !form.full_name || !form.password) return;
+    if (!form.email.trim() || !form.full_name.trim() || !form.password) return;
+    if (!isStrongPassword(form.password)) {
+      await showAlert("The password doesn't meet the requirements shown under the field.", { variant: "warn" });
+      return;
+    }
     setSaving(true);
     try {
-      const res = await fetch(`${api.base || ""}/api/users/`, {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenStore.get()}` },
-        body: JSON.stringify(form),
-      });
-      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || `${res.status}`); }
-      const newU = await res.json();
+      const newU = await api.createUser(form);
       setUsers((p) => [...p, newU]);
       setForm({ email: "", full_name: "", password: "", role: "editor" });
       setCreating(false);
+      await showAlert(`${newU.full_name} can now sign in with the password you set. They'll be asked to choose their own password on first sign-in.`, { title: "User created", variant: "success" });
     } catch (ex) { await showAlert(ex.message || "Create failed", { variant: "error" }); }
     finally { setSaving(false); }
   };
@@ -430,20 +438,20 @@ function UsersTab({ initialRoleFilter = "all" }) {
   });
 
   const inp = "px-3 py-2 rounded-lg text-sm border focus:outline-none";
-  const inpStyle = { borderColor: C.mint1 + "44", color: C.dark };
+  const inpStyle = { borderColor: alpha(C.mint1, "44"), color: C.dark };
 
   return (
     <div>
       {/* Role filter tabs */}
-      <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+      <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {roleTabs.map((t) => {
           const count = t.key === "all" ? users.length : users.filter((u) => u.role === t.key).length;
           return (
             <button key={t.key} onClick={() => setRoleFilter(t.key)}
-              className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5"
-              style={{ background: roleFilter === t.key ? C.dark : "transparent", color: roleFilter === t.key ? C.mint4 : C.sub }}>
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
+              style={{ background: roleFilter === t.key ? C.dark : "transparent", color: roleFilter === t.key ? C.mint4 : C.mid }}>
               {t.label}
-              <span className="text-[10px] opacity-70">({count})</span>
+              <span className="text-[0.625rem] opacity-70">({count})</span>
             </button>
           );
         })}
@@ -454,7 +462,7 @@ function UsersTab({ initialRoleFilter = "all" }) {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: C.sub }} />
           <input type="text" value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
             placeholder="Search users…" className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border focus:outline-none"
-            style={{ borderColor: C.mint1 + "44", background: C.white, color: C.dark }} />
+            style={{ borderColor: alpha(C.mint1, "44"), background: C.white, color: C.dark }} />
           {searchQ && <button onClick={() => setSearchQ("")} className="absolute right-2 top-1/2 -translate-y-1/2"><X className="w-3 h-3" style={{ color: C.sub }} /></button>}
         </div>
         <button onClick={() => { setEditing(null); setCreating(true); }} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90" style={{ background: C.dark, color: C.mint4 }}>
@@ -463,16 +471,22 @@ function UsersTab({ initialRoleFilter = "all" }) {
       </div>
 
       {creating && (
-        <div className="rounded-xl border p-5 mb-4" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border p-5 mb-4" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <h4 className="font-semibold mb-3" style={{ fontFamily: FONTS.serif }}>New User</h4>
-          <form onSubmit={handleCreate} className="grid grid-cols-2 gap-3">
-            <input value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} placeholder="Full name" className={inp} style={inpStyle} />
-            <input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="Email" type="email" className={inp} style={inpStyle} />
-            <input value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Password" type="password" className={inp} style={inpStyle} />
-            <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className={inp} style={inpStyle}>
+          <form onSubmit={handleCreate} className="grid grid-cols-2 gap-x-3 gap-y-3">
+            <input value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} placeholder="Full name" required className={inp} style={inpStyle} />
+            <input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="Email" type="email" required className={inp} style={inpStyle} />
+            <div>
+              <PasswordInput value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Temporary password" autoComplete="new-password" required className={inp} style={inpStyle} />
+              <div className="mt-2 px-1"><PasswordRules value={form.password} /></div>
+            </div>
+            <Select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className={`w-full ${inp} self-start`} style={inpStyle}>
               {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-            </select>
-            <div className="col-span-2 flex gap-2 justify-end">
+            </Select>
+            <div className="col-span-2 flex items-center gap-2 justify-end">
+              <span className="mr-auto text-xs flex items-center gap-1.5" style={{ color: C.sub }}>
+                <KeyRound className="w-3.5 h-3.5" /> The user must set their own password on first sign-in.
+              </span>
               <button type="button" onClick={() => setCreating(false)} className="px-4 py-2 text-sm rounded-lg" style={{ color: C.sub }}>Cancel</button>
               <button type="submit" disabled={saving} className="px-4 py-2 text-sm rounded-lg font-medium disabled:opacity-50" style={{ background: C.dark, color: C.mint4 }}>
                 {saving ? "Creating…" : "Create"}
@@ -483,12 +497,15 @@ function UsersTab({ initialRoleFilter = "all" }) {
       )}
 
       {editing && (
-        <div className="rounded-xl border p-5 mb-4" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border p-5 mb-4" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <h4 className="font-semibold mb-3" style={{ fontFamily: FONTS.serif }}>Edit User</h4>
-          <form onSubmit={handleEdit} className="grid grid-cols-3 gap-3">
+          <form onSubmit={handleEdit} className="grid grid-cols-3 gap-3 items-start">
             <input value={editing.full_name} onChange={(e) => setEditing((f) => ({ ...f, full_name: e.target.value }))} placeholder="Full name" className={inp} style={inpStyle} />
             <input value={editing.email} onChange={(e) => setEditing((f) => ({ ...f, email: e.target.value }))} placeholder="Email" type="email" className={inp} style={inpStyle} />
-            <input value={editing.password} onChange={(e) => setEditing((f) => ({ ...f, password: e.target.value }))} placeholder="New password (leave blank to keep)" type="password" autoComplete="new-password" className={inp} style={inpStyle} />
+            <div>
+              <PasswordInput value={editing.password} onChange={(e) => setEditing((f) => ({ ...f, password: e.target.value }))} placeholder="New password (leave blank to keep)" autoComplete="new-password" className={inp} style={inpStyle} />
+              {editing.password && <div className="mt-2 px-1"><PasswordRules value={editing.password} /></div>}
+            </div>
             <div className="col-span-3 flex gap-2 justify-end">
               <button type="button" onClick={() => setEditing(null)} className="px-4 py-2 text-sm rounded-lg" style={{ color: C.sub }}>Cancel</button>
               <button type="submit" disabled={saving} className="px-4 py-2 text-sm rounded-lg font-medium disabled:opacity-50" style={{ background: C.dark, color: C.mint4 }}>
@@ -499,10 +516,10 @@ function UsersTab({ initialRoleFilter = "all" }) {
         </div>
       )}
 
-      <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+      <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b text-[10px] uppercase tracking-wider" style={{ borderColor: C.mint4, color: C.sub, background: C.mint4 + "33" }}>
+            <tr className="border-b text-[0.625rem] uppercase tracking-wider" style={{ borderColor: C.mint4, color: C.sub, background: alpha(C.mint4, "33") }}>
               <th className="text-left px-5 py-3">User</th>
               <th className="text-left px-5 py-3">Email</th>
               <th className="text-left px-5 py-3">Role</th>
@@ -517,9 +534,18 @@ function UsersTab({ initialRoleFilter = "all" }) {
                 {roleFilter === "all" ? "No users found" : `No ${ROLE_LABEL[roleFilter]}s found`}
               </td></tr>
             )}
-            {filtered.map((u) => (
-              <tr key={u.id} className="border-b last:border-0 hover:bg-green-50/30" style={{ borderColor: C.mint4 + "55" }}>
-                <td className="px-5 py-3 font-medium" style={{ color: C.dark }}>{u.full_name}</td>
+            {filtered.map((u) => {
+              // Nobody can delete/deactivate the protected (super) admin or their own account.
+              const isSelf = u.id === currentUser?.id;
+              const locked = u.is_protected || isSelf;
+              const lockReason = isSelf ? "You can't delete or deactivate your own account" : "This admin account is protected";
+              return (
+              <tr key={u.id} className="border-b last:border-0 hover:bg-green-50/30" style={{ borderColor: alpha(C.mint4, "55") }}>
+                <td className="px-5 py-3 font-medium" style={{ color: C.dark }}>
+                  {u.full_name}
+                  {isSelf && <span className="ml-2 text-[0.625rem] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: C.mint4, color: C.sub }}>You</span>}
+                  {u.must_change_password && <span className="ml-2 text-[0.625rem] font-semibold px-1.5 py-0.5 rounded" style={{ background: T.orangeBg, color: T.orange }} title="Hasn't set their own password yet">Password pending</span>}
+                </td>
                 <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>{u.email}</td>
                 <td className="px-5 py-3">
                   {/* is_super_admin only ever arrives for the super admin's own session */}
@@ -528,33 +554,43 @@ function UsersTab({ initialRoleFilter = "all" }) {
                       <ShieldCheck className="w-3 h-3" />Super Admin
                     </span>
                   ) : (
-                    <select value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                      className="text-xs px-2 py-1 rounded-lg focus:outline-none"
-                      style={{ background: ROLE_COLOR[u.role]?.bg, color: ROLE_COLOR[u.role]?.color, border: "none" }}>
+                    <Select value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                      disabled={u.is_protected || u.id === currentUser?.id}
+                      title={u.is_protected ? "This admin account is protected" : u.id === currentUser?.id ? "You can't change your own role" : undefined}
+                      className="text-xs px-2.5 py-1 rounded-lg focus:outline-none"
+                      style={{ background: ROLE_COLOR[u.role]?.bg, color: ROLE_COLOR[u.role]?.color, border: `1px solid ${alpha(ROLE_COLOR[u.role]?.color, "33")}`, fontWeight: 600 }}>
                       {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                    </select>
+                    </Select>
                   )}
                 </td>
                 <td className="px-5 py-3 text-center">
                   <button onClick={() => handleToggleActive(u.id, !u.is_active)}
-                    className="w-8 h-5 rounded-full transition-colors relative"
-                    style={{ background: u.is_active ? C.ok : "#d1d5db" }}>
-                    <div className="w-3 h-3 bg-white rounded-full absolute top-1 transition-all" style={{ left: u.is_active ? "calc(100% - 16px)" : "4px" }} />
+                    disabled={locked}
+                    title={locked ? lockReason : u.is_active ? "Deactivate" : "Activate"}
+                    className="w-9 h-5 rounded-full transition-colors relative disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: u.is_active ? C.ok : T.toggleOff }}>
+                    <div className="w-3.5 h-3.5 bg-white rounded-full absolute top-[0.1875rem] transition-all" style={{ left: u.is_active ? "calc(100% - 1.0625rem)" : "0.1875rem" }} />
                   </button>
                 </td>
                 <td className="px-5 py-3 text-right whitespace-nowrap">
-                  {isSuperAdmin && (
-                    <button onClick={() => { setCreating(false); setEditing({ id: u.id, full_name: u.full_name, email: u.email, password: "" }); }}
-                      className="p-1.5 rounded-lg hover:bg-green-50" title="Edit user / change password">
-                      <Pencil className="w-3.5 h-3.5" style={{ color: C.dark }} />
+                  <div className="inline-flex items-center gap-1">
+                    {isSuperAdmin && (
+                      <button onClick={() => { setCreating(false); setEditing({ id: u.id, full_name: u.full_name, email: u.email, password: "" }); }}
+                        className="p-1.5 rounded-lg hover:bg-green-50" title="Edit user / change password">
+                        <Pencil className="w-3.5 h-3.5" style={{ color: C.dark }} />
+                      </button>
+                    )}
+                    <button onClick={() => handleDelete(u.id, u.full_name)}
+                      disabled={locked}
+                      className="p-1.5 rounded-lg hover:bg-red-50 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      title={locked ? lockReason : "Delete user"}>
+                      {locked ? <Lock className="w-3.5 h-3.5" style={{ color: C.muted }} /> : <Trash2 className="w-3.5 h-3.5" style={{ color: C.danger }} />}
                     </button>
-                  )}
-                  <button onClick={() => handleDelete(u.id, u.full_name)} className="p-1.5 rounded-lg hover:bg-red-50" title="Delete user">
-                    <Trash2 className="w-3.5 h-3.5" style={{ color: C.danger }} />
-                  </button>
+                  </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -616,8 +652,8 @@ function BGComposerTab() {
     ) : (
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b text-[10px] uppercase tracking-wider"
-            style={{ borderColor: C.mint4, color: C.sub, background: C.mint4 + "22" }}>
+          <tr className="border-b text-[0.625rem] uppercase tracking-wider"
+            style={{ borderColor: C.mint4, color: C.sub, background: alpha(C.mint4, "22") }}>
             <th className="text-left px-5 py-2">{resTab === "movie" ? "Movie" : "Serial"}</th>
             <th className="text-left px-5 py-2">BG Composer</th>
             <th className="text-left px-5 py-2">Language · Channel</th>
@@ -628,7 +664,7 @@ function BGComposerTab() {
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} className="border-b last:border-0 hover:bg-green-50/20"
-              style={{ borderColor: C.mint4 + "55" }}>
+              style={{ borderColor: alpha(C.mint4, "55") }}>
               <td className="px-5 py-3 font-medium" style={{ color: C.dark }}>{r.title}</td>
               <td className="px-5 py-3" style={{ color: C.dark }}>{r.bg_music_composer}</td>
               <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>
@@ -657,12 +693,12 @@ function BGComposerTab() {
             onBlur={() => setTimeout(() => setShowSug(false), 150)}
             placeholder="Search by BG music composer name…"
             className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border focus:outline-none"
-            style={{ borderColor: C.mint1 + "44", background: C.white, color: C.dark }}
+            style={{ borderColor: alpha(C.mint1, "44"), background: C.white, color: C.dark }}
           />
           {/* Suggestions dropdown */}
           {showSug && suggestions.length > 0 && (
             <div className="absolute left-0 right-0 z-30 mt-1 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto"
-              style={{ background: C.white, border: `1px solid ${C.mint1}44` }}>
+              style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "44")}` }}>
               {suggestions.map((name) => (
                 <button key={name}
                   onMouseDown={() => { setQ(name); setShowSug(false); search(name); }}
@@ -684,16 +720,16 @@ function BGComposerTab() {
 
       {/* Results */}
       {searched && (
-        <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           {/* Header */}
           <div className="px-5 py-3 border-b flex items-center justify-between"
-            style={{ borderColor: C.mint4, background: C.mint4 + "66" }}>
+            style={{ borderColor: C.mint4, background: alpha(C.mint4, "66") }}>
             <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: C.sub }}>
               {results.length} result{results.length !== 1 ? "s" : ""} for "{searchedQ}"
             </span>
             <div className="flex gap-3 text-xs" style={{ color: C.sub }}>
               <span>Serials: <strong style={{ color: C.dark }}>{serialResults.length}</strong></span>
-              <span>Movies: <strong style={{ color: "#7B1FA2" }}>{movieResults.length}</strong></span>
+              <span>Movies: <strong style={{ color: T.purple }}>{movieResults.length}</strong></span>
             </div>
           </div>
 
@@ -704,7 +740,7 @@ function BGComposerTab() {
           ) : (
             <>
               {/* Serial / Movie tabs */}
-              <div className="flex border-b" style={{ borderColor: C.mint4 + "55" }}>
+              <div className="flex border-b" style={{ borderColor: alpha(C.mint4, "55") }}>
                 {[
                   { key: "serial", label: `Serials (${serialResults.length})`, icon: Layers },
                   { key: "movie",  label: `Movies (${movieResults.length})`,   icon: Film   },
@@ -713,7 +749,7 @@ function BGComposerTab() {
                     className="flex items-center gap-1.5 px-5 py-2.5 text-xs font-medium transition-all"
                     style={{
                       color:        resTab === key ? C.dark : C.sub,
-                      background:   resTab === key ? C.mint4 + "44" : "transparent",
+                      background:   resTab === key ? alpha(C.mint4, "44") : "transparent",
                       borderBottom: resTab === key ? `2px solid ${C.dark}` : "2px solid transparent",
                     }}>
                     <Icon className="w-3.5 h-3.5" />{label}
@@ -738,13 +774,13 @@ function DelegationsTab() {
   useEffect(() => { api.listDelegations().then(setDelegations).catch(() => {}).finally(() => setLoading(false)); }, []);
 
   const SS = {
-    pending:     { bg: "#FFF3E0", color: "#E65100", label: "Pending"     },
-    in_progress: { bg: "#E3F2FD", color: "#1565C0", label: "In Progress" },
-    completed:   { bg: "#E8F5E9", color: "#2E7D32", label: "Completed"   },
+    pending:     { bg: T.orangeBg, color: T.orange, label: "Pending"     },
+    in_progress: { bg: T.blueBg, color: T.blue, label: "In Progress" },
+    completed:   { bg: T.greenBg, color: T.green, label: "Completed"   },
   };
-  const thStyle   = { borderColor: C.mint4, color: C.sub, background: C.mint4 + "22" };
-  const TH        = "text-[10px] uppercase tracking-wider text-left px-4 py-2";
-  const rowBorder = { borderColor: C.mint4 + "55" };
+  const thStyle   = { borderColor: C.mint4, color: C.sub, background: alpha(C.mint4, "22") };
+  const TH        = "text-[0.625rem] uppercase tracking-wider text-left px-4 py-2";
+  const rowBorder = { borderColor: alpha(C.mint4, "55") };
 
   const serialDeleg  = delegations.filter((d) => d.work_type !== "Movie Cue Sheet");
   const movieDeleg   = delegations.filter((d) => d.work_type === "Movie Cue Sheet");
@@ -756,16 +792,16 @@ function DelegationsTab() {
     <div>
       {/* Tabs + count */}
       <div className="flex items-center gap-4 mb-4">
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: C.mint4 + "66" }}>
+        <div className="flex gap-1 p-1 rounded-xl" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
           {[
             { key: "serials", label: "Serials", icon: CalendarDays, count: serialDeleg.length },
             { key: "movies",  label: "Movies",  icon: Film,         count: movieDeleg.length  },
           ].map(({ key, label, icon: Icon, count }) => (
             <button key={key} onClick={() => setDelTab(key)}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-medium transition-all"
-              style={{ background: delTab === key ? C.dark : "transparent", color: delTab === key ? C.mint4 : C.sub }}>
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              style={{ background: delTab === key ? C.dark : "transparent", color: delTab === key ? C.mint4 : C.mid }}>
               <Icon className="w-3.5 h-3.5" />{label}
-              <span className="text-[10px] opacity-70">({count})</span>
+              <span className="text-[0.625rem] opacity-70">({count})</span>
             </button>
           ))}
         </div>
@@ -774,7 +810,7 @@ function DelegationsTab() {
         </span>
       </div>
 
-      <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+      <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
         {currentDeleg.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm" style={{ color: C.sub }}>
             No {delTab === "movies" ? "movie" : "serial"} delegations yet
@@ -789,8 +825,8 @@ function DelegationsTab() {
                     <th className={TH}>Assigned To</th>
                     <th className={TH}>Client</th>
                     {delTab === "serials" && <th className={TH}>Range</th>}
-                    <th className="text-center px-4 py-2 text-[10px] uppercase tracking-wider">Target</th>
-                    <th className="text-center px-4 py-2 text-[10px] uppercase tracking-wider">Done</th>
+                    <th className="text-center px-4 py-2 text-[0.625rem] uppercase tracking-wider">Target</th>
+                    <th className="text-center px-4 py-2 text-[0.625rem] uppercase tracking-wider">Done</th>
                     <th className={TH}>Status</th>
                   </tr>
                 </thead>
@@ -801,7 +837,7 @@ function DelegationsTab() {
                       <tr key={d.id} className="border-b last:border-0 hover:bg-green-50/30" style={rowBorder}>
                         <td className="px-4 py-3">
                           <div className="font-medium" style={{ color: C.dark }}>{d.serial_name}</div>
-                          {d.channel && <div className="text-[10px]" style={{ color: C.sub }}>{d.channel}</div>}
+                          {d.channel && <div className="text-[0.625rem]" style={{ color: C.sub }}>{d.channel}</div>}
                         </td>
                         <td className="px-4 py-3" style={{ color: C.dark }}>{d.assigned_to_name || "—"}</td>
                         <td className="px-4 py-3 text-xs" style={{ color: C.sub }}>{d.client || "—"}</td>
@@ -809,7 +845,7 @@ function DelegationsTab() {
                         <td className="px-4 py-3 text-center" style={{ color: C.dark }}>{d.week_target ?? "—"}</td>
                         <td className="px-4 py-3 text-center font-medium" style={{ color: C.ok }}>{d.completed}</td>
                         <td className="px-4 py-3">
-                          <span className="text-[10px] px-2 py-0.5 rounded font-medium" style={{ background: ss.bg, color: ss.color }}>{ss.label}</span>
+                          <span className="text-[0.625rem] px-2 py-0.5 rounded font-medium" style={{ background: ss.bg, color: ss.color }}>{ss.label}</span>
                         </td>
                       </tr>
                     );
@@ -826,21 +862,22 @@ function DelegationsTab() {
 
 // ─── Activity tab ─────────────────────────────────────────────────────────────
 const ACT_STATUS = {
-  pending:     { bg: "#FFF3E0", color: "#E65100", label: "Pending"     },
-  in_progress: { bg: "#E3F2FD", color: "#1565C0", label: "In Progress" },
-  completed:   { bg: "#E8F5E9", color: "#2E7D32", label: "Completed"   },
+  pending:     { bg: T.orangeBg, color: T.orange, label: "Pending"     },
+  in_progress: { bg: T.blueBg, color: T.blue, label: "In Progress" },
+  completed:   { bg: T.greenBg, color: T.green, label: "Completed"   },
 };
 const ACT_ACTION = {
-  approve: { bg: "#E8F5E9", color: "#2E7D32" },
-  reject:  { bg: "#FFEBEE", color: "#C62828" },
-  suggest: { bg: "#E3F2FD", color: "#1565C0" },
+  approve:     { bg: T.greenBg, color: T.green },
+  reject:      { bg: T.redBg, color: T.red },
+  suggest:     { bg: T.blueBg, color: T.blue },
+  review_open: { bg: T.purpleBg, color: T.purple2, label: "opened" },
 };
 const EP_STATUS_COLOR = {
-  approved:  { bg: "#E8F5E9", color: "#2E7D32" },
-  submitted: { bg: "#E3F2FD", color: "#1565C0" },
-  rejected:  { bg: "#FFEBEE", color: "#C62828" },
-  pending:   { bg: "#F3F4F6", color: "#6B7280" },
-  unknown:   { bg: "#F3F4F6", color: "#6B7280" },
+  approved:  { bg: T.greenBg, color: T.green },
+  submitted: { bg: T.blueBg, color: T.blue },
+  rejected:  { bg: T.redBg, color: T.red },
+  pending:   { bg: T.grayBg, color: T.grayMid },
+  unknown:   { bg: T.grayBg, color: T.grayMid },
 };
 
 // ── Calendar (same logic as WD) ───────────────────────────────────────────────
@@ -869,12 +906,12 @@ function CalendarSubTab() {
     <div className="flex gap-5">
       {/* Year sidebar */}
       <div className="w-16 shrink-0">
-        <div className="text-[10px] uppercase tracking-wider font-semibold mb-2 text-center" style={{ color: C.sub }}>Year</div>
-        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="text-[0.625rem] uppercase tracking-wider font-semibold mb-2 text-center" style={{ color: C.sub }}>Year</div>
+        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           {years.map((y) => (
             <button key={y} onClick={() => setSelectedYear(y)}
               className="w-full py-2.5 text-sm font-semibold border-b last:border-0 transition"
-              style={{ borderColor: C.mint4 + "55", background: selectedYear === y ? C.dark : "transparent", color: selectedYear === y ? C.mint4 : C.dark }}>
+              style={{ borderColor: alpha(C.mint4, "55"), background: selectedYear === y ? C.dark : "transparent", color: selectedYear === y ? C.mint4 : C.dark }}>
               {y}
             </button>
           ))}
@@ -895,35 +932,35 @@ function CalendarSubTab() {
                     const isSel = selectedMonth === m;
                     return (
                       <button key={m} onClick={() => setSelectedMonth(isSel ? null : m)}
-                        className="flex-1 rounded-xl border p-3 text-left transition-all hover:shadow-md"
-                        style={{ background: isSel ? C.dark : C.white, borderColor: isSel ? C.mint1 : C.mint1 + "44" }}>
-                        <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: isSel ? C.mint4 : C.sub }}>
+                        className={`${isSel ? "cs-dark " : ""}flex-1 rounded-xl border p-3 text-left transition-all hover:shadow-md`}
+                        style={{ background: isSel ? C.dark : C.white, borderColor: isSel ? C.mint1 : alpha(C.mint1, "44") }}>
+                        <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-2" style={{ color: isSel ? C.mint4 : C.sub }}>
                           {MONTH_NAMES[m - 1]}
                         </div>
                         <div className="flex gap-3 items-end">
                           <div>
                             <div className="text-xl font-bold leading-none" style={{ color: isSel ? C.mint4 : C.dark }}>{mt.sub}</div>
-                            <div className="text-[10px] mt-0.5" style={{ color: isSel ? C.muted : C.sub }}>↑ Sub</div>
+                            <div className="text-[0.625rem] mt-0.5" style={{ color: isSel ? C.muted : C.sub }}>↑ Sub</div>
                           </div>
                           <div>
                             <div className="text-xl font-bold leading-none" style={{ color: isSel ? "#86efac" : C.ok }}>{mt.app}</div>
-                            <div className="text-[10px] mt-0.5" style={{ color: isSel ? "#86efac" : C.ok }}>✓ App</div>
+                            <div className="text-[0.625rem] mt-0.5" style={{ color: isSel ? "#86efac" : C.ok }}>✓ App</div>
                           </div>
                         </div>
                       </button>
                     );
                   })}
                   <div className="w-20 shrink-0 rounded-xl border p-3 flex flex-col justify-center text-center"
-                    style={{ background: C.mint4 + "33", borderColor: C.mint4 + "55" }}>
-                    <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: C.sub }}>Q{qi + 1}</div>
+                    style={{ background: alpha(C.mint4, "33"), borderColor: alpha(C.mint4, "55") }}>
+                    <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-2" style={{ color: C.sub }}>Q{qi + 1}</div>
                     <div className="flex justify-center gap-2">
                       <div>
                         <div className="text-base font-bold leading-none" style={{ color: C.dark }}>{qt.sub}</div>
-                        <div className="text-[10px] mt-0.5" style={{ color: C.sub }}>↑ Sub</div>
+                        <div className="text-[0.625rem] mt-0.5" style={{ color: C.sub }}>↑ Sub</div>
                       </div>
                       <div>
                         <div className="text-base font-bold leading-none" style={{ color: C.ok }}>{qt.app}</div>
-                        <div className="text-[10px] mt-0.5" style={{ color: C.ok }}>✓ App</div>
+                        <div className="text-[0.625rem] mt-0.5" style={{ color: C.ok }}>✓ App</div>
                       </div>
                     </div>
                   </div>
@@ -934,8 +971,8 @@ function CalendarSubTab() {
         )}
 
         {selectedMonth && selData && (
-          <div className="mt-5 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-            <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: C.mint4, background: C.mint4 + "33" }}>
+          <div className="mt-5 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+            <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: C.mint4, background: alpha(C.mint4, "33") }}>
               <div className="font-semibold text-sm" style={{ color: C.dark }}>
                 {MONTH_FULL[selectedMonth - 1]} {selectedYear}
                 <span className="ml-3 text-xs font-normal" style={{ color: C.sub }}>{(selData.submitted || 0) + (selData.approved || 0)} total</span>
@@ -946,29 +983,29 @@ function CalendarSubTab() {
               </div>
             </div>
             <div className="grid grid-cols-2">
-              <div className="p-4 border-r" style={{ borderColor: C.mint4 + "44" }}>
-                <div className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: C.sub }}>Weekly Breakdown</div>
+              <div className="p-4 border-r" style={{ borderColor: alpha(C.mint4, "44") }}>
+                <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-3" style={{ color: C.sub }}>Weekly Breakdown</div>
                 {Object.entries(selData.weeks || {}).length === 0 ? (
                   <div className="text-xs" style={{ color: C.sub }}>No weekly data</div>
                 ) : Object.entries(selData.weeks || {}).sort(([a],[b]) => parseInt(a)-parseInt(b)).map(([wk, wd]) => (
-                  <div key={wk} className="py-2 border-b last:border-0" style={{ borderColor: C.mint4 + "33" }}>
+                  <div key={wk} className="py-2 border-b last:border-0" style={{ borderColor: alpha(C.mint4, "33") }}>
                     <div className="flex items-center gap-3 text-xs">
                       <span className="w-12 font-semibold" style={{ color: C.sub }}>Week {wk}</span>
                       <span style={{ color: C.dark }}>{wd.submitted || 0} sub</span>
                       <span style={{ color: C.ok }}>{wd.approved || 0} app</span>
                     </div>
                     {(wd.editors || []).length > 0 && (
-                      <div className="text-[10px] mt-1 ml-12" style={{ color: C.muted }}>{wd.editors.join(" · ")}</div>
+                      <div className="text-[0.625rem] mt-1 ml-12" style={{ color: C.muted }}>{wd.editors.join(" · ")}</div>
                     )}
                   </div>
                 ))}
               </div>
               <div className="p-4">
-                <div className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: C.sub }}>By Editor</div>
+                <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-3" style={{ color: C.sub }}>By Editor</div>
                 {Object.entries(selData.editors || {}).length === 0 ? (
                   <div className="text-xs" style={{ color: C.sub }}>No editor data</div>
                 ) : Object.entries(selData.editors || {}).sort(([,a],[,b]) => (b.submitted+b.approved)-(a.submitted+a.approved)).map(([name, stats]) => (
-                  <div key={name} className="flex items-center gap-2 py-2 border-b last:border-0 text-xs" style={{ borderColor: C.mint4 + "33" }}>
+                  <div key={name} className="flex items-center gap-2 py-2 border-b last:border-0 text-xs" style={{ borderColor: alpha(C.mint4, "33") }}>
                     <span className="flex-1 font-medium" style={{ color: C.dark }}>{name}</span>
                     <span style={{ color: C.dark }}>{stats.submitted || 0}↑</span>
                     <span style={{ color: C.ok }}>{stats.approved || 0}✓</span>
@@ -1061,21 +1098,21 @@ function EditorActivitySubTab({ editors, delegations }) {
     return [...fromApi, ...extra].sort((a, b) => a.episode_number - b.episode_number);
   })();
 
-  const thStyle   = { background: C.mint4 + "33", color: C.sub, borderColor: C.mint4 };
-  const TH        = "text-[10px] uppercase tracking-wider font-semibold px-4 py-2";
-  const rowBorder = { borderColor: C.mint4 + "44" };
+  const thStyle   = { background: alpha(C.mint4, "33"), color: C.sub, borderColor: C.mint4 };
+  const TH        = "text-[0.625rem] uppercase tracking-wider font-semibold px-4 py-2";
+  const rowBorder = { borderColor: alpha(C.mint4, "44") };
 
   return (
     <div className="grid grid-cols-3 gap-6">
       {/* Editor list */}
-      <div className="rounded-xl border overflow-hidden self-start" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-        <div className="px-4 py-3 border-b text-[10px] font-bold uppercase tracking-widest"
-          style={{ borderColor: C.mint4, background: C.mint4 + "66", color: C.sub }}>Editors ({editors.length})</div>
+      <div className="rounded-xl border overflow-hidden self-start" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+        <div className="px-4 py-3 border-b text-[0.625rem] font-bold uppercase tracking-widest"
+          style={{ borderColor: C.mint4, background: alpha(C.mint4, "66"), color: C.sub }}>Editors ({editors.length})</div>
         {editors.length === 0 && <div className="p-6 text-sm text-center" style={{ color: C.sub }}>No editors</div>}
         {editors.map((e) => (
           <button key={e.id} onClick={() => handleSelect(e.id)}
             className="w-full text-left px-4 py-3 border-b last:border-0 text-sm hover:bg-green-50/40 transition"
-            style={{ borderColor: C.mint4 + "55", background: selected === e.id ? C.mint4 + "99" : undefined, color: C.dark }}>
+            style={{ borderColor: alpha(C.mint4, "55"), background: selected === e.id ? alpha(C.mint4, "99") : undefined, color: C.dark }}>
             <div className="font-medium">{e.full_name}</div>
             <div className="text-xs" style={{ color: C.sub }}>{e.email}</div>
             <div className="text-xs mt-0.5" style={{ color: C.sub }}>{delegations.filter((d) => d.assigned_to === e.id).length} assigned</div>
@@ -1085,12 +1122,12 @@ function EditorActivitySubTab({ editors, delegations }) {
 
       {/* Right panel */}
       <div className="col-span-2">
-        {!selected && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>Select an editor</div>}
-        {selected && fetching && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>Loading…</div>}
+        {!selected && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Select an editor</div>}
+        {selected && fetching && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Loading…</div>}
         {selected && !fetching && log && (
           <>
             {/* Summary */}
-            <div className="mb-4 rounded-xl border px-5 py-3 flex items-center gap-6" style={{ background: C.mint4 + "22", borderColor: C.mint4 + "44" }}>
+            <div className="mb-4 rounded-xl border px-5 py-3 flex items-center gap-6" style={{ background: alpha(C.mint4, "22"), borderColor: alpha(C.mint4, "44") }}>
               <div>
                 <div className="text-xs font-bold uppercase tracking-widest" style={{ color: C.sub }}>{log.user?.full_name}</div>
                 <div className="text-sm mt-0.5" style={{ color: C.dark }}>
@@ -1105,16 +1142,16 @@ function EditorActivitySubTab({ editors, delegations }) {
                   const totalRejected = Object.values(episodeStats).reduce((s, v) => s + (v.rejected || 0), 0);
                   return [
                     { v: allSerialsList.length, l: "Serials",   c: C.dark    },
-                    { v: allMoviesList.length,  l: "Movies",    c: "#7B1FA2" },
-                    { v: editorTarget,          l: "Target",    c: "#E65100" },
+                    { v: allMoviesList.length,  l: "Movies",    c: T.purple },
+                    { v: editorTarget,          l: "Target",    c: T.orange },
                     { v: allSubmitted,          l: "Submitted", c: C.dark    },
                     { v: Object.values(episodeStats).reduce((s, v) => s + (v.approved || 0), 0), l: "Approved", c: C.ok },
                     { v: editorPending,         l: "Pending",   c: C.danger  },
-                    { v: totalRejected,         l: "Rejected",  c: "#C62828" },
+                    { v: totalRejected,         l: "Rejected",  c: T.red },
                   ].map(({ v, l, c }) => (
                     <div key={l}>
                       <div className="text-lg font-bold leading-none" style={{ color: c }}>{v}</div>
-                      <div className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: c + "88" }}>{l}</div>
+                      <div className="text-[0.625rem] uppercase tracking-wider mt-0.5" style={{ color: alpha(c, "88") }}>{l}</div>
                     </div>
                   ));
                 })()}
@@ -1122,15 +1159,15 @@ function EditorActivitySubTab({ editors, delegations }) {
             </div>
 
             {/* Panel tabs: Serials / Movies / History */}
-            <div className="flex gap-1 mb-4 p-1 rounded-xl" style={{ background: C.mint4 + "99" }}>
+            <div className="flex gap-1 mb-4 p-1 rounded-xl" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
               {[
                 { key: "serials", label: "Serials", icon: CalendarDays },
                 { key: "movies",  label: "Movies",  icon: Film },
                 { key: "history", label: "History", icon: History },
               ].map(({ key, label, icon: Icon }) => (
                 <button key={key} onClick={() => { setPanelTab(key); setSelectedSerial(null); setSelectedMovie(null); setHistoryYear(null); setActivityEpisode(null); }}
-                  className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: panelTab === key ? C.dark : "transparent", color: panelTab === key ? C.mint4 : C.sub }}>
+                  className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={{ background: panelTab === key ? C.dark : "transparent", color: panelTab === key ? C.mint4 : C.mid }}>
                   <Icon className="w-3.5 h-3.5" />{label}
                 </button>
               ))}
@@ -1138,7 +1175,7 @@ function EditorActivitySubTab({ editors, delegations }) {
 
             {/* ── Serials list ── */}
             {panelTab === "serials" && !selectedSerial && (
-              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                 {allSerialsList.length === 0
                   ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No serials assigned</div>
                   : allSerialsList.map((serial) => {
@@ -1149,17 +1186,17 @@ function EditorActivitySubTab({ editors, delegations }) {
                     return (
                       <button key={serial} onClick={() => { setSelectedSerial(serial); setSerialSubTab("submitted"); }}
                         className="w-full text-left px-4 py-3 border-b last:border-0 hover:bg-green-50/30 flex items-center gap-4"
-                        style={{ borderColor: C.mint4 + "44" }}>
+                        style={{ borderColor: alpha(C.mint4, "44") }}>
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate" style={{ color: C.dark }}>{serial}</div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            {deleg && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: s.bg, color: s.color }}>{s.label}</span>}
-                            {deleg?.episode_range && <span className="text-[10px]" style={{ color: C.sub }}>{deleg.episode_range}</span>}
+                            {deleg && <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium" style={{ background: s.bg, color: s.color }}>{s.label}</span>}
+                            {deleg?.episode_range && <span className="text-[0.625rem]" style={{ color: C.sub }}>{deleg.episode_range}</span>}
                           </div>
                         </div>
                         <div className="text-right shrink-0 text-xs" style={{ color: C.sub }}>
                           {group.count > 0 ? `${group.count} actions` : "No log"}
-                          {deleg && <div className="text-[10px] mt-0.5">Target: {deleg.week_target ?? "—"} · Done: {done}</div>}
+                          {deleg && <div className="text-[0.625rem] mt-0.5">Target: {deleg.week_target ?? "—"} · Done: {done}</div>}
                         </div>
                         <ChevronRight className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
                       </button>
@@ -1181,52 +1218,52 @@ function EditorActivitySubTab({ editors, delegations }) {
                   const sPending  = Math.max(0, sTarget - sSub);
                   const sRejected = serialStat?.rejected || 0;
                   return (
-                    <div className="mb-3 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-                      <div className="px-4 py-3 border-b flex items-center gap-3" style={{ borderColor: C.mint4 + "55", background: C.mint4 + "22" }}>
+                    <div className="mb-3 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+                      <div className="px-4 py-3 border-b flex items-center gap-3" style={{ borderColor: alpha(C.mint4, "55"), background: alpha(C.mint4, "22") }}>
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-sm" style={{ color: C.dark }}>{selectedSerial}</div>
                           {serialDeleg && (
                             <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: C.sub }}>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: ACT_STATUS[serialDeleg.status]?.bg, color: ACT_STATUS[serialDeleg.status]?.color }}>{ACT_STATUS[serialDeleg.status]?.label}</span>
+                              <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium" style={{ background: ACT_STATUS[serialDeleg.status]?.bg, color: ACT_STATUS[serialDeleg.status]?.color }}>{ACT_STATUS[serialDeleg.status]?.label}</span>
                               {serialDeleg.episode_range && <span>Range: {serialDeleg.episode_range}</span>}
                               {serialDeleg.client && <span>Client: {serialDeleg.client}</span>}
                             </div>
                           )}
                         </div>
                       </div>
-                      <div className="grid grid-cols-5 divide-x text-center py-3" style={{ borderColor: C.mint4 + "44" }}>
+                      <div className="grid grid-cols-5 divide-x text-center py-3" style={{ borderColor: alpha(C.mint4, "44") }}>
                         {[
-                          { l: "Target",   v: sTarget,   c: "#E65100" },
+                          { l: "Target",   v: sTarget,   c: T.orange },
                           { l: "Submitted",v: sSub,      c: C.dark    },
                           { l: "Approved", v: sApproved, c: C.ok      },
                           { l: "Pending",  v: sPending,  c: C.danger  },
-                          { l: "Rejected", v: sRejected, c: "#C62828" },
+                          { l: "Rejected", v: sRejected, c: T.red },
                         ].map(({ l, v, c }) => (
                           <div key={l} className="px-3">
                             <div className="text-xl font-bold leading-none" style={{ color: c }}>{v}</div>
-                            <div className="text-[10px] uppercase tracking-wide mt-1" style={{ color: c + "88" }}>{l}</div>
+                            <div className="text-[0.625rem] uppercase tracking-wide mt-1" style={{ color: alpha(c, "88") }}>{l}</div>
                           </div>
                         ))}
                       </div>
                     </div>
                   );
                 })()}
-                <div className="flex gap-1 mb-3 p-1 rounded-xl" style={{ background: C.mint4 + "66" }}>
+                <div className="flex gap-1 mb-3 p-1 rounded-xl" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
                   {[
                     { key: "submitted", label: `Submitted (${serialSubmitted.length})` },
                     { key: "approved",  label: `Approved (${serialStat?.approved ?? 0})` },
                     { key: "activity",  label: `Activity Log (${serialAllEntries.length})` },
                   ].map((t) => (
                     <button key={t.key} onClick={() => { setSerialSubTab(t.key); setActivityEpisode(null); }}
-                      className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all"
-                      style={{ background: serialSubTab === t.key ? C.dark : "transparent", color: serialSubTab === t.key ? C.mint4 : C.sub }}>
+                      className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                      style={{ background: serialSubTab === t.key ? C.dark : "transparent", color: serialSubTab === t.key ? C.mint4 : C.mid }}>
                       {t.label}
                     </button>
                   ))}
                 </div>
 
                 {serialSubTab === "submitted" && (
-                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                     {serialSubmitted.length === 0 ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No submissions</div> : (
                       <MiniPager entries={serialSubmitted}>
                         {(paged, offset) => (
@@ -1248,7 +1285,7 @@ function EditorActivitySubTab({ editors, delegations }) {
                   </div>
                 )}
                 {serialSubTab === "approved" && (
-                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                     {!serialStat ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No episode data</div> : (
                       <table className="w-full text-sm">
                         <thead><tr className="border-b" style={thStyle}>
@@ -1257,7 +1294,7 @@ function EditorActivitySubTab({ editors, delegations }) {
                         </tr></thead>
                         <tbody><tr>
                           <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: C.ok }}>{serialStat.approved || 0}</td>
-                          <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: "#7B1FA2" }}>{serialStat.submitted || 0}</td>
+                          <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: T.purple }}>{serialStat.submitted || 0}</td>
                           <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: C.danger }}>{serialStat.rejected || 0}</td>
                           <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: C.warn }}>{serialStat.pending || 0}</td>
                           <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: C.dark }}>{serialStat.total || 0}</td>
@@ -1269,7 +1306,7 @@ function EditorActivitySubTab({ editors, delegations }) {
                 {/* Activity log: episode list → episode detail */}
                 {serialSubTab === "activity" && (
                   !activityEpisode ? (
-                    <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                    <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                       {serialEpisodes.length === 0
                         ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No episodes found</div>
                         : (
@@ -1293,7 +1330,7 @@ function EditorActivitySubTab({ editors, delegations }) {
                                         <td className="px-4 py-2.5 text-center font-mono text-xs" style={{ color: C.dark }}>{String(ep.episode_number).padStart(2,"0")}</td>
                                         <td className="px-4 py-2.5 text-xs" style={{ color: C.dark }}>{ep.title || "—"}</td>
                                         <td className="px-4 py-2.5">
-                                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium capitalize" style={{ background: sc.bg, color: sc.color }}>{ep.status}</span>
+                                          <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium capitalize" style={{ background: sc.bg, color: sc.color }}>{ep.status}</span>
                                         </td>
                                         <td className="px-4 py-2.5 text-right"><ChevronRight className="w-4 h-4 inline" style={{ color: C.muted }} /></td>
                                       </tr>
@@ -1311,10 +1348,10 @@ function EditorActivitySubTab({ editors, delegations }) {
                       <button onClick={() => setActivityEpisode(null)} className="flex items-center gap-1.5 text-xs mb-3 hover:opacity-70" style={{ color: C.sub }}>
                         <ArrowLeft className="w-3.5 h-3.5" /> Back to episodes
                       </button>
-                      <div className="mb-2 px-3 py-1 rounded-lg inline-flex items-center gap-2" style={{ background: C.mint4 + "44" }}>
+                      <div className="mb-2 px-3 py-1 rounded-lg inline-flex items-center gap-2" style={{ background: alpha(C.mint4, "44") }}>
                         <span className="text-xs font-semibold" style={{ color: C.dark }}>Episode {String(activityEpisode).padStart(2,"0")}</span>
                       </div>
-                      <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                      <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                         {(() => {
                           const epLog = serialAllEntries.filter((e) => e.episode_number === activityEpisode);
                           return epLog.length === 0
@@ -1355,7 +1392,7 @@ function EditorActivitySubTab({ editors, delegations }) {
 
             {/* ── Movies list ── */}
             {panelTab === "movies" && !selectedMovie && (
-              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                 {allMoviesList.length === 0
                   ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No movies assigned</div>
                   : allMoviesList.map((movie) => {
@@ -1366,16 +1403,16 @@ function EditorActivitySubTab({ editors, delegations }) {
                     return (
                       <button key={movie} onClick={() => setSelectedMovie(movie)}
                         className="w-full text-left px-4 py-3 border-b last:border-0 hover:bg-green-50/30 flex items-center gap-4"
-                        style={{ borderColor: C.mint4 + "44" }}>
+                        style={{ borderColor: alpha(C.mint4, "44") }}>
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate" style={{ color: C.dark }}>{movie}</div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                              style={{ background: isSubmitted ? "#E3F2FD" : "#F3F4F6", color: isSubmitted ? "#1565C0" : C.sub }}>
+                            <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: isSubmitted ? T.blueBg : T.grayBg, color: isSubmitted ? T.blue : C.sub }}>
                               {isSubmitted ? "Submitted" : "Not Submitted"}
                             </span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                              style={{ background: isApproved ? "#E8F5E9" : "#FFF3E0", color: isApproved ? "#2E7D32" : "#E65100" }}>
+                            <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: isApproved ? T.greenBg : T.orangeBg, color: isApproved ? T.green : T.orange }}>
                               {isApproved ? "Approved" : "Pending"}
                             </span>
                           </div>
@@ -1396,24 +1433,24 @@ function EditorActivitySubTab({ editors, delegations }) {
                 <button onClick={() => setSelectedMovie(null)} className="flex items-center gap-1.5 text-xs mb-3 hover:opacity-70" style={{ color: C.sub }}>
                   <ArrowLeft className="w-3.5 h-3.5" /> Back to movies
                 </button>
-                <div className="mb-3 px-4 py-3 rounded-xl border flex items-center gap-4" style={{ background: C.mint4 + "22", borderColor: C.mint4 + "44" }}>
+                <div className="mb-3 px-4 py-3 rounded-xl border flex items-center gap-4" style={{ background: alpha(C.mint4, "22"), borderColor: alpha(C.mint4, "44") }}>
                   <div className="flex-1">
                     <div className="font-semibold text-sm" style={{ color: C.dark }}>{selectedMovie}</div>
                     <div className="flex items-center gap-3 mt-1">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: (movieStat?.submitted > 0 || movieStat?.approved > 0) ? "#E3F2FD" : "#F3F4F6", color: (movieStat?.submitted > 0 || movieStat?.approved > 0) ? "#1565C0" : C.sub }}>
+                      <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: (movieStat?.submitted > 0 || movieStat?.approved > 0) ? T.blueBg : T.grayBg, color: (movieStat?.submitted > 0 || movieStat?.approved > 0) ? T.blue : C.sub }}>
                         {(movieStat?.submitted > 0 || movieStat?.approved > 0) ? "Submitted" : "Not Submitted"}
                       </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: movieStat?.approved > 0 ? "#E8F5E9" : "#FFF3E0", color: movieStat?.approved > 0 ? "#2E7D32" : "#E65100" }}>
+                      <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: movieStat?.approved > 0 ? T.greenBg : T.orangeBg, color: movieStat?.approved > 0 ? T.green : T.orange }}>
                         {movieStat?.approved > 0 ? "Approved" : "Pending Approval"}
                       </span>
                     </div>
                   </div>
                 </div>
-                <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-                  <div className="px-4 py-2 border-b text-[10px] font-bold uppercase tracking-widest"
-                    style={{ borderColor: C.mint4, background: C.mint4 + "33", color: C.sub }}>Activity Log</div>
+                <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+                  <div className="px-4 py-2 border-b text-[0.625rem] font-bold uppercase tracking-widest"
+                    style={{ borderColor: C.mint4, background: alpha(C.mint4, "33"), color: C.sub }}>Activity Log</div>
                   {movieEntries.length === 0
                     ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No activity log</div>
                     : (
@@ -1443,28 +1480,28 @@ function EditorActivitySubTab({ editors, delegations }) {
             {panelTab === "history" && (
               <div className="flex gap-4">
                 <div className="w-20 shrink-0">
-                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                     {historyYears.length === 0 ? <div className="p-4 text-xs text-center" style={{ color: C.sub }}>No data</div>
                     : historyYears.map((y) => (
                       <button key={y} onClick={() => setHistoryYear(y)}
                         className="w-full py-2.5 text-sm font-semibold border-b last:border-0 transition"
-                        style={{ borderColor: C.mint4 + "55", background: historyYear === y ? C.dark : "transparent", color: historyYear === y ? C.mint4 : C.dark }}>
+                        style={{ borderColor: alpha(C.mint4, "55"), background: historyYear === y ? C.dark : "transparent", color: historyYear === y ? C.mint4 : C.dark }}>
                         {y}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div className="flex-1">
-                  {!historyYear ? <div className="rounded-xl border p-8 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>Select a year</div>
+                  {!historyYear ? <div className="rounded-xl border p-8 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Select a year</div>
                   : (
-                    <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-                      <div className="px-4 py-3 border-b text-[10px] font-bold uppercase tracking-widest" style={{ borderColor: C.mint4, background: C.mint4 + "33", color: C.sub }}>{historyYear} — Monthly</div>
+                    <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+                      <div className="px-4 py-3 border-b text-[0.625rem] font-bold uppercase tracking-widest" style={{ borderColor: C.mint4, background: alpha(C.mint4, "33"), color: C.sub }}>{historyYear} — Monthly</div>
                       <table className="w-full text-sm">
-                        <thead><tr className="border-b" style={{ background: C.mint4 + "33", color: C.sub, borderColor: C.mint4 }}>
-                          <th className="text-left px-4 py-2 text-[10px] uppercase tracking-wider font-semibold">Month</th>
-                          <th className="text-center px-4 py-2 text-[10px] uppercase tracking-wider font-semibold">Submitted</th>
-                          <th className="text-center px-4 py-2 text-[10px] uppercase tracking-wider font-semibold">Approved</th>
-                          <th className="text-center px-4 py-2 text-[10px] uppercase tracking-wider font-semibold">Total</th>
+                        <thead><tr className="border-b" style={{ background: alpha(C.mint4, "33"), color: C.sub, borderColor: C.mint4 }}>
+                          <th className="text-left px-4 py-2 text-[0.625rem] uppercase tracking-wider font-semibold">Month</th>
+                          <th className="text-center px-4 py-2 text-[0.625rem] uppercase tracking-wider font-semibold">Submitted</th>
+                          <th className="text-center px-4 py-2 text-[0.625rem] uppercase tracking-wider font-semibold">Approved</th>
+                          <th className="text-center px-4 py-2 text-[0.625rem] uppercase tracking-wider font-semibold">Total</th>
                         </tr></thead>
                         <tbody>
                           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
@@ -1502,21 +1539,21 @@ function WDActivitySubTab({ wdUsers, delegations }) {
   const movieDeleg   = myDeleg.filter((d) => d.work_type === "Movie Cue Sheet");
   const currentDeleg = wdTab === "movies" ? movieDeleg : serialDeleg;
 
-  const thStyle   = { borderColor: C.mint4, color: C.sub, background: C.mint4 + "33" };
-  const TH        = "text-[10px] uppercase tracking-wider";
-  const rowBorder = { borderColor: C.mint4 + "55" };
+  const thStyle   = { borderColor: C.mint4, color: C.sub, background: alpha(C.mint4, "33") };
+  const TH        = "text-[0.625rem] uppercase tracking-wider";
+  const rowBorder = { borderColor: alpha(C.mint4, "55") };
 
   return (
     <div className="grid grid-cols-3 gap-6">
-      <div className="rounded-xl border overflow-hidden self-start" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-        <div className="px-4 py-3 border-b text-[10px] font-bold uppercase tracking-widest" style={{ borderColor: C.mint4, background: C.mint4 + "66", color: C.sub }}>Work Delegators ({wdUsers.length})</div>
+      <div className="rounded-xl border overflow-hidden self-start" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+        <div className="px-4 py-3 border-b text-[0.625rem] font-bold uppercase tracking-widest" style={{ borderColor: C.mint4, background: alpha(C.mint4, "66"), color: C.sub }}>Work Delegators ({wdUsers.length})</div>
         {wdUsers.length === 0 && <div className="p-6 text-sm text-center" style={{ color: C.sub }}>No work delegators</div>}
         {wdUsers.map((u) => {
           const count = delegations.filter((d) => d.created_by === u.id).length;
           return (
             <button key={u.id} onClick={() => { setSelected(u.id === selected ? null : u.id); setWdTab("serials"); }}
               className="w-full text-left px-4 py-3 border-b last:border-0 text-sm hover:bg-green-50/40 transition"
-              style={{ borderColor: C.mint4 + "55", background: selected === u.id ? C.mint4 + "99" : undefined, color: C.dark }}>
+              style={{ borderColor: alpha(C.mint4, "55"), background: selected === u.id ? alpha(C.mint4, "99") : undefined, color: C.dark }}>
               <div className="font-medium">{u.full_name}</div>
               <div className="text-xs" style={{ color: C.sub }}>{u.email}</div>
               <div className="text-xs mt-0.5" style={{ color: C.sub }}>{count} delegation{count !== 1 ? "s" : ""} created</div>
@@ -1527,19 +1564,19 @@ function WDActivitySubTab({ wdUsers, delegations }) {
 
       <div className="col-span-2">
         {!selected
-          ? <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>Select a work delegator</div>
+          ? <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Select a work delegator</div>
           : (
             <div className="space-y-4">
               {/* Stats */}
               <div className="grid grid-cols-4 gap-3">
-                <div className="rounded-xl border p-3 text-center" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                <div className="rounded-xl border p-3 text-center" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                   <div className="text-2xl font-bold" style={{ color: C.dark }}>{currentDeleg.length}</div>
                   <div className="text-xs mt-0.5" style={{ color: C.sub }}>Total</div>
                 </div>
                 {["pending","in_progress","completed"].map((s) => {
                   const ss = ACT_STATUS[s];
                   return (
-                    <div key={s} className="rounded-xl border p-3 text-center" style={{ background: ss.bg + "66", borderColor: ss.color + "44" }}>
+                    <div key={s} className="rounded-xl border p-3 text-center" style={{ background: alpha(ss.bg, "66"), borderColor: alpha(ss.color, "44") }}>
                       <div className="text-2xl font-bold" style={{ color: ss.color }}>{currentDeleg.filter((d) => d.status === s).length}</div>
                       <div className="text-xs mt-0.5" style={{ color: ss.color }}>{ss.label}</div>
                     </div>
@@ -1548,21 +1585,21 @@ function WDActivitySubTab({ wdUsers, delegations }) {
               </div>
 
               {/* Serial / Movie tabs */}
-              <div className="flex gap-1 p-1 rounded-xl" style={{ background: C.mint4 + "99" }}>
+              <div className="flex gap-1 p-1 rounded-xl" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
                 {[
                   { key: "serials", label: `Serials (${serialDeleg.length})`, icon: CalendarDays },
                   { key: "movies",  label: `Movies (${movieDeleg.length})`,   icon: Film },
                 ].map(({ key, label, icon: Icon }) => (
                   <button key={key} onClick={() => setWdTab(key)}
-                    className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-all"
-                    style={{ background: wdTab === key ? C.dark : "transparent", color: wdTab === key ? C.mint4 : C.sub }}>
+                    className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                    style={{ background: wdTab === key ? C.dark : "transparent", color: wdTab === key ? C.mint4 : C.mid }}>
                     <Icon className="w-3.5 h-3.5" />{label}
                   </button>
                 ))}
               </div>
 
               {/* Table */}
-              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                 {currentDeleg.length === 0
                   ? <div className="p-10 text-center text-sm" style={{ color: C.sub }}>No {wdTab === "movies" ? "movie" : "serial"} delegations yet</div>
                   : (
@@ -1586,13 +1623,13 @@ function WDActivitySubTab({ wdUsers, delegations }) {
                                 <tr key={d.id} className="border-b last:border-0 hover:bg-green-50/30" style={rowBorder}>
                                   <td className="px-4 py-3">
                                     <div className="font-medium" style={{ color: C.dark }}>{d.serial_name}</div>
-                                    {d.channel && <div className="text-[10px]" style={{ color: C.sub }}>{d.channel}</div>}
+                                    {d.channel && <div className="text-[0.625rem]" style={{ color: C.sub }}>{d.channel}</div>}
                                   </td>
                                   <td className="px-4 py-3 text-sm" style={{ color: C.dark }}>{d.assigned_to_name || "—"}</td>
                                   {wdTab === "serials" && <td className="px-4 py-3 text-xs" style={{ color: C.sub }}>{d.episode_range || "—"}</td>}
                                   <td className="px-4 py-3 text-center font-medium" style={{ color: C.dark }}>{d.week_target ?? "—"}</td>
                                   <td className="px-4 py-3 text-center font-medium" style={{ color: C.ok }}>{d.completed}</td>
-                                  <td className="px-4 py-3"><span className="text-[10px] px-2 py-0.5 rounded font-medium" style={{ background: ss.bg, color: ss.color }}>{ss.label}</span></td>
+                                  <td className="px-4 py-3"><span className="text-[0.625rem] px-2 py-0.5 rounded font-medium" style={{ background: ss.bg, color: ss.color }}>{ss.label}</span></td>
                                 </tr>
                               );
                             })}
@@ -1627,7 +1664,7 @@ function ReviewerActivitySubTab({ reviewers }) {
     api.editorActivity(uid).then(setLog).catch(() => setLog(null)).finally(() => setFetching(false));
   };
 
-  const REVIEW_ACTIONS = new Set(["approve","reject","suggest"]);
+  const REVIEW_ACTIONS = new Set(["approve","reject","suggest","review_open"]);
   const bySerialMap = Object.fromEntries((log?.by_serial || []).map((g) => [g.serial, g]));
 
   const isMovieProject = (serial) => {
@@ -1642,6 +1679,7 @@ function ReviewerActivitySubTab({ reviewers }) {
   const approved  = reviewActivity.filter((a) => a.action === "approve").length;
   const rejected  = reviewActivity.filter((a) => a.action === "reject").length;
   const suggested = reviewActivity.filter((a) => a.action === "suggest").length;
+  const openedCnt = reviewActivity.filter((a) => a.action === "review_open").length;
 
   // Group review activity by serial
   const reviewBySerial = {};
@@ -1666,20 +1704,20 @@ function ReviewerActivitySubTab({ reviewers }) {
   // Most-recent review action per episode
   const epLatestAction = (epNum) => (episodeMap[epNum] || [])[0]?.action || null;
 
-  const thStyle   = { borderColor: C.mint4, background: C.mint4 + "33", color: C.sub };
-  const TH        = "text-[10px] uppercase tracking-wider font-semibold px-4 py-2";
-  const rowBorder = { borderColor: C.mint4 + "44" };
+  const thStyle   = { borderColor: C.mint4, background: alpha(C.mint4, "33"), color: C.sub };
+  const TH        = "text-[0.625rem] uppercase tracking-wider font-semibold px-4 py-2";
+  const rowBorder = { borderColor: alpha(C.mint4, "44") };
 
   return (
     <div className="grid grid-cols-3 gap-6">
       {/* Reviewer list */}
-      <div className="rounded-xl border overflow-hidden self-start" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-        <div className="px-4 py-3 border-b text-[10px] font-bold uppercase tracking-widest" style={{ borderColor: C.mint4, background: C.mint4 + "66", color: C.sub }}>Reviewers ({reviewers.length})</div>
+      <div className="rounded-xl border overflow-hidden self-start" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+        <div className="px-4 py-3 border-b text-[0.625rem] font-bold uppercase tracking-widest" style={{ borderColor: C.mint4, background: alpha(C.mint4, "66"), color: C.sub }}>Reviewers ({reviewers.length})</div>
         {reviewers.length === 0 && <div className="p-6 text-sm text-center" style={{ color: C.sub }}>No reviewers</div>}
         {reviewers.map((r) => (
           <button key={r.id} onClick={() => handleSelect(r.id)}
             className="w-full text-left px-4 py-3 border-b last:border-0 text-sm hover:bg-green-50/40 transition"
-            style={{ borderColor: C.mint4 + "55", background: selected === r.id ? C.mint4 + "99" : undefined, color: C.dark }}>
+            style={{ borderColor: alpha(C.mint4, "55"), background: selected === r.id ? alpha(C.mint4, "99") : undefined, color: C.dark }}>
             <div className="font-medium">{r.full_name}</div>
             <div className="text-xs" style={{ color: C.sub }}>{r.email}</div>
           </button>
@@ -1688,18 +1726,19 @@ function ReviewerActivitySubTab({ reviewers }) {
 
       {/* Right panel */}
       <div className="col-span-2">
-        {!selected && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>Select a reviewer</div>}
-        {selected && fetching && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>Loading…</div>}
+        {!selected && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Select a reviewer</div>}
+        {selected && fetching && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Loading…</div>}
         {selected && !fetching && log && (
           <div className="space-y-4">
             {/* Summary */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               {[
-                { label: "Approved",    val: approved,  bg: "#E8F5E9", color: "#2E7D32" },
-                { label: "Rejected",    val: rejected,  bg: "#FFEBEE", color: "#C62828" },
-                { label: "Suggestions", val: suggested, bg: "#E3F2FD", color: "#1565C0" },
+                { label: "Files Opened", val: openedCnt, bg: T.purpleBg, color: T.purple2 },
+                { label: "Approved",     val: approved,  bg: T.greenBg, color: T.green },
+                { label: "Rejected",     val: rejected,  bg: T.redBg, color: T.red },
+                { label: "Suggestions",  val: suggested, bg: T.blueBg, color: T.blue },
               ].map((s) => (
-                <div key={s.label} className="rounded-xl border p-3 text-center" style={{ background: s.bg, borderColor: s.color + "44" }}>
+                <div key={s.label} className="rounded-xl border p-3 text-center" style={{ background: s.bg, borderColor: alpha(s.color, "44") }}>
                   <div className="text-2xl font-bold" style={{ color: s.color }}>{s.val}</div>
                   <div className="text-xs mt-0.5" style={{ color: s.color }}>{s.label}</div>
                 </div>
@@ -1707,15 +1746,15 @@ function ReviewerActivitySubTab({ reviewers }) {
             </div>
 
             {/* Serial / Movie tabs */}
-            <div className="flex gap-1 p-1 rounded-xl" style={{ background: C.mint4 + "99" }}>
+            <div className="flex gap-1 p-1 rounded-xl" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
               {[
                 { key: "serials", label: "Serials", icon: CalendarDays },
                 { key: "movies",  label: "Movies",  icon: Film },
               ].map(({ key, label, icon: Icon }) => (
                 <button key={key}
                   onClick={() => { setReviewTab(key); setSelectedSerial(null); setSelectedMovie(null); setSelectedEpisode(null); }}
-                  className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: reviewTab === key ? C.dark : "transparent", color: reviewTab === key ? C.mint4 : C.sub }}>
+                  className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={{ background: reviewTab === key ? C.dark : "transparent", color: reviewTab === key ? C.mint4 : C.mid }}>
                   <Icon className="w-3.5 h-3.5" />{label}
                 </button>
               ))}
@@ -1723,7 +1762,7 @@ function ReviewerActivitySubTab({ reviewers }) {
 
             {/* ── Serials tab ── */}
             {reviewTab === "serials" && !selectedSerial && (
-              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                 {reviewedSerials.length === 0
                   ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No serial review activity</div>
                   : reviewedSerials.map((serial) => {
@@ -1733,12 +1772,12 @@ function ReviewerActivitySubTab({ reviewers }) {
                     return (
                       <button key={serial} onClick={() => setSelectedSerial(serial)}
                         className="w-full text-left px-4 py-3 border-b last:border-0 hover:bg-green-50/30 flex items-center gap-4"
-                        style={{ borderColor: C.mint4 + "44" }}>
+                        style={{ borderColor: alpha(C.mint4, "44") }}>
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate" style={{ color: C.dark }}>{serial}</div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: "#E8F5E9", color: "#2E7D32" }}>{app} approved</span>
-                            {rej > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: "#FFEBEE", color: "#C62828" }}>{rej} rejected</span>}
+                            <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium" style={{ background: T.greenBg, color: T.green }}>{app} approved</span>
+                            {rej > 0 && <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium" style={{ background: T.redBg, color: T.red }}>{rej} rejected</span>}
                           </div>
                         </div>
                         <div className="text-xs shrink-0" style={{ color: C.sub }}>{entries.length} action{entries.length !== 1 ? "s" : ""}</div>
@@ -1756,10 +1795,10 @@ function ReviewerActivitySubTab({ reviewers }) {
                   className="flex items-center gap-1.5 text-xs mb-3 hover:opacity-70" style={{ color: C.sub }}>
                   <ArrowLeft className="w-3.5 h-3.5" /> Back to serials
                 </button>
-                <div className="mb-3 px-4 py-2 rounded-xl border inline-flex items-center gap-2" style={{ background: C.mint4 + "22", borderColor: C.mint4 + "44" }}>
+                <div className="mb-3 px-4 py-2 rounded-xl border inline-flex items-center gap-2" style={{ background: alpha(C.mint4, "22"), borderColor: alpha(C.mint4, "44") }}>
                   <span className="font-semibold text-sm" style={{ color: C.dark }}>{selectedSerial}</span>
                 </div>
-                <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                   {episodeNumbers.length === 0
                     ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No episodes reviewed</div>
                     : (
@@ -1777,14 +1816,14 @@ function ReviewerActivitySubTab({ reviewers }) {
                             <tbody>
                               {paged.map((epNum) => {
                                 const latest = epLatestAction(epNum);
-                                const sc = ACT_ACTION[latest] || { bg: "#F3F4F6", color: "#374151" };
+                                const sc = ACT_ACTION[latest] || { bg: T.grayBg, color: T.gray };
                                 const cnt = (episodeMap[epNum] || []).length;
                                 return (
                                   <tr key={epNum} className="border-b last:border-0 hover:bg-green-50/20 cursor-pointer" style={rowBorder}
                                     onClick={() => setSelectedEpisode(epNum)}>
                                     <td className="px-4 py-2.5 text-center font-mono text-xs" style={{ color: C.dark }}>{String(epNum).padStart(2,"0")}</td>
                                     <td className="px-4 py-2.5">
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium capitalize" style={{ background: sc.bg, color: sc.color }}>{latest || "unknown"}</span>
+                                      <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium capitalize" style={{ background: sc.bg, color: sc.color }}>{sc.label || latest || "unknown"}</span>
                                     </td>
                                     <td className="px-4 py-2.5 text-right text-xs" style={{ color: C.sub }}>{cnt}</td>
                                     <td className="px-4 py-2.5 text-right"><ChevronRight className="w-4 h-4 inline" style={{ color: C.muted }} /></td>
@@ -1808,10 +1847,10 @@ function ReviewerActivitySubTab({ reviewers }) {
                   className="flex items-center gap-1.5 text-xs mb-3 hover:opacity-70" style={{ color: C.sub }}>
                   <ArrowLeft className="w-3.5 h-3.5" /> Back to episodes
                 </button>
-                <div className="mb-2 px-3 py-1 rounded-lg inline-flex items-center gap-2" style={{ background: C.mint4 + "44" }}>
+                <div className="mb-2 px-3 py-1 rounded-lg inline-flex items-center gap-2" style={{ background: alpha(C.mint4, "44") }}>
                   <span className="text-xs font-semibold" style={{ color: C.dark }}>{selectedSerial} — Episode {String(selectedEpisode).padStart(2,"0")}</span>
                 </div>
-                <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                   <MiniPager entries={episodeMap[selectedEpisode] || []} pageSize={20}>
                     {(paged, offset) => (
                       <table className="w-full text-sm">
@@ -1825,12 +1864,12 @@ function ReviewerActivitySubTab({ reviewers }) {
                         </thead>
                         <tbody>
                           {paged.map((e, i) => {
-                            const as = ACT_ACTION[e.action] || { bg: "#F3F4F6", color: "#374151" };
-                            const note = e.details?.replace(/^(Approved episode\.?\s*|Rejected\s*[—-]\s*|Suggested changes\s*[—-]\s*)/i, "").trim() || null;
+                            const as = ACT_ACTION[e.action] || { bg: T.grayBg, color: T.gray };
+                            const note = e.action === "review_open" ? null : (e.details?.replace(/^(Approved episode\.?\s*|Rejected\s*[—-]\s*|Suggested changes\s*[—-]\s*)/i, "").trim() || null);
                             return (
                               <tr key={e.id} className="border-b last:border-0 hover:bg-green-50/20" style={rowBorder}>
                                 <td className="px-4 py-2.5 font-mono text-xs" style={{ color: C.sub }}>{offset + i + 1}</td>
-                                <td className="px-4 py-2.5"><span className="text-[10px] px-2 py-0.5 rounded font-medium capitalize" style={{ background: as.bg, color: as.color }}>{e.action}</span></td>
+                                <td className="px-4 py-2.5"><span className="text-[0.625rem] px-2 py-0.5 rounded font-medium capitalize" style={{ background: as.bg, color: as.color }}>{as.label || e.action}</span></td>
                                 <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{note ? <span className="italic">{note.length > 80 ? note.slice(0,80)+"…" : note}</span> : "—"}</td>
                                 <td className="px-4 py-2.5 text-right text-xs whitespace-nowrap" style={{ color: C.sub }}>{e.at ? new Date(e.at).toLocaleString() : "—"}</td>
                               </tr>
@@ -1846,25 +1885,25 @@ function ReviewerActivitySubTab({ reviewers }) {
 
             {/* ── Movies tab ── */}
             {reviewTab === "movies" && !selectedMovie && (
-              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                 {reviewedMovies.length === 0
                   ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No movie review activity</div>
                   : reviewedMovies.map((movie) => {
                     const entries = reviewBySerial[movie] || [];
-                    const isReviewed = entries.length > 0;
+                    const isReviewed = entries.some((e) => e.action !== "review_open");
                     const isApproved = entries.some((e) => e.action === "approve");
                     return (
                       <button key={movie} onClick={() => setSelectedMovie(movie)}
                         className="w-full text-left px-4 py-3 border-b last:border-0 hover:bg-green-50/30 flex items-center gap-4"
-                        style={{ borderColor: C.mint4 + "44" }}>
+                        style={{ borderColor: alpha(C.mint4, "44") }}>
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate" style={{ color: C.dark }}>{movie}</div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                              style={{ background: isReviewed ? "#E3F2FD" : "#F3F4F6", color: isReviewed ? "#1565C0" : C.sub }}>
+                            <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: isReviewed ? T.blueBg : T.grayBg, color: isReviewed ? T.blue : C.sub }}>
                               {isReviewed ? "Reviewed" : "Not Reviewed"}
                             </span>
-                            {isApproved && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: "#E8F5E9", color: "#2E7D32" }}>Approved</span>}
+                            {isApproved && <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium" style={{ background: T.greenBg, color: T.green }}>Approved</span>}
                           </div>
                         </div>
                         <div className="text-xs shrink-0" style={{ color: C.sub }}>{entries.length} action{entries.length !== 1 ? "s" : ""}</div>
@@ -1882,10 +1921,10 @@ function ReviewerActivitySubTab({ reviewers }) {
                   className="flex items-center gap-1.5 text-xs mb-3 hover:opacity-70" style={{ color: C.sub }}>
                   <ArrowLeft className="w-3.5 h-3.5" /> Back to movies
                 </button>
-                <div className="mb-2 px-3 py-1 rounded-lg inline-flex items-center gap-2" style={{ background: C.mint4 + "44" }}>
+                <div className="mb-2 px-3 py-1 rounded-lg inline-flex items-center gap-2" style={{ background: alpha(C.mint4, "44") }}>
                   <span className="text-xs font-semibold" style={{ color: C.dark }}>{selectedMovie}</span>
                 </div>
-                <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                   {(reviewBySerial[selectedMovie] || []).length === 0
                     ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No review activity</div>
                     : (
@@ -1902,12 +1941,12 @@ function ReviewerActivitySubTab({ reviewers }) {
                             </thead>
                             <tbody>
                               {paged.map((e, i) => {
-                                const as = ACT_ACTION[e.action] || { bg: "#F3F4F6", color: "#374151" };
-                                const note = e.details?.replace(/^(Approved episode\.?\s*|Rejected\s*[—-]\s*|Suggested changes\s*[—-]\s*)/i, "").trim() || null;
+                                const as = ACT_ACTION[e.action] || { bg: T.grayBg, color: T.gray };
+                                const note = e.action === "review_open" ? null : (e.details?.replace(/^(Approved episode\.?\s*|Rejected\s*[—-]\s*|Suggested changes\s*[—-]\s*)/i, "").trim() || null);
                                 return (
                                   <tr key={e.id} className="border-b last:border-0 hover:bg-green-50/20" style={rowBorder}>
                                     <td className="px-4 py-2.5 font-mono text-xs" style={{ color: C.sub }}>{offset + i + 1}</td>
-                                    <td className="px-4 py-2.5"><span className="text-[10px] px-2 py-0.5 rounded font-medium capitalize" style={{ background: as.bg, color: as.color }}>{e.action}</span></td>
+                                    <td className="px-4 py-2.5"><span className="text-[0.625rem] px-2 py-0.5 rounded font-medium capitalize" style={{ background: as.bg, color: as.color }}>{as.label || e.action}</span></td>
                                     <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{note ? <span className="italic">{note.length > 80 ? note.slice(0,80)+"…" : note}</span> : "—"}</td>
                                     <td className="px-4 py-2.5 text-right text-xs whitespace-nowrap" style={{ color: C.sub }}>{e.at ? new Date(e.at).toLocaleString() : "—"}</td>
                                   </tr>
@@ -1933,15 +1972,15 @@ function SubmissionGroup({ group }) {
   const [open, setOpen] = useState(true);
   return (
     <div className="rounded-xl border overflow-hidden"
-      style={{ background: "#fff", borderColor: C.mint1 + "44" }}>
+      style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
       <button onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-4 py-3 border-b"
-        style={{ borderColor: C.mint4 + "44", background: C.mint4 + "22" }}>
+        style={{ borderColor: alpha(C.mint4, "44"), background: alpha(C.mint4, "22") }}>
         <div className="flex items-center gap-2">
           <Layers className="w-3.5 h-3.5" style={{ color: C.mint1 }} />
           <span className="font-semibold text-sm" style={{ color: C.dark }}>{group.project_title}</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full"
-            style={{ background: C.mint1 + "33", color: C.sub }}>
+          <span className="text-[0.625rem] px-2 py-0.5 rounded-full"
+            style={{ background: alpha(C.mint1, "33"), color: C.sub }}>
             {group.items.length} submission{group.items.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -1951,8 +1990,8 @@ function SubmissionGroup({ group }) {
       {open && (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[10px] uppercase tracking-wider border-b"
-              style={{ borderColor: C.mint4 + "44", color: C.sub, background: C.mint4 + "11" }}>
+            <tr className="text-[0.625rem] uppercase tracking-wider border-b"
+              style={{ borderColor: alpha(C.mint4, "44"), color: C.sub, background: alpha(C.mint4, "11") }}>
               <th className="text-left px-4 py-2">Episodes</th>
               <th className="text-left px-4 py-2">Client</th>
               <th className="text-left px-4 py-2">Notes</th>
@@ -1963,7 +2002,7 @@ function SubmissionGroup({ group }) {
           <tbody>
             {group.items.map((item) => (
               <tr key={item.id} className="border-b last:border-0"
-                style={{ borderColor: C.mint4 + "33" }}>
+                style={{ borderColor: alpha(C.mint4, "33") }}>
                 <td className="px-4 py-2.5 font-medium" style={{ color: C.dark }}>
                   Ep {item.episode_from}–{item.episode_to}
                 </td>
@@ -2030,8 +2069,8 @@ function AdminClientsTab({ delegations }) {
     clientMap[key].push(d);
   }
   const clients = Object.entries(clientMap).sort(([a], [b]) => a.localeCompare(b));
-  const thStyle = { background: C.mint4 + "33", color: C.sub, borderColor: C.mint4 };
-  const TH = "text-[10px] uppercase tracking-wider font-semibold px-4 py-2.5";
+  const thStyle = { background: alpha(C.mint4, "33"), color: C.sub, borderColor: C.mint4 };
+  const TH = "text-[0.625rem] uppercase tracking-wider font-semibold px-4 py-2.5";
 
   // ── Client detail view ──────────────────────────────────────────────────────
   if (selected) {
@@ -2049,42 +2088,42 @@ function AdminClientsTab({ delegations }) {
           className="flex items-center gap-1.5 text-xs mb-4 hover:opacity-70" style={{ color: C.sub }}>
           <ArrowLeft className="w-3.5 h-3.5" /> Back to clients
         </button>
-        <div className="mb-4 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="mb-4 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <div className="px-5 py-3 border-b flex items-center gap-3 flex-wrap"
-            style={{ borderColor: C.mint4 + "55", background: C.mint4 + "22" }}>
+            style={{ borderColor: alpha(C.mint4, "55"), background: alpha(C.mint4, "22") }}>
             <span className="font-semibold text-sm" style={{ color: C.dark }}>{selected}</span>
             <span className="text-xs" style={{ color: C.sub }}>{allRows.length} total delegation{allRows.length !== 1 ? "s" : ""}</span>
             {allEditors.length > 0 && (
               <span className="text-xs ml-auto" style={{ color: C.sub }}>Editors: {allEditors.join(", ")}</span>
             )}
           </div>
-          <div className="grid grid-cols-3 divide-x text-center py-3" style={{ borderColor: C.mint4 + "44" }}>
+          <div className="grid grid-cols-3 divide-x text-center py-3" style={{ borderColor: alpha(C.mint4, "44") }}>
             {[
-              { label: "Total Target",   val: totTarget, color: "#E65100" },
+              { label: "Total Target",   val: totTarget, color: T.orange },
               { label: "Submitted/Done", val: totDone,   color: C.ok      },
               { label: "Pending",        val: totPend,   color: C.danger  },
             ].map(({ label, val, color }) => (
               <div key={label} className="px-4">
                 <div className="text-2xl font-bold leading-none" style={{ color }}>{val}</div>
-                <div className="text-[10px] uppercase tracking-wide mt-1" style={{ color: color + "88" }}>{label}</div>
+                <div className="text-[0.625rem] uppercase tracking-wide mt-1" style={{ color: alpha(color, "88") }}>{label}</div>
               </div>
             ))}
           </div>
         </div>
         {/* Serial / Movie tabs — only in detail view */}
-        <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+        <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
           {[
             { key: "serial", label: `Serials (${serialRows.length})`, icon: Layers },
             { key: "movie",  label: `Movies (${movieRows.length})`,   icon: Film   },
           ].map(({ key, label, icon: Icon }) => (
             <button key={key} onClick={() => setClientSubTab(key)}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-all"
-              style={{ background: clientSubTab === key ? C.dark : "transparent", color: clientSubTab === key ? C.mint4 : C.sub }}>
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              style={{ background: clientSubTab === key ? C.dark : "transparent", color: clientSubTab === key ? C.mint4 : C.mid }}>
               <Icon className="w-3.5 h-3.5" />{label}
             </button>
           ))}
         </div>
-        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           {rows.length === 0 ? (
             <div className="p-10 text-center text-sm" style={{ color: C.sub }}>
               No {clientSubTab === "movie" ? "movie" : "serial"} delegations for this client.
@@ -2104,20 +2143,20 @@ function AdminClientsTab({ delegations }) {
               </thead>
               <tbody>
                 {rows.map((d) => {
-                  const ss = { pending:{bg:"#FFF3E0",color:"#E65100",label:"Pending"}, in_progress:{bg:"#E3F2FD",color:"#1565C0",label:"In Progress"}, completed:{bg:"#E8F5E9",color:"#2E7D32",label:"Completed"} }[d.status] || {bg:C.mint4,color:C.sub,label:d.status};
+                  const ss = { pending:{bg:T.orangeBg,color:T.orange,label:"Pending"}, in_progress:{bg:T.blueBg,color:T.blue,label:"In Progress"}, completed:{bg:T.greenBg,color:T.green,label:"Completed"} }[d.status] || {bg:C.mint4,color:C.sub,label:d.status};
                   return (
                     <tr key={d.id} className="border-b last:border-0 hover:bg-green-50/20 transition"
-                      style={{ borderColor: C.mint4 + "44" }}>
+                      style={{ borderColor: alpha(C.mint4, "44") }}>
                       <td className="px-4 py-3">
                         <div className="font-medium text-sm" style={{ color: C.dark }}>{d.serial_name}</div>
-                        {d.channel && <div className="text-[10px]" style={{ color: C.sub }}>{d.channel}</div>}
+                        {d.channel && <div className="text-[0.625rem]" style={{ color: C.sub }}>{d.channel}</div>}
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.dark }}>{d.assigned_to_name || "—"}</td>
                       {clientSubTab === "serial" && <td className="px-4 py-3 text-xs" style={{ color: C.sub }}>{d.episode_range || "—"}</td>}
-                      <td className="px-4 py-3 text-center font-bold" style={{ color: "#E65100" }}>{d.week_target ?? "—"}</td>
+                      <td className="px-4 py-3 text-center font-bold" style={{ color: T.orange }}>{d.week_target ?? "—"}</td>
                       <td className="px-4 py-3 text-center font-bold" style={{ color: C.ok }}>{d.completed || 0}</td>
                       <td className="px-4 py-3 text-center font-bold" style={{ color: (d.balance||0) > 0 ? C.danger : C.ok }}>{d.balance || 0}</td>
-                      <td className="px-4 py-3"><span className="text-[10px] px-2 py-0.5 rounded font-medium" style={{ background: ss.bg, color: ss.color }}>{ss.label}</span></td>
+                      <td className="px-4 py-3"><span className="text-[0.625rem] px-2 py-0.5 rounded font-medium" style={{ background: ss.bg, color: ss.color }}>{ss.label}</span></td>
                     </tr>
                   );
                 })}
@@ -2133,12 +2172,12 @@ function AdminClientsTab({ delegations }) {
   return (
     <div>
       {clients.length === 0 ? (
-        <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <div className="text-4xl mb-3">🏢</div>
           <p className="text-sm" style={{ color: C.sub }}>No clients found. Add a client when creating delegations.</p>
         </div>
       ) : (
-        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={thStyle}>
@@ -2163,14 +2202,14 @@ function AdminClientsTab({ delegations }) {
                 return (
                   <tr key={client}
                     className="border-b last:border-0 hover:bg-green-50/30 cursor-pointer transition"
-                    style={{ borderColor: C.mint4 + "44" }}
+                    style={{ borderColor: alpha(C.mint4, "44") }}
                     onClick={() => { setSelected(client); setClientSubTab("serial"); }}
                   >
                     <td className="px-4 py-3 font-semibold" style={{ color: C.dark }}>{client}</td>
                     <td className="px-4 py-3 text-xs" style={{ color: C.sub }}>{editors.join(", ") || "—"}</td>
                     <td className="px-4 py-3 text-center font-medium" style={{ color: C.dark }}>{serialCnt}</td>
-                    <td className="px-4 py-3 text-center font-medium" style={{ color: "#7B1FA2" }}>{movieCnt}</td>
-                    <td className="px-4 py-3 text-center font-bold" style={{ color: "#E65100" }}>{totTarget || "—"}</td>
+                    <td className="px-4 py-3 text-center font-medium" style={{ color: T.purple }}>{movieCnt}</td>
+                    <td className="px-4 py-3 text-center font-bold" style={{ color: T.orange }}>{totTarget || "—"}</td>
                     <td className="px-4 py-3 text-center font-bold" style={{ color: C.ok }}>{totDone}</td>
                     <td className="px-4 py-3 text-center font-bold" style={{ color: totPend > 0 ? C.danger : C.ok }}>{totPend}</td>
                     <td className="px-4 py-3 text-right"><ChevronRight className="w-4 h-4 inline" style={{ color: C.muted }} /></td>
@@ -2185,6 +2224,125 @@ function AdminClientsTab({ delegations }) {
   );
 }
 
+
+// ── Login activity sub-tab ────────────────────────────────────────────────────
+const LOGIN_STYLE = {
+  login:           { Icon: LogIn,    bg: T.greenBg, color: T.green },
+  logout:          { Icon: LogOut,   bg: T.grayBg, color: T.gray },
+  password_change: { Icon: KeyRound, bg: T.orangeBg, color: T.orange },
+};
+
+function LoginActivitySubTab() {
+  const [rows, setRows]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ]             = useState("");
+  const [kind, setKind]       = useState("all");
+
+  const load = () => {
+    setLoading(true);
+    api.loginActivity(1000).then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const needle = q.trim().toLowerCase();
+  const filtered = rows.filter((r) =>
+    (kind === "all" || r.action === kind) &&
+    (!needle || (r.user_name || "").toLowerCase().includes(needle) || (r.user_email || "").toLowerCase().includes(needle))
+  );
+  const today = new Date().toDateString();
+  const signInsToday = rows.filter((r) => r.action === "login" && new Date(r.at).toDateString() === today).length;
+  const usersToday = new Set(rows.filter((r) => r.action === "login" && new Date(r.at).toDateString() === today).map((r) => r.user_id)).size;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Sign-ins today",       val: signInsToday },
+          { label: "Users active today",   val: usersToday },
+          { label: "Events recorded",      val: rows.length },
+        ].map((t) => (
+          <div key={t.label} className="rounded-xl border p-4" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+            <div className="text-2xl font-bold" style={{ color: C.dark }}>{t.val}</div>
+            <div className="text-xs mt-0.5 font-medium" style={{ color: C.sub }}>{t.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative max-w-xs flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: C.sub }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or email…"
+            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border focus:outline-none"
+            style={{ borderColor: alpha(C.mint1, "44"), background: C.white, color: C.dark }} />
+          {q && <button onClick={() => setQ("")} className="absolute right-2 top-1/2 -translate-y-1/2"><X className="w-3 h-3" style={{ color: C.sub }} /></button>}
+        </div>
+        <Select value={kind} onChange={(e) => setKind(e.target.value)} className="px-3 py-1.5 rounded-lg text-xs border focus:outline-none"
+          style={{ borderColor: alpha(C.mint1, "44"), background: C.white, color: C.dark, minWidth: "10rem" }}>
+          <option value="all">All events</option>
+          <option value="login">Sign-ins</option>
+          <option value="logout">Sign-outs</option>
+          <option value="password_change">Password changes</option>
+        </Select>
+        <button onClick={load} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.dark, color: C.mint4 }}>Refresh</button>
+      </div>
+
+      <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+        {loading ? (
+          <div className="p-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No login activity{q || kind !== "all" ? " matches these filters" : " recorded yet"}.</div>
+        ) : (
+          <MiniPager entries={filtered} pageSize={25}>
+            {(paged) => (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-[0.625rem] uppercase tracking-wider" style={{ borderColor: C.mint4, background: alpha(C.mint4, "33"), color: C.sub }}>
+                    <th className="text-left px-4 py-2.5">User</th>
+                    <th className="text-left px-4 py-2.5">Role</th>
+                    <th className="text-left px-4 py-2.5">Event</th>
+                    <th className="text-left px-4 py-2.5">Device</th>
+                    <th className="text-right px-4 py-2.5">Date &amp; Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paged.map((r) => {
+                    const st = LOGIN_STYLE[r.action] || LOGIN_STYLE.logout;
+                    const device = (r.details || "").split(" · ").slice(1).join(" · ") || "—";
+                    return (
+                      <tr key={r.id} className="border-b last:border-0" style={{ borderColor: alpha(C.mint4, "44") }}>
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium" style={{ color: C.dark }}>{r.user_name}</div>
+                          {r.user_email && <div className="text-xs" style={{ color: C.sub }}>{r.user_email}</div>}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {r.user_role && (
+                            <span className="text-[0.625rem] px-2 py-0.5 rounded font-semibold" style={{ background: ROLE_COLOR[r.user_role]?.bg, color: ROLE_COLOR[r.user_role]?.color }}>
+                              {ROLE_LABEL[r.user_role] || r.user_role}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-md font-semibold" style={{ background: st.bg, color: st.color }}>
+                            <st.Icon className="w-3 h-3" />{ACTION_LABEL[r.action] || r.action}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{device}</td>
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                          <div className="text-xs font-medium" style={{ color: C.dark }}>{fmtDateTime(r.at)}</div>
+                          <div className="text-[0.625rem]" style={{ color: C.muted }}>{timeAgo(r.at)}</div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </MiniPager>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Activity tab (container) ──────────────────────────────────────────────────
 function ActivityTab({ initialTab = "editors" }) {
@@ -2212,17 +2370,18 @@ function ActivityTab({ initialTab = "editors" }) {
     { key: "reviewers",   label: `Reviewers (${reviewers.length})`        },
     { key: "clients",     label: "Clients"                                },
     { key: "submissions", label: "Submissions"                            },
+    { key: "logins",      label: "Logins"                                 },
   ];
 
   if (loading) return <div className="p-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>;
 
   return (
     <div>
-      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit flex-wrap" style={{ background: C.mint4 + "99" }}>
+      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit flex-wrap" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {roleTabs.map((t) => (
           <button key={t.key} onClick={() => setRoleTab(t.key)}
-            className="px-5 py-2 rounded-lg text-sm font-medium transition-all"
-            style={{ background: roleTab === t.key ? C.dark : "transparent", color: roleTab === t.key ? C.mint4 : C.sub }}>
+            className="px-5 py-2 rounded-lg text-sm font-semibold transition-all"
+            style={{ background: roleTab === t.key ? C.dark : "transparent", color: roleTab === t.key ? C.mint4 : C.mid }}>
             {t.label}
           </button>
         ))}
@@ -2232,6 +2391,7 @@ function ActivityTab({ initialTab = "editors" }) {
       {roleTab === "reviewers"   && <ReviewerActivitySubTab reviewers={reviewers} />}
       {roleTab === "clients"     && <AdminClientsTab delegations={delegations} />}
       {roleTab === "submissions" && <SubmissionsSubTab />}
+      {roleTab === "logins"      && <LoginActivitySubTab />}
     </div>
   );
 }
@@ -2264,11 +2424,11 @@ export default function AdminDashboard() {
       {tab === "overview"    && <OverviewTab navigate={navigate} />}
       {tab === "projects"    && (
         <div>
-          <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+          <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
             {[{ key: "serial", label: "Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
               <button key={key} onClick={() => setProjectSubTab(key)}
-                className="px-5 py-1.5 rounded-lg text-xs font-medium transition-all"
-                style={{ background: projectSubTab === key ? C.dark : "transparent", color: projectSubTab === key ? C.mint4 : C.sub }}>
+                className="px-5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                style={{ background: projectSubTab === key ? C.dark : "transparent", color: projectSubTab === key ? C.mint4 : C.mid }}>
                 {label}
               </button>
             ))}

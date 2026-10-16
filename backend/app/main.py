@@ -75,11 +75,14 @@ MIGRATIONS = [
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS followup_count INTEGER DEFAULT 0 NOT NULL",
 ]
 
-# Hidden super admin — at most one row may carry the flag. Run in autocommit (not inside
-# MIGRATIONS' shared transaction) because every users query selects this column.
-SUPER_ADMIN_MIGRATIONS = [
+# Users columns. Run in autocommit (not inside MIGRATIONS' shared transaction) because every
+# users query selects these columns. Hidden super admin — at most one row may carry the flag.
+USER_MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT FALSE NOT NULL",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_users_single_super_admin ON users(is_super_admin) WHERE is_super_admin",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE NOT NULL",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_version VARCHAR(20)",
+    "CREATE INDEX IF NOT EXISTS ix_audit_logs_action ON audit_logs(action)",
 ]
 
 # ── IPRS followup background task ─────────────────────────────────────────────
@@ -235,7 +238,7 @@ async def lifespan(app: FastAPI):
                 except Exception as me:
                     print(f"[migration] skipped: {me}")
         print("[startup] DB connected, tables ensured")
-        for sql in SUPER_ADMIN_MIGRATIONS:
+        for sql in USER_MIGRATIONS:
             try:
                 async with ac_engine.connect() as conn:
                     await conn.execute(text(sql))
@@ -270,7 +273,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="1.0.0",
+    version="3.0.0",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
     # Disable automatic debug info exposure in OpenAPI errors

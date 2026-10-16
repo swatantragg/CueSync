@@ -1,4 +1,4 @@
-import { C, FONTS } from "../../styles/palette";
+import { C, FONTS, alpha } from "../../styles/palette";
 import Header from "../../components/Header";
 
 export default function DashboardShell({ title, subtitle, tabs, activeTab, onTab, children }) {
@@ -12,22 +12,23 @@ export default function DashboardShell({ title, subtitle, tabs, activeTab, onTab
         </div>
 
         {/* Tab bar */}
-        <div className="flex items-center gap-1 mb-6 border-b" style={{ borderColor: C.mint1 + "44" }}>
+        <div className="flex items-center gap-1 mb-6 border-b" style={{ borderColor: alpha(C.mint1, "44") }}>
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => onTab(t.key)}
-              className="px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors relative"
+              className="px-4 py-2.5 text-sm rounded-t-lg transition-colors relative"
               style={{
                 color: activeTab === t.key ? C.dark : C.sub,
-                background: activeTab === t.key ? C.mint4 + "88" : "transparent",
+                fontWeight: activeTab === t.key ? 700 : 500,
+                background: activeTab === t.key ? alpha(C.mint4, "88") : "transparent",
                 borderBottom: activeTab === t.key ? `2px solid ${C.dark}` : "2px solid transparent",
                 marginBottom: -1,
               }}
             >
               {t.label}
               {t.badge > 0 && (
-                <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: "#ef4444", color: "#fff" }}>{t.badge}</span>
+                <span className="ml-1.5 text-[0.625rem] px-1.5 py-0.5 rounded-full font-bold" style={{ background: C.danger, color: C.white }}>{t.badge}</span>
               )}
             </button>
           ))}

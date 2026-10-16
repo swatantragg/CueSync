@@ -3,19 +3,21 @@ import {
   Plus, Trash2, Search, Edit2, X, ChevronLeft, ChevronRight,
   FileText, ArrowLeft, CalendarDays, History, Layers, ChevronDown, Film, Users,
 } from "lucide-react";
-import { C, FONTS } from "../../styles/palette";
+import { C, FONTS, alpha, T } from "../../styles/palette";
+import Select from "../../components/Select";
 import DashboardShell from "./DashboardShell";
 import ProjectsTab from "./ProjectsTab";
 import { api } from "../../utils/api";
+import { fmtDateTime, timeAgo } from "../../utils/format";
 import { showAlert, showConfirm } from "../../components/Dialog";
 import { useApp } from "../../context/AppContext";
 
 const WORK_TYPES = ["TV Cue Sheet", "Movie Cue Sheet", "Album", "Other"];
 const STATUSES = ["pending", "in_progress", "completed"];
 const STATUS_STYLE = {
-  pending:     { bg: "#FFF3E0", color: "#E65100", label: "Pending" },
-  in_progress: { bg: "#E3F2FD", color: "#1565C0", label: "In Progress" },
-  completed:   { bg: "#E8F5E9", color: "#2E7D32", label: "Completed" },
+  pending:     { bg: T.orangeBg, color: T.orange, label: "Pending" },
+  in_progress: { bg: T.blueBg, color: T.blue, label: "In Progress" },
+  completed:   { bg: T.greenBg, color: T.green, label: "Completed" },
 };
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTH_FULL  = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -23,7 +25,7 @@ const MONTH_FULL  = ["January","February","March","April","May","June","July","A
 function StatusBadge({ status }) {
   const s = STATUS_STYLE[status] || STATUS_STYLE.pending;
   return (
-    <span className="text-[10px] px-2 py-0.5 rounded font-medium" style={{ background: s.bg, color: s.color }}>
+    <span className="text-[0.625rem] px-2 py-0.5 rounded font-medium" style={{ background: s.bg, color: s.color }}>
       {s.label}
     </span>
   );
@@ -84,11 +86,11 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
   };
 
   const inp = "w-full px-3 py-2 rounded-lg text-sm focus:outline-none";
-  const inpStyle = { background: C.mid, color: C.mint4, border: `1px solid ${C.mint1}33` };
+  const inpStyle = { background: C.mid, color: C.mint4, border: `1px solid ${alpha(C.mint1, "33")}` };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
-      <div className="rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden" style={{ background: C.dark }}>
+      <div className="cs-dark rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden" style={{ background: C.dark }}>
         <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.mid }}>
           <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>
             {initial ? "Edit Delegation" : "New Delegation"}
@@ -107,7 +109,7 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
               className={inp} style={inpStyle}
             />
             {showSuggest && (
-              <div className="absolute left-0 right-0 z-50 rounded-lg shadow-xl mt-1 overflow-hidden" style={{ background: C.mid, border: `1px solid ${C.mint1}44` }}>
+              <div className="absolute left-0 right-0 z-50 rounded-lg shadow-xl mt-1 overflow-hidden" style={{ background: C.mid, border: `1px solid ${alpha(C.mint1, "44")}` }}>
                 {suggestions.map((s) => (
                   <button key={s.id} type="button"
                     onMouseDown={() => { setForm((f) => ({ ...f, serial_name: s.title })); setShowSuggest(false); setIsNewSerial(false); }}
@@ -118,7 +120,7 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
               </div>
             )}
             {isNewSerial && !showSuggest && form.serial_name.trim() && (
-              <div className="mt-1.5 flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg w-fit" style={{ background: "#FFF3E0", color: "#E65100" }}>
+              <div className="mt-1.5 flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg w-fit" style={{ background: T.orangeBg, color: T.orange }}>
                 <Plus className="w-3 h-3" /> New serial — will be auto-created
               </div>
             )}
@@ -127,16 +129,16 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Work Type</label>
-              <select value={form.work_type} onChange={(e) => setForm((f) => ({ ...f, work_type: e.target.value, episode_range: e.target.value === "Movie Cue Sheet" ? "" : f.episode_range }))} className={inp} style={inpStyle}>
+              <Select tone="dark" value={form.work_type} onChange={(e) => setForm((f) => ({ ...f, work_type: e.target.value, episode_range: e.target.value === "Movie Cue Sheet" ? "" : f.episode_range }))} className={inp} style={inpStyle}>
                 {WORK_TYPES.map((t) => <option key={t}>{t}</option>)}
-              </select>
+              </Select>
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Assign To *</label>
-              <select value={form.assigned_to} onChange={(e) => setForm((f) => ({ ...f, assigned_to: e.target.value }))} className={inp} style={inpStyle}>
+              <Select tone="dark" value={form.assigned_to} onChange={(e) => setForm((f) => ({ ...f, assigned_to: e.target.value }))} className={inp} style={inpStyle}>
                 <option value="">Select editor…</option>
                 {editors.map((e) => <option key={e.id} value={e.id}>{e.full_name}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -152,7 +154,7 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
                 className={inp} style={inpStyle}
               />
               {clientSug && filteredClients.length > 0 && (
-                <div className="absolute left-0 right-0 z-50 rounded-lg shadow-xl mt-1 overflow-hidden max-h-44 overflow-y-auto" style={{ background: C.mid, border: `1px solid ${C.mint1}44` }}>
+                <div className="absolute left-0 right-0 z-50 rounded-lg shadow-xl mt-1 overflow-hidden max-h-44 overflow-y-auto" style={{ background: C.mid, border: `1px solid ${alpha(C.mint1, "44")}` }}>
                   {filteredClients.map((c) => (
                     <button key={c} type="button"
                       onMouseDown={() => { setForm((f) => ({ ...f, client: c })); setClientSug(false); }}
@@ -173,7 +175,7 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: form.work_type === "Movie Cue Sheet" ? C.muted + "55" : C.muted }}>Episode Range</label>
+              <label className="block text-xs font-medium mb-1" style={{ color: form.work_type === "Movie Cue Sheet" ? alpha(C.muted, "55") : C.muted }}>Episode Range</label>
               <input
                 value={form.episode_range}
                 onChange={(e) => setForm((f) => ({ ...f, episode_range: e.target.value }))}
@@ -189,9 +191,9 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Status</label>
-              <select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className={inp} style={inpStyle}>
+              <Select tone="dark" value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className={inp} style={inpStyle}>
                 {STATUSES.map((s) => <option key={s} value={s}>{STATUS_STYLE[s].label}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -280,7 +282,7 @@ function CalendarActivity({ delegations = [] }) {
   const Metric = ({ val, label, color, dark }) => (
     <div>
       <div className="text-lg font-bold leading-none" style={{ color: color }}>{val}</div>
-      <div className="text-[9px] mt-0.5 font-medium uppercase tracking-wide" style={{ color: dark ? color + "cc" : color + "99" }}>{label}</div>
+      <div className="text-[0.5625rem] mt-0.5 font-medium uppercase tracking-wide" style={{ color: dark ? alpha(color, "cc") : alpha(color, "99") }}>{label}</div>
     </div>
   );
 
@@ -288,12 +290,12 @@ function CalendarActivity({ delegations = [] }) {
     <div className="flex gap-5">
       {/* Year sidebar */}
       <div className="w-16 shrink-0">
-        <div className="text-[10px] uppercase tracking-wider font-semibold mb-2 text-center" style={{ color: C.sub }}>Year</div>
-        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="text-[0.625rem] uppercase tracking-wider font-semibold mb-2 text-center" style={{ color: C.sub }}>Year</div>
+        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           {years.map((y) => (
             <button key={y} onClick={() => setSelectedYear(y)}
               className="w-full py-2.5 text-sm font-semibold border-b last:border-0 transition"
-              style={{ borderColor: C.mint4 + "55", background: selectedYear === y ? C.dark : "transparent", color: selectedYear === y ? C.mint4 : C.dark }}>
+              style={{ borderColor: alpha(C.mint4, "55"), background: selectedYear === y ? C.dark : "transparent", color: selectedYear === y ? C.mint4 : C.dark }}>
               {y}
             </button>
           ))}
@@ -317,36 +319,36 @@ function CalendarActivity({ delegations = [] }) {
                     const hasActivity    = mt.sub > 0 || mt.app > 0;
                     return (
                       <button key={m} onClick={() => setSelectedMonth(isSel ? null : m)}
-                        className="flex-1 rounded-xl border p-3 text-left transition-all hover:shadow-md"
+                        className={`${isSel ? "cs-dark " : ""}flex-1 rounded-xl border p-3 text-left transition-all hover:shadow-md`}
                         style={{
-                          background:  isSel ? C.dark : isCurrent ? C.mint4 + "cc" : C.white,
-                          borderColor: isSel ? C.mint1 : isCurrent ? C.mint1 : hasActivity ? C.mint1 + "88" : C.mint1 + "33",
+                          background:  isSel ? C.dark : isCurrent ? alpha(C.mint4, "cc") : C.white,
+                          borderColor: isSel ? C.mint1 : isCurrent ? C.mint1 : hasActivity ? alpha(C.mint1, "88") : alpha(C.mint1, "33"),
                           borderWidth: isCurrent && !isSel ? 2 : 1,
                         }}>
                         <div className="flex items-center justify-between mb-2">
-                          <div className="text-[10px] font-bold uppercase tracking-widest" style={{ color: isSel ? C.mint1 : C.sub }}>
+                          <div className="text-[0.625rem] font-bold uppercase tracking-widest" style={{ color: isSel ? C.mint1 : C.sub }}>
                             {MONTH_NAMES[m - 1]}
                           </div>
                           {isCurrent && !isSel && (
-                            <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full" style={{ background: C.mint1, color: C.dark }}>Now</span>
+                            <span className="text-[0.5rem] font-bold uppercase px-1.5 py-0.5 rounded-full" style={{ background: C.mint1, color: C.dark }}>Now</span>
                           )}
                         </div>
                         <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                           <div>
-                            <div className="text-base font-bold leading-none" style={{ color: isSel ? "#fde68a" : "#E65100" }}>{mt.target}</div>
-                            <div className="text-[9px] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? "#fde68a88" : "#E6510077" }}>Target</div>
+                            <div className="text-base font-bold leading-none" style={{ color: isSel ? "#fde68a" : T.orange }}>{mt.target}</div>
+                            <div className="text-[0.5625rem] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? "#fde68a88" : alpha(T.orange, "77") }}>Target</div>
                           </div>
                           <div>
                             <div className="text-base font-bold leading-none" style={{ color: isSel ? "#fca5a5" : C.danger }}>{mt.pending}</div>
-                            <div className="text-[9px] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? "#fca5a588" : C.danger + "77" }}>Pending</div>
+                            <div className="text-[0.5625rem] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? "#fca5a588" : alpha(C.danger, "77") }}>Pending</div>
                           </div>
                           <div>
                             <div className="text-base font-bold leading-none" style={{ color: isSel ? C.mint4 : C.dark }}>{mt.sub}</div>
-                            <div className="text-[9px] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? C.muted : C.sub }}>Submitted</div>
+                            <div className="text-[0.5625rem] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? C.muted : C.sub }}>Submitted</div>
                           </div>
                           <div>
                             <div className="text-base font-bold leading-none" style={{ color: isSel ? "#86efac" : C.ok }}>{mt.app}</div>
-                            <div className="text-[9px] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? "#86efac88" : C.ok + "88" }}>Approved</div>
+                            <div className="text-[0.5625rem] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? "#86efac88" : alpha(C.ok, "88") }}>Approved</div>
                           </div>
                         </div>
                       </button>
@@ -355,24 +357,24 @@ function CalendarActivity({ delegations = [] }) {
 
                   {/* Quarter total */}
                   <div className="w-24 shrink-0 rounded-xl border p-3 flex flex-col justify-center"
-                    style={{ background: C.mint4 + "33", borderColor: C.mint4 + "55" }}>
-                    <div className="text-[10px] font-bold uppercase tracking-widest mb-2 text-center" style={{ color: C.sub }}>Q{qi + 1}</div>
+                    style={{ background: alpha(C.mint4, "33"), borderColor: alpha(C.mint4, "55") }}>
+                    <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-2 text-center" style={{ color: C.sub }}>Q{qi + 1}</div>
                     <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-center">
                       <div>
-                        <div className="text-sm font-bold" style={{ color: "#E65100" }}>{qt.target}</div>
-                        <div className="text-[8px] uppercase" style={{ color: "#E6510077" }}>Target</div>
+                        <div className="text-sm font-bold" style={{ color: T.orange }}>{qt.target}</div>
+                        <div className="text-[0.5rem] uppercase" style={{ color: alpha(T.orange, "77") }}>Target</div>
                       </div>
                       <div>
                         <div className="text-sm font-bold" style={{ color: C.danger }}>{qt.pending}</div>
-                        <div className="text-[8px] uppercase" style={{ color: C.danger + "77" }}>Pending</div>
+                        <div className="text-[0.5rem] uppercase" style={{ color: alpha(C.danger, "77") }}>Pending</div>
                       </div>
                       <div>
                         <div className="text-sm font-bold" style={{ color: C.dark }}>{qt.sub}</div>
-                        <div className="text-[8px] uppercase" style={{ color: C.sub }}>Sub</div>
+                        <div className="text-[0.5rem] uppercase" style={{ color: C.sub }}>Sub</div>
                       </div>
                       <div>
                         <div className="text-sm font-bold" style={{ color: C.ok }}>{qt.app}</div>
-                        <div className="text-[8px] uppercase" style={{ color: C.ok + "88" }}>App</div>
+                        <div className="text-[0.5rem] uppercase" style={{ color: alpha(C.ok, "88") }}>App</div>
                       </div>
                     </div>
                   </div>
@@ -384,23 +386,23 @@ function CalendarActivity({ delegations = [] }) {
 
         {/* Month detail — week breakdown only, no "By Editor" */}
         {selectedMonth && selData !== null && (
-          <div className="mt-5 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+          <div className="mt-5 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
             {/* Header with 4 totals */}
             <div className="px-5 py-3 border-b flex items-center gap-6 flex-wrap"
-              style={{ borderColor: C.mint4, background: C.mint4 + "33" }}>
+              style={{ borderColor: C.mint4, background: alpha(C.mint4, "33") }}>
               <div className="font-semibold text-sm" style={{ fontFamily: FONTS.serif, color: C.dark }}>
                 {MONTH_FULL[selectedMonth - 1]} {selectedYear}
               </div>
               <div className="flex gap-5 ml-auto">
                 {[
-                  { label: "Target",    val: selTarget,   color: "#E65100" },
+                  { label: "Target",    val: selTarget,   color: T.orange },
                   { label: "Submitted", val: selSub,      color: C.dark    },
                   { label: "Approved",  val: selApp,      color: C.ok      },
                   { label: "Pending",   val: selPend,     color: C.danger  },
                 ].map(({ label, val, color }) => (
                   <div key={label} className="text-center">
                     <div className="text-lg font-bold leading-none" style={{ color }}>{val}</div>
-                    <div className="text-[10px] mt-0.5 uppercase tracking-wide" style={{ color: color + "88" }}>{label}</div>
+                    <div className="text-[0.625rem] mt-0.5 uppercase tracking-wide" style={{ color: alpha(color, "88") }}>{label}</div>
                   </div>
                 ))}
               </div>
@@ -408,13 +410,13 @@ function CalendarActivity({ delegations = [] }) {
 
             {/* Weekly breakdown table */}
             <div className="p-4">
-              <div className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: C.sub }}>Weekly Breakdown</div>
+              <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-3" style={{ color: C.sub }}>Weekly Breakdown</div>
               {Object.entries(selData.weeks || {}).length === 0 ? (
                 <div className="text-xs py-4 text-center" style={{ color: C.sub }}>No weekly data</div>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b" style={{ borderColor: C.mint4 + "88" }}>
+                    <tr className="border-b" style={{ borderColor: alpha(C.mint4, "88") }}>
                       {["Week", "Target", "Submitted", "Approved", "Pending"].map((h) => (
                         <th key={h} className="text-left pb-2 pr-6 font-semibold uppercase tracking-wide"
                           style={{ color: C.sub }}>{h}</th>
@@ -430,9 +432,9 @@ function CalendarActivity({ delegations = [] }) {
                         const wTarget = (targetByWeek[selectedYear]?.[selectedMonth] || {})[wk] || 0;
                         const wPend   = Math.max(0, wTarget - wSub);
                         return (
-                          <tr key={wk} className="border-b last:border-0" style={{ borderColor: C.mint4 + "44" }}>
+                          <tr key={wk} className="border-b last:border-0" style={{ borderColor: alpha(C.mint4, "44") }}>
                             <td className="py-2.5 pr-6 font-semibold" style={{ color: C.dark }}>Week {wk}</td>
-                            <td className="py-2.5 pr-6 font-bold" style={{ color: "#E65100" }}>{wTarget || "—"}</td>
+                            <td className="py-2.5 pr-6 font-bold" style={{ color: T.orange }}>{wTarget || "—"}</td>
                             <td className="py-2.5 pr-6 font-bold" style={{ color: C.dark }}>{wSub}</td>
                             <td className="py-2.5 pr-6 font-bold" style={{ color: C.ok }}>{wApp}</td>
                             <td className="py-2.5 font-bold" style={{ color: wPend > 0 ? C.danger : C.ok }}>{wPend}</td>
@@ -454,11 +456,11 @@ function CalendarActivity({ delegations = [] }) {
 const PAGE_SIZE = 25;
 
 const EP_STATUS_COLOR = {
-  approved:  { bg: "#E8F5E9", color: "#2E7D32" },
-  submitted: { bg: "#E3F2FD", color: "#1565C0" },
-  rejected:  { bg: "#FFEBEE", color: "#C62828" },
-  pending:   { bg: "#F3F4F6", color: "#6B7280" },
-  unknown:   { bg: "#F3F4F6", color: "#6B7280" },
+  approved:  { bg: T.greenBg, color: T.green },
+  submitted: { bg: T.blueBg, color: T.blue },
+  rejected:  { bg: T.redBg, color: T.red },
+  pending:   { bg: T.grayBg, color: T.grayMid },
+  unknown:   { bg: T.grayBg, color: T.grayMid },
 };
 
 function MiniPager({ entries, children, pageSize = PAGE_SIZE }) {
@@ -469,7 +471,7 @@ function MiniPager({ entries, children, pageSize = PAGE_SIZE }) {
     <>
       {children(paged, (page - 1) * pageSize)}
       {totalPages > 1 && (
-        <div className="px-4 py-2 border-t flex items-center justify-between" style={{ borderColor: C.mint4 + "44" }}>
+        <div className="px-4 py-2 border-t flex items-center justify-between" style={{ borderColor: alpha(C.mint4, "44") }}>
           <span className="text-xs" style={{ color: C.sub }}>Page {page}/{totalPages} · {entries.length} entries</span>
           <div className="flex gap-1">
             <button onClick={() => setPage(1)} disabled={page === 1} className="px-1.5 py-0.5 text-xs rounded disabled:opacity-30 hover:bg-black/5" style={{ color: C.sub }}>«</button>
@@ -564,22 +566,22 @@ function ActivityPanel({ editors, selected, onSelect }) {
   const totalRejected = Object.values(episodeStats).reduce((s, v) => s + (v.rejected || 0), 0);
   const movieEntries = movieGroup?.entries || [];
 
-  const thStyle   = { background: C.mint4 + "33", color: C.sub, borderColor: C.mint4 };
-  const TH        = "text-[10px] uppercase tracking-wider font-semibold px-4 py-2";
-  const rowBorder = { borderColor: C.mint4 + "44" };
+  const thStyle   = { background: alpha(C.mint4, "33"), color: C.sub, borderColor: C.mint4 };
+  const TH        = "text-[0.625rem] uppercase tracking-wider font-semibold px-4 py-2";
+  const rowBorder = { borderColor: alpha(C.mint4, "44") };
 
   return (
     <div className="grid grid-cols-3 gap-6">
       {/* Editor list */}
-      <div className="rounded-xl border overflow-hidden self-start" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-        <div className="px-4 py-3 border-b text-[10px] font-bold uppercase tracking-widest"
-          style={{ borderColor: C.mint4, background: C.mint4 + "66", color: C.sub }}>Editors</div>
+      <div className="rounded-xl border overflow-hidden self-start" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+        <div className="px-4 py-3 border-b text-[0.625rem] font-bold uppercase tracking-widest"
+          style={{ borderColor: C.mint4, background: alpha(C.mint4, "66"), color: C.sub }}>Editors</div>
         {editors.length === 0
           ? <div className="p-6 text-sm text-center" style={{ color: C.sub }}>No editors found</div>
           : editors.map((e) => (
             <button key={e.id} onClick={() => { onSelect(e.id); setSelectedSerial(null); setSelectedMovie(null); }}
               className="w-full text-left px-4 py-3 border-b last:border-0 text-sm hover:bg-green-50/40 transition"
-              style={{ borderColor: C.mint4 + "55", background: selected === e.id ? C.mint4 + "99" : undefined, color: C.dark }}>
+              style={{ borderColor: alpha(C.mint4, "55"), background: selected === e.id ? alpha(C.mint4, "99") : undefined, color: C.dark }}>
               <div className="font-medium">{e.full_name}</div>
               <div className="text-xs" style={{ color: C.sub }}>{e.email}</div>
             </button>
@@ -588,13 +590,13 @@ function ActivityPanel({ editors, selected, onSelect }) {
 
       {/* Right panel */}
       <div className="col-span-2">
-        {!selected && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>Select an editor to view their activity</div>}
-        {selected && loading && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>Loading…</div>}
+        {!selected && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Select an editor to view their activity</div>}
+        {selected && loading && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Loading…</div>}
 
         {selected && !loading && log && (
           <>
             {/* Summary header */}
-            <div className="mb-4 rounded-xl border px-5 py-3 flex items-center gap-6" style={{ background: C.mint4 + "22", borderColor: C.mint4 + "44" }}>
+            <div className="mb-4 rounded-xl border px-5 py-3 flex items-center gap-6" style={{ background: alpha(C.mint4, "22"), borderColor: alpha(C.mint4, "44") }}>
               <div>
                 <div className="text-xs font-bold uppercase tracking-widest" style={{ color: C.sub }}>{log.user?.full_name}</div>
                 <div className="text-sm mt-0.5" style={{ color: C.dark }}>
@@ -604,31 +606,31 @@ function ActivityPanel({ editors, selected, onSelect }) {
               <div className="ml-auto flex gap-4 text-center flex-wrap justify-end">
                 {[
                   { val: allSerialsList.length,  label: "Serials",   color: C.dark    },
-                  { val: allMoviesList.length,   label: "Movies",    color: "#7B1FA2" },
-                  { val: editorTarget,           label: "Target",    color: "#E65100" },
+                  { val: allMoviesList.length,   label: "Movies",    color: T.purple },
+                  { val: editorTarget,           label: "Target",    color: T.orange },
                   { val: allSubmitted,           label: "Submitted", color: C.dark    },
                   { val: Object.values(episodeStats).reduce((s, v) => s + (v.approved || 0), 0), label: "Approved", color: C.ok },
                   { val: editorPending,          label: "Pending",   color: C.danger  },
-                  { val: totalRejected,          label: "Rejected",  color: "#C62828" },
+                  { val: totalRejected,          label: "Rejected",  color: T.red },
                 ].map(({ val, label, color }) => (
                   <div key={label}>
                     <div className="text-lg font-bold leading-none" style={{ color }}>{val}</div>
-                    <div className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: color + "88" }}>{label}</div>
+                    <div className="text-[0.625rem] uppercase tracking-wider mt-0.5" style={{ color: alpha(color, "88") }}>{label}</div>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Panel tabs: Serials / Movies / History */}
-            <div className="flex gap-1 mb-4 p-1 rounded-xl" style={{ background: C.mint4 + "99" }}>
+            <div className="flex gap-1 mb-4 p-1 rounded-xl" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
               {[
                 { key: "serials", label: "Serials", icon: CalendarDays },
                 { key: "movies",  label: "Movies",  icon: Film },
                 { key: "history", label: "History", icon: History },
               ].map(({ key, label, icon: Icon }) => (
                 <button key={key} onClick={() => { setPanelTab(key); setSelectedSerial(null); setSelectedMovie(null); setHistoryYear(null); setActivityEpisode(null); }}
-                  className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: panelTab === key ? C.dark : "transparent", color: panelTab === key ? C.mint4 : C.sub }}>
+                  className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={{ background: panelTab === key ? C.dark : "transparent", color: panelTab === key ? C.mint4 : C.mid }}>
                   <Icon className="w-3.5 h-3.5" />{label}
                 </button>
               ))}
@@ -636,7 +638,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
 
             {/* ── Serials list ── */}
             {panelTab === "serials" && !selectedSerial && (
-              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                 {allSerialsList.length === 0
                   ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No serials assigned yet</div>
                   : allSerialsList.map((serial) => {
@@ -646,19 +648,21 @@ function ActivityPanel({ editors, selected, onSelect }) {
                     return (
                       <button key={serial} onClick={() => { setSelectedSerial(serial); setSerialSubTab("submitted"); }}
                         className="w-full text-left px-4 py-3 border-b last:border-0 hover:bg-green-50/30 transition flex items-center gap-4"
-                        style={{ borderColor: C.mint4 + "44" }}>
+                        style={{ borderColor: alpha(C.mint4, "44") }}>
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate" style={{ color: C.dark }}>{serial}</div>
                           <div className="flex items-center gap-2 mt-0.5">
                             {deleg && <StatusBadge status={deleg.status} />}
-                            {deleg?.episode_range && <span className="text-[10px]" style={{ color: C.sub }}>{deleg.episode_range}</span>}
+                            {deleg?.episode_range && <span className="text-[0.625rem]" style={{ color: C.sub }}>{deleg.episode_range}</span>}
                           </div>
                         </div>
                         <div className="text-right shrink-0">
                           <div className="text-xs font-medium" style={{ color: C.sub }}>
-                            {group.count > 0 ? `${group.count} action${group.count !== 1 ? "s" : ""}` : "No audit log"}
+                            {group.count > 0
+                              ? <span title={fmtDateTime(group.entries?.[0]?.at)}>Last activity {timeAgo(group.entries?.[0]?.at)} · {group.count} action{group.count !== 1 ? "s" : ""}</span>
+                              : "No activity yet"}
                           </div>
-                          {deleg && <div className="text-[10px] mt-0.5" style={{ color: C.sub }}>Target: {deleg.week_target ?? "—"} · Done: {done}</div>}
+                          {deleg && <div className="text-[0.625rem] mt-0.5" style={{ color: C.sub }}>Target: {deleg.week_target ?? "—"} · Done: {done}</div>}
                         </div>
                         <ChevronRight className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
                       </button>
@@ -680,8 +684,8 @@ function ActivityPanel({ editors, selected, onSelect }) {
                   const sPending  = Math.max(0, sTarget - sSub);
                   const sRejected = serialStat?.rejected || 0;
                   return (
-                    <div className="mb-3 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-                      <div className="px-4 py-3 border-b flex items-center gap-3" style={{ borderColor: C.mint4 + "55", background: C.mint4 + "22" }}>
+                    <div className="mb-3 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+                      <div className="px-4 py-3 border-b flex items-center gap-3" style={{ borderColor: alpha(C.mint4, "55"), background: alpha(C.mint4, "22") }}>
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-sm" style={{ color: C.dark }}>{selectedSerial}</div>
                           {serialDeleg && (
@@ -693,39 +697,39 @@ function ActivityPanel({ editors, selected, onSelect }) {
                           )}
                         </div>
                       </div>
-                      <div className="grid grid-cols-5 divide-x text-center py-3" style={{ borderColor: C.mint4 + "44" }}>
+                      <div className="grid grid-cols-5 divide-x text-center py-3" style={{ borderColor: alpha(C.mint4, "44") }}>
                         {[
-                          { label: "Target",   val: sTarget,   color: "#E65100" },
+                          { label: "Target",   val: sTarget,   color: T.orange },
                           { label: "Submitted",val: sSub,      color: C.dark    },
                           { label: "Approved", val: sApproved, color: C.ok      },
                           { label: "Pending",  val: sPending,  color: C.danger  },
-                          { label: "Rejected", val: sRejected, color: "#C62828" },
+                          { label: "Rejected", val: sRejected, color: T.red },
                         ].map(({ label, val, color }) => (
                           <div key={label} className="px-3">
                             <div className="text-xl font-bold leading-none" style={{ color }}>{val}</div>
-                            <div className="text-[10px] uppercase tracking-wide mt-1" style={{ color: color + "88" }}>{label}</div>
+                            <div className="text-[0.625rem] uppercase tracking-wide mt-1" style={{ color: alpha(color, "88") }}>{label}</div>
                           </div>
                         ))}
                       </div>
                     </div>
                   );
                 })()}
-                <div className="flex gap-1 mb-3 p-1 rounded-xl" style={{ background: C.mint4 + "66" }}>
+                <div className="flex gap-1 mb-3 p-1 rounded-xl" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
                   {[
                     { key: "submitted", label: `Submitted (${serialSubmitted.length})` },
                     { key: "approved",  label: `Approved (${serialStat?.approved ?? 0})` },
                     { key: "activity",  label: `Activity Log (${serialAllEntries.length})` },
                   ].map((t) => (
                     <button key={t.key} onClick={() => { setSerialSubTab(t.key); setActivityEpisode(null); }}
-                      className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all"
-                      style={{ background: serialSubTab === t.key ? C.dark : "transparent", color: serialSubTab === t.key ? C.mint4 : C.sub }}>
+                      className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                      style={{ background: serialSubTab === t.key ? C.dark : "transparent", color: serialSubTab === t.key ? C.mint4 : C.mid }}>
                       {t.label}
                     </button>
                   ))}
                 </div>
 
                 {serialSubTab === "submitted" && (
-                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                     {serialSubmitted.length === 0
                       ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No submissions for this serial</div>
                       : (
@@ -749,7 +753,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
                   </div>
                 )}
                 {serialSubTab === "approved" && (
-                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                     {!serialStat
                       ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No episode data for this serial</div>
                       : (
@@ -760,7 +764,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
                           </tr></thead>
                           <tbody><tr>
                             <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: C.ok }}>{serialStat.approved || 0}</td>
-                            <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: "#7B1FA2" }}>{serialStat.submitted || 0}</td>
+                            <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: T.purple }}>{serialStat.submitted || 0}</td>
                             <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: C.danger }}>{serialStat.rejected || 0}</td>
                             <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: C.warn }}>{serialStat.pending || 0}</td>
                             <td className="px-4 py-3 text-center text-lg font-bold" style={{ color: C.dark }}>{serialStat.total || 0}</td>
@@ -772,7 +776,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
                 {/* Activity log: episode list → episode detail */}
                 {serialSubTab === "activity" && (
                   !activityEpisode ? (
-                    <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                    <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                       {serialEpisodes.length === 0
                         ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No episodes found</div>
                         : (
@@ -796,7 +800,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
                                         <td className="px-4 py-2.5 text-center font-mono text-xs" style={{ color: C.dark }}>{String(ep.episode_number).padStart(2,"0")}</td>
                                         <td className="px-4 py-2.5 text-xs" style={{ color: C.dark }}>{ep.title || "—"}</td>
                                         <td className="px-4 py-2.5">
-                                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium capitalize" style={{ background: sc.bg, color: sc.color }}>{ep.status}</span>
+                                          <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium capitalize" style={{ background: sc.bg, color: sc.color }}>{ep.status}</span>
                                         </td>
                                         <td className="px-4 py-2.5 text-right"><ChevronRight className="w-4 h-4 inline" style={{ color: C.muted }} /></td>
                                       </tr>
@@ -814,10 +818,10 @@ function ActivityPanel({ editors, selected, onSelect }) {
                       <button onClick={() => setActivityEpisode(null)} className="flex items-center gap-1.5 text-xs mb-3 hover:opacity-70" style={{ color: C.sub }}>
                         <ArrowLeft className="w-3.5 h-3.5" /> Back to episodes
                       </button>
-                      <div className="mb-2 px-3 py-1 rounded-lg inline-flex items-center gap-2" style={{ background: C.mint4 + "44" }}>
+                      <div className="mb-2 px-3 py-1 rounded-lg inline-flex items-center gap-2" style={{ background: alpha(C.mint4, "44") }}>
                         <span className="text-xs font-semibold" style={{ color: C.dark }}>Episode {String(activityEpisode).padStart(2,"0")}</span>
                       </div>
-                      <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                      <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                         {(() => {
                           const epLog = serialAllEntries.filter((e) => e.episode_number === activityEpisode);
                           return epLog.length === 0
@@ -858,7 +862,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
 
             {/* ── Movies list ── */}
             {panelTab === "movies" && !selectedMovie && (
-              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+              <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                 {allMoviesList.length === 0
                   ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No movies assigned yet</div>
                   : allMoviesList.map((movie) => {
@@ -869,22 +873,24 @@ function ActivityPanel({ editors, selected, onSelect }) {
                     return (
                       <button key={movie} onClick={() => setSelectedMovie(movie)}
                         className="w-full text-left px-4 py-3 border-b last:border-0 hover:bg-green-50/30 transition flex items-center gap-4"
-                        style={{ borderColor: C.mint4 + "44" }}>
+                        style={{ borderColor: alpha(C.mint4, "44") }}>
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate" style={{ color: C.dark }}>{movie}</div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                              style={{ background: isSubmitted ? "#E3F2FD" : "#F3F4F6", color: isSubmitted ? "#1565C0" : C.sub }}>
+                            <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: isSubmitted ? T.blueBg : T.grayBg, color: isSubmitted ? T.blue : C.sub }}>
                               {isSubmitted ? "Submitted" : "Not Submitted"}
                             </span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                              style={{ background: isApproved ? "#E8F5E9" : "#FFF3E0", color: isApproved ? "#2E7D32" : "#E65100" }}>
+                            <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: isApproved ? T.greenBg : T.orangeBg, color: isApproved ? T.green : T.orange }}>
                               {isApproved ? "Approved" : "Pending"}
                             </span>
                           </div>
                         </div>
                         <div className="text-right shrink-0 text-xs font-medium" style={{ color: C.sub }}>
-                          {group.count > 0 ? `${group.count} action${group.count !== 1 ? "s" : ""}` : "No audit log"}
+                          {group.count > 0
+                              ? <span title={fmtDateTime(group.entries?.[0]?.at)}>Last activity {timeAgo(group.entries?.[0]?.at)} · {group.count} action{group.count !== 1 ? "s" : ""}</span>
+                              : "No activity yet"}
                         </div>
                         <ChevronRight className="w-4 h-4 shrink-0" style={{ color: C.muted }} />
                       </button>
@@ -899,24 +905,24 @@ function ActivityPanel({ editors, selected, onSelect }) {
                 <button onClick={() => setSelectedMovie(null)} className="flex items-center gap-1.5 text-xs mb-3 hover:opacity-70" style={{ color: C.sub }}>
                   <ArrowLeft className="w-3.5 h-3.5" /> Back to movies
                 </button>
-                <div className="mb-3 px-4 py-3 rounded-xl border flex items-center gap-4" style={{ background: C.mint4 + "22", borderColor: C.mint4 + "44" }}>
+                <div className="mb-3 px-4 py-3 rounded-xl border flex items-center gap-4" style={{ background: alpha(C.mint4, "22"), borderColor: alpha(C.mint4, "44") }}>
                   <div className="flex-1">
                     <div className="font-semibold text-sm" style={{ color: C.dark }}>{selectedMovie}</div>
                     <div className="flex items-center gap-3 mt-1">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: (movieStat?.submitted > 0 || movieStat?.approved > 0) ? "#E3F2FD" : "#F3F4F6", color: (movieStat?.submitted > 0 || movieStat?.approved > 0) ? "#1565C0" : C.sub }}>
+                      <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: (movieStat?.submitted > 0 || movieStat?.approved > 0) ? T.blueBg : T.grayBg, color: (movieStat?.submitted > 0 || movieStat?.approved > 0) ? T.blue : C.sub }}>
                         {(movieStat?.submitted > 0 || movieStat?.approved > 0) ? "Submitted" : "Not Submitted"}
                       </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: movieStat?.approved > 0 ? "#E8F5E9" : "#FFF3E0", color: movieStat?.approved > 0 ? "#2E7D32" : "#E65100" }}>
+                      <span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: movieStat?.approved > 0 ? T.greenBg : T.orangeBg, color: movieStat?.approved > 0 ? T.green : T.orange }}>
                         {movieStat?.approved > 0 ? "Approved" : "Pending Approval"}
                       </span>
                     </div>
                   </div>
                 </div>
-                <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-                  <div className="px-4 py-2 border-b text-[10px] font-bold uppercase tracking-widest"
-                    style={{ borderColor: C.mint4, background: C.mint4 + "33", color: C.sub }}>Activity Log</div>
+                <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+                  <div className="px-4 py-2 border-b text-[0.625rem] font-bold uppercase tracking-widest"
+                    style={{ borderColor: C.mint4, background: alpha(C.mint4, "33"), color: C.sub }}>Activity Log</div>
                   {movieEntries.length === 0
                     ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No activity log</div>
                     : (
@@ -946,13 +952,13 @@ function ActivityPanel({ editors, selected, onSelect }) {
             {panelTab === "history" && (
               <div className="flex gap-4">
                 <div className="w-20 shrink-0">
-                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+                  <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                     {historyYears.length === 0
                       ? <div className="p-4 text-xs text-center" style={{ color: C.sub }}>No data</div>
                       : historyYears.map((y) => (
                         <button key={y} onClick={() => setHistoryYear(y)}
                           className="w-full py-2.5 text-sm font-semibold border-b last:border-0 transition"
-                          style={{ borderColor: C.mint4 + "55", background: historyYear === y ? C.dark : "transparent", color: historyYear === y ? C.mint4 : C.dark }}>
+                          style={{ borderColor: alpha(C.mint4, "55"), background: historyYear === y ? C.dark : "transparent", color: historyYear === y ? C.mint4 : C.dark }}>
                           {y}
                         </button>
                       ))}
@@ -960,11 +966,11 @@ function ActivityPanel({ editors, selected, onSelect }) {
                 </div>
                 <div className="flex-1">
                   {!historyYear
-                    ? <div className="rounded-xl border p-8 text-center text-sm" style={{ background: C.white, borderColor: C.mint1 + "44", color: C.sub }}>Select a year to see monthly breakdown</div>
+                    ? <div className="rounded-xl border p-8 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Select a year to see monthly breakdown</div>
                     : (
-                      <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
-                        <div className="px-4 py-3 border-b text-[10px] font-bold uppercase tracking-widest"
-                          style={{ borderColor: C.mint4, background: C.mint4 + "33", color: C.sub }}>{historyYear} — Monthly Breakdown</div>
+                      <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+                        <div className="px-4 py-3 border-b text-[0.625rem] font-bold uppercase tracking-widest"
+                          style={{ borderColor: C.mint4, background: alpha(C.mint4, "33"), color: C.sub }}>{historyYear} — Monthly Breakdown</div>
                         <table className="w-full text-sm">
                           <thead><tr className="border-b" style={thStyle}>
                             <th className={`text-left ${TH}`}>Month</th>
@@ -1004,15 +1010,15 @@ function WDSubmissionGroup({ group }) {
   const [open, setOpen] = useState(true);
   return (
     <div className="rounded-xl border overflow-hidden"
-      style={{ background: "#fff", borderColor: C.mint1 + "44" }}>
+      style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
       <button onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-4 py-3 border-b"
-        style={{ borderColor: C.mint4 + "44", background: C.mint4 + "22" }}>
+        style={{ borderColor: alpha(C.mint4, "44"), background: alpha(C.mint4, "22") }}>
         <div className="flex items-center gap-2">
           <Layers className="w-3.5 h-3.5" style={{ color: C.mint1 }} />
           <span className="font-semibold text-sm" style={{ color: C.dark }}>{group.project_title}</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full"
-            style={{ background: C.mint1 + "33", color: C.sub }}>
+          <span className="text-[0.625rem] px-2 py-0.5 rounded-full"
+            style={{ background: alpha(C.mint1, "33"), color: C.sub }}>
             {group.items.length} submission{group.items.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -1022,8 +1028,8 @@ function WDSubmissionGroup({ group }) {
       {open && (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[10px] uppercase tracking-wider border-b"
-              style={{ borderColor: C.mint4 + "44", color: C.sub, background: C.mint4 + "11" }}>
+            <tr className="text-[0.625rem] uppercase tracking-wider border-b"
+              style={{ borderColor: alpha(C.mint4, "44"), color: C.sub, background: alpha(C.mint4, "11") }}>
               <th className="text-left px-4 py-2">Episodes</th>
               <th className="text-left px-4 py-2">Client</th>
               <th className="text-left px-4 py-2">Notes</th>
@@ -1034,7 +1040,7 @@ function WDSubmissionGroup({ group }) {
           <tbody>
             {group.items.map((item) => (
               <tr key={item.id} className="border-b last:border-0"
-                style={{ borderColor: C.mint4 + "33" }}>
+                style={{ borderColor: alpha(C.mint4, "33") }}>
                 <td className="px-4 py-2.5 font-medium" style={{ color: C.dark }}>
                   Ep {item.episode_from}–{item.episode_to}
                 </td>
@@ -1090,11 +1096,11 @@ function SubmissionsTab() {
 
   return (
     <div>
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {[{ key: "serial", label: "Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
           <button key={key} onClick={() => setSubTab(key)}
-            className="px-5 py-1.5 rounded-lg text-xs font-medium transition-all"
-            style={{ background: subTab === key ? C.dark : "transparent", color: subTab === key ? C.mint4 : C.sub }}>
+            className="px-5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style={{ background: subTab === key ? C.dark : "transparent", color: subTab === key ? C.mint4 : C.mid }}>
             {label}
           </button>
         ))}
@@ -1124,8 +1130,8 @@ function ClientsTab({ delegations }) {
     clientMap[key].push(d);
   }
   const clients = Object.entries(clientMap).sort(([a], [b]) => a.localeCompare(b));
-  const thStyle = { background: C.mint4 + "33", color: C.sub, borderColor: C.mint4 };
-  const TH = "text-[10px] uppercase tracking-wider font-semibold px-4 py-2.5";
+  const thStyle = { background: alpha(C.mint4, "33"), color: C.sub, borderColor: C.mint4 };
+  const TH = "text-[0.625rem] uppercase tracking-wider font-semibold px-4 py-2.5";
 
   // ── Client detail view ──────────────────────────────────────────────────────
   if (selected) {
@@ -1143,9 +1149,9 @@ function ClientsTab({ delegations }) {
           className="flex items-center gap-1.5 text-xs mb-4 hover:opacity-70" style={{ color: C.sub }}>
           <ArrowLeft className="w-3.5 h-3.5" /> Back to clients
         </button>
-        <div className="mb-4 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="mb-4 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <div className="px-5 py-3 border-b flex items-center gap-3 flex-wrap"
-            style={{ borderColor: C.mint4 + "55", background: C.mint4 + "22" }}>
+            style={{ borderColor: alpha(C.mint4, "55"), background: alpha(C.mint4, "22") }}>
             <Users className="w-4 h-4 shrink-0" style={{ color: C.mint1 }} />
             <span className="font-semibold text-sm" style={{ color: C.dark }}>{selected}</span>
             <span className="text-xs" style={{ color: C.sub }}>{allRows.length} total delegation{allRows.length !== 1 ? "s" : ""}</span>
@@ -1153,33 +1159,33 @@ function ClientsTab({ delegations }) {
               <span className="text-xs ml-auto" style={{ color: C.sub }}>Editors: {allEditors.join(", ")}</span>
             )}
           </div>
-          <div className="grid grid-cols-3 divide-x text-center py-3" style={{ borderColor: C.mint4 + "44" }}>
+          <div className="grid grid-cols-3 divide-x text-center py-3" style={{ borderColor: alpha(C.mint4, "44") }}>
             {[
-              { label: "Total Target",   val: totTarget, color: "#E65100" },
+              { label: "Total Target",   val: totTarget, color: T.orange },
               { label: "Submitted/Done", val: totDone,   color: C.ok      },
               { label: "Pending",        val: totPend,   color: C.danger  },
             ].map(({ label, val, color }) => (
               <div key={label} className="px-4">
                 <div className="text-2xl font-bold leading-none" style={{ color }}>{val}</div>
-                <div className="text-[10px] uppercase tracking-wide mt-1" style={{ color: color + "88" }}>{label}</div>
+                <div className="text-[0.625rem] uppercase tracking-wide mt-1" style={{ color: alpha(color, "88") }}>{label}</div>
               </div>
             ))}
           </div>
         </div>
         {/* Serial / Movie tabs — only in detail view */}
-        <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+        <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
           {[
             { key: "serial", label: `Serials (${serialRows.length})` },
             { key: "movie",  label: `Movies (${movieRows.length})`   },
           ].map(({ key, label }) => (
             <button key={key} onClick={() => setClientSubTab(key)}
-              className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all"
-              style={{ background: clientSubTab === key ? C.dark : "transparent", color: clientSubTab === key ? C.mint4 : C.sub }}>
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              style={{ background: clientSubTab === key ? C.dark : "transparent", color: clientSubTab === key ? C.mint4 : C.mid }}>
               {label}
             </button>
           ))}
         </div>
-        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           {rows.length === 0 ? (
             <div className="p-10 text-center text-sm" style={{ color: C.sub }}>
               No {clientSubTab === "movie" ? "movie" : "serial"} delegations for this client.
@@ -1200,14 +1206,14 @@ function ClientsTab({ delegations }) {
               <tbody>
                 {rows.map((d) => (
                   <tr key={d.id} className="border-b last:border-0 hover:bg-green-50/20 transition"
-                    style={{ borderColor: C.mint4 + "44" }}>
+                    style={{ borderColor: alpha(C.mint4, "44") }}>
                     <td className="px-4 py-3">
                       <div className="font-medium text-sm" style={{ color: C.dark }}>{d.serial_name}</div>
-                      {d.channel && <div className="text-[10px]" style={{ color: C.sub }}>{d.channel}</div>}
+                      {d.channel && <div className="text-[0.625rem]" style={{ color: C.sub }}>{d.channel}</div>}
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: C.dark }}>{d.assigned_to_name || "—"}</td>
                     {clientSubTab === "serial" && <td className="px-4 py-3 text-xs" style={{ color: C.sub }}>{d.episode_range || "—"}</td>}
-                    <td className="px-4 py-3 text-center font-bold" style={{ color: "#E65100" }}>{d.week_target ?? "—"}</td>
+                    <td className="px-4 py-3 text-center font-bold" style={{ color: T.orange }}>{d.week_target ?? "—"}</td>
                     <td className="px-4 py-3 text-center font-bold" style={{ color: C.ok }}>{d.completed || 0}</td>
                     <td className="px-4 py-3 text-center font-bold" style={{ color: (d.balance||0) > 0 ? C.danger : C.ok }}>{d.balance || 0}</td>
                     <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
@@ -1225,13 +1231,13 @@ function ClientsTab({ delegations }) {
   return (
     <div>
       {clients.length === 0 ? (
-        <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border p-12 text-center" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <div className="text-4xl mb-3">🏢</div>
           <div className="font-semibold mb-1" style={{ fontFamily: FONTS.serif }}>No clients yet</div>
           <p className="text-sm" style={{ color: C.sub }}>Add a client name when creating delegations.</p>
         </div>
       ) : (
-        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={thStyle}>
@@ -1256,7 +1262,7 @@ function ClientsTab({ delegations }) {
                 return (
                   <tr key={client}
                     className="border-b last:border-0 hover:bg-green-50/30 transition cursor-pointer"
-                    style={{ borderColor: C.mint4 + "44" }}
+                    style={{ borderColor: alpha(C.mint4, "44") }}
                     onClick={() => { setSelected(client); setClientSubTab("serial"); }}
                   >
                     <td className="px-4 py-3">
@@ -1267,8 +1273,8 @@ function ClientsTab({ delegations }) {
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: C.sub }}>{editors.join(", ") || "—"}</td>
                     <td className="px-4 py-3 text-center font-medium" style={{ color: C.dark }}>{serialCnt}</td>
-                    <td className="px-4 py-3 text-center font-medium" style={{ color: "#7B1FA2" }}>{movieCnt}</td>
-                    <td className="px-4 py-3 text-center font-bold" style={{ color: "#E65100" }}>{totTarget || "—"}</td>
+                    <td className="px-4 py-3 text-center font-medium" style={{ color: T.purple }}>{movieCnt}</td>
+                    <td className="px-4 py-3 text-center font-bold" style={{ color: T.orange }}>{totTarget || "—"}</td>
                     <td className="px-4 py-3 text-center font-bold" style={{ color: C.ok }}>{totDone}</td>
                     <td className="px-4 py-3 text-center font-bold" style={{ color: totPend > 0 ? C.danger : C.ok }}>{totPend}</td>
                     <td className="px-4 py-3 text-right"><ChevronRight className="w-4 h-4 inline" style={{ color: C.muted }} /></td>
@@ -1285,8 +1291,11 @@ function ClientsTab({ delegations }) {
 
 
 // ─── Main WDDashboard ─────────────────────────────────────────────────────────
+const allocationBody = (d) => [d.work_type, d.episode_range && `Episodes ${d.episode_range}`, d.week_target && `Target ${d.week_target}`]
+  .filter(Boolean).join(" · ");
+
 export default function WDDashboard() {
-  const { currentUser } = useApp();
+  const { pushToast, fetchNotifications } = useApp();
   const [tab, setTab]               = useState("delegations");
   const [delegations, setDelegations] = useState([]);
   const [editors, setEditors]         = useState([]);
@@ -1305,13 +1314,21 @@ export default function WDDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  // The server also stores this as a notification, so refresh silently (no duplicate popup).
+  const announceAllocation = (d) => {
+    pushToast({ kind: "success", title: `${d.serial_name} allocated to ${d.assigned_to_name || "editor"}`, body: allocationBody(d) });
+    fetchNotifications({ silent: true });
+  };
   const handleCreate = async (payload) => {
     const d = await api.createDelegation(payload);
     setDelegations((prev) => [d, ...prev]);
+    announceAllocation(d);
   };
   const handleUpdate = async (payload) => {
+    const reassigned = payload.assigned_to && payload.assigned_to !== editTarget.assigned_to;
     const d = await api.updateDelegation(editTarget.id, payload);
     setDelegations((prev) => prev.map((x) => (x.id === d.id ? d : x)));
+    if (reassigned) announceAllocation(d);
   };
   const handleDelete = async (id) => {
     const ok = await showConfirm("Delete this delegation?", { variant: "danger", confirmLabel: "Delete" });
@@ -1350,21 +1367,21 @@ export default function WDDashboard() {
         const tabFiltered    = delTab === "movies" ? movieFiltered : serialFiltered;
         const isMovie        = delTab === "movies";
         const colSpan        = isMovie ? 8 : 9;
-        const thStyle        = { borderColor: C.mint4, color: C.sub, background: C.mint4 + "33" };
-        const TH             = "text-left px-4 py-3 text-[10px] uppercase tracking-wider";
+        const thStyle        = { borderColor: C.mint4, color: C.sub, background: alpha(C.mint4, "33") };
+        const TH             = "text-left px-4 py-3 text-[0.625rem] uppercase tracking-wider";
         return (
           <div>
             {/* Top bar: tabs + search + new */}
             <div className="flex items-center gap-3 mb-4 flex-wrap">
-              <div className="flex gap-1 p-1 rounded-xl" style={{ background: C.mint4 + "66" }}>
+              <div className="flex gap-1 p-1 rounded-xl" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
                 {[
                   { key: "serials", label: "Serials", count: delegations.filter((d) => d.work_type !== "Movie Cue Sheet").length },
                   { key: "movies",  label: "Movies",  count: delegations.filter((d) => d.work_type === "Movie Cue Sheet").length  },
                 ].map(({ key, label, count }) => (
                   <button key={key} onClick={() => setDelTab(key)}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-all"
-                    style={{ background: delTab === key ? C.dark : "transparent", color: delTab === key ? C.mint4 : C.sub }}>
-                    {label} <span className="text-[10px] opacity-70">({count})</span>
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                    style={{ background: delTab === key ? C.dark : "transparent", color: delTab === key ? C.mint4 : C.mid }}>
+                    {label} <span className="text-[0.625rem] opacity-70">({count})</span>
                   </button>
                 ))}
               </div>
@@ -1374,7 +1391,7 @@ export default function WDDashboard() {
                   type="text" value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
                   placeholder={`Search ${isMovie ? "movie" : "serial"} or editor…`}
                   className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border focus:outline-none"
-                  style={{ borderColor: C.mint1 + "44", background: C.white, color: C.dark }}
+                  style={{ borderColor: alpha(C.mint1, "44"), background: C.white, color: C.dark }}
                 />
                 {searchQ && (
                   <button onClick={() => setSearchQ("")} className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -1400,7 +1417,7 @@ export default function WDDashboard() {
               />
             )}
 
-            <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: C.mint1 + "44" }}>
+            <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
               {loading ? (
                 <div className="px-4 py-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>
               ) : tabFiltered.length === 0 ? (
@@ -1417,19 +1434,19 @@ export default function WDDashboard() {
                           <th className={TH}>Assigned To</th>
                           <th className={TH}>Client</th>
                           {!isMovie && <th className={TH}>Ep Range</th>}
-                          <th className="text-center px-4 py-3 text-[10px] uppercase tracking-wider">Target</th>
-                          <th className="text-center px-4 py-3 text-[10px] uppercase tracking-wider">Done</th>
-                          <th className="text-center px-4 py-3 text-[10px] uppercase tracking-wider">Balance</th>
+                          <th className="text-center px-4 py-3 text-[0.625rem] uppercase tracking-wider">Target</th>
+                          <th className="text-center px-4 py-3 text-[0.625rem] uppercase tracking-wider">Done</th>
+                          <th className="text-center px-4 py-3 text-[0.625rem] uppercase tracking-wider">Balance</th>
                           <th className={TH}>Status</th>
-                          <th className="text-right px-4 py-3 text-[10px] uppercase tracking-wider">Actions</th>
+                          <th className="text-right px-4 py-3 text-[0.625rem] uppercase tracking-wider">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {paged.map((d) => (
-                          <tr key={d.id} className="border-b last:border-0 hover:bg-green-50/30 transition" style={{ borderColor: C.mint4 + "55" }}>
+                          <tr key={d.id} className="border-b last:border-0 hover:bg-green-50/30 transition" style={{ borderColor: alpha(C.mint4, "55") }}>
                             <td className="px-4 py-3">
                               <div className="font-medium" style={{ color: C.dark }}>{d.serial_name}</div>
-                              {d.channel && <div className="text-[10px]" style={{ color: C.sub }}>{d.channel}</div>}
+                              {d.channel && <div className="text-[0.625rem]" style={{ color: C.sub }}>{d.channel}</div>}
                             </td>
                             <td className="px-4 py-3 text-sm" style={{ color: C.dark }}>{d.assigned_to_name || "—"}</td>
                             <td className="px-4 py-3 text-xs" style={{ color: C.sub }}>{d.client || "—"}</td>
@@ -1438,12 +1455,11 @@ export default function WDDashboard() {
                             <td className="px-4 py-3 text-center text-sm font-medium" style={{ color: C.ok }}>{d.completed}</td>
                             <td className="px-4 py-3 text-center text-sm font-medium" style={{ color: d.balance > 0 ? C.warn : C.ok }}>{d.balance}</td>
                             <td className="px-4 py-3">
-                              <select value={d.status} onChange={(e) => handleStatusChange(d.id, e.target.value)}
-                                className="text-xs px-2 py-1 rounded-lg focus:outline-none"
-                                style={{ background: STATUS_STYLE[d.status]?.bg, color: STATUS_STYLE[d.status]?.color, border: "none" }}
-                                onClick={(e) => e.stopPropagation()}>
+                              <Select value={d.status} onChange={(e) => handleStatusChange(d.id, e.target.value)}
+                                className="text-xs px-2.5 py-1 rounded-lg focus:outline-none"
+                                style={{ background: STATUS_STYLE[d.status]?.bg, color: STATUS_STYLE[d.status]?.color, border: `1px solid ${alpha(STATUS_STYLE[d.status]?.color, "33")}`, fontWeight: 600 }}>
                                 {STATUSES.map((s) => <option key={s} value={s}>{STATUS_STYLE[s].label}</option>)}
-                              </select>
+                              </Select>
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-1">
@@ -1473,11 +1489,11 @@ export default function WDDashboard() {
         const serialProjIds = new Set(delegations.filter((d) => d.work_type !== "Movie Cue Sheet" && d.project_id).map((d) => d.project_id));
         return (
           <div>
-            <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4 + "66" }}>
+            <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
               {[{ key: "serial", label: "Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
                 <button key={key} onClick={() => setProjectSubTab(key)}
-                  className="px-5 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: projectSubTab === key ? C.dark : "transparent", color: projectSubTab === key ? C.mint4 : C.sub }}>
+                  className="px-5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={{ background: projectSubTab === key ? C.dark : "transparent", color: projectSubTab === key ? C.mint4 : C.mid }}>
                   {label}
                 </button>
               ))}

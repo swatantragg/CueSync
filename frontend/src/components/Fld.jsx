@@ -13,9 +13,9 @@ export default function Fld({ label, children, span, tag }) {
   const t = TAG[tag];
   return (
     <div className={cls}>
-      <label className="text-[10px] uppercase tracking-widest block mb-1.5 flex items-center gap-1.5" style={{ color: C.sub }}>
+      <label className="text-[0.625rem] uppercase tracking-widest block mb-1.5 flex items-center gap-1.5" style={{ color: C.sub }}>
         {t && (
-          <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[7px] font-bold text-white" style={{ background: t.c }}>
+          <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[0.4375rem] font-bold text-white" style={{ background: t.c }}>
             {t.l}
           </span>
         )}

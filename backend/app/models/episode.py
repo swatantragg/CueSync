@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import Base, utcnow
 
 
 class Episode(Base):
@@ -40,8 +40,8 @@ class Episode(Base):
     cue_bg_music_composer: Mapped[str | None] = mapped_column(String(255))
     cue_submitted_by: Mapped[str | None] = mapped_column(String(255))
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     project = relationship("Project", back_populates="episodes")
     cues = relationship("CueEntry", back_populates="episode", cascade="all, delete-orphan")

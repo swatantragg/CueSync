@@ -22,9 +22,6 @@ class Settings(BaseSettings):
     # Redis for token blacklist (optional — falls back to in-memory if not set)
     REDIS_URL: str | None = None
 
-    # Set to false to disable public self-registration
-    ALLOW_PUBLIC_SIGNUP: bool = True
-
     # The single hidden super admin. Promoted at startup if the account exists; created with
     # SUPER_ADMIN_PASSWORD if it doesn't (skipped when no password is configured).
     SUPER_ADMIN_EMAIL: str = "swatantra.goongoonalo@gmail.com"
