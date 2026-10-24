@@ -10,6 +10,7 @@ import Fld from "../components/Fld";
 import Inp from "../components/Inp";
 import CueCard from "../components/CueCard";
 import ExpBtn from "../components/ExpBtn";
+import { WorkFileChip, downloadWorkFile } from "../components/WorkFileUpload";
 import { USERS_DB } from "../constants/users";
 import { uid } from "../utils/uid";
 import { now } from "../utils/format";
@@ -336,6 +337,7 @@ export default function EpisodePage() {
   const [copyToast, setCopyToast] = useState(null); // array of episode numbers
   const [reviewerHasPendingChanges, setReviewerHasPendingChanges] = useState(false);
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [hasWorkFile, setHasWorkFile] = useState(false);
   // saves: key → { timer: id|null, fn: () => Promise }
   // flying: Map<key, in-flight Promise> — keyed same as saves so saves chain in order
   const saves = useRef(new Map());
@@ -405,11 +407,13 @@ export default function EpisodePage() {
     try {
       if (isReviewer) await api.markEpisodeOpened(activeEpisode.id).catch(() => {});
       await flushAll().catch(() => {}); // best-effort flush on navigation
-      const [epRow, cues, projRow] = await Promise.all([
+      const [epRow, cues, projRow, workFiles] = await Promise.all([
         api.getEpisode(activeEpisode.id),
         api.listCues(activeEpisode.id),
         api.getProject(activeProject.id),
+        api.listWorkFiles(activeProject.id).catch(() => []),
       ]);
+      setHasWorkFile(workFiles.some((w) => w.episode_number === epRow.episode_number));
       updateProject(activeProject.id, (p) => ({
         ...p, ...projRow,
         year: projRow.production_year, productionCompany: projRow.production_company,
@@ -982,7 +986,10 @@ export default function EpisodePage() {
             </h2>
             {ep.airDate && <div className="text-sm" style={{ color: C.sub }}>{proj.type === "movie" ? "Release date" : "Air date"}: {ep.airDate}</div>}
           </div>
-          <StatusBadge status={ep.status} />
+          <div className="flex items-center gap-2">
+            {hasWorkFile && <WorkFileChip projectId={proj.id} projectTitle={proj.title} epNum={ep.number} />}
+            <StatusBadge status={ep.status} />
+          </div>
         </div>
 
         <div className="rounded-2xl border mb-6 overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
@@ -1193,7 +1200,7 @@ export default function EpisodePage() {
                   value={adminReviewNote}
                   onChange={(e) => setAdminReviewNote(e.target.value)}
                   rows={3}
-                  placeholder="e.g. Song Code missing for 'Montu Da Theme'."
+                  placeholder="e.g. IPRS Internal Number missing for 'Montu Da Theme'."
                   className="w-full border rounded-xl px-4 py-3 text-sm focus:outline-none"
                   style={{ borderColor: C.mid, background: "rgba(255,255,255,0.05)", color: C.mint4 }}
                 />
@@ -1239,13 +1246,16 @@ export default function EpisodePage() {
               </div>
               <span className="text-xs px-3 py-1.5 rounded-lg" style={{ background: "#27AE6033", border: "1px solid #27AE60", color: "#7DCEA0" }}>Ready to export</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 divide-x" style={{ borderColor: C.mid }}>
+            <div className={`grid grid-cols-1 ${hasWorkFile ? "md:grid-cols-4" : "md:grid-cols-3"} divide-x`} style={{ borderColor: C.mid }}>
               {(() => {
                 const fname = (soc) => `${proj.title.replace(/[^a-z0-9]+/gi, "_")}_Ep${String(ep.number).padStart(2, "0")}_${soc}.xlsx`;
                 return <>
                   <ExpBtn label="IPRS" sub="India" icon="🇮🇳" onClick={() => api.downloadExport(ep.id, "iprs", fname("IPRS"))} />
                   <ExpBtn label="PRS" sub="UK" icon="🇬🇧" onClick={() => api.downloadExport(ep.id, "prs", fname("PRS"))} />
                   <ExpBtn label="ASCAP" sub="USA" icon="🇺🇸" onClick={() => api.downloadExport(ep.id, "ascap", fname("ASCAP"))} />
+                  {hasWorkFile && (
+                    <ExpBtn label="Work File" sub="As uploaded" icon="📄" onClick={() => downloadWorkFile(proj.id, proj.title, ep.number)} />
+                  )}
                 </>;
               })()}
             </div>

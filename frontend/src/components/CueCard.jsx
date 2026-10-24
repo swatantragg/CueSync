@@ -130,7 +130,7 @@ function SongDropdown({ suggestions, onSelect, onClose }) {
             <div className="text-xs font-semibold" style={{ color: C.mint1 }}>{s.title}</div>
             <div className="text-[0.625rem] flex gap-3 mt-0.5 flex-wrap" style={{ color: C.muted }}>
               {s.isrc && <span style={{ fontFamily: "monospace" }}>ISRC: {s.isrc}</span>}
-              {s.song_code && <span style={{ fontFamily: "monospace" }}>Code: {s.song_code}</span>}
+              {s.song_code && <span style={{ fontFamily: "monospace" }}>IPRS No.: {s.song_code}</span>}
               {s.singer && <span>{s.singer}</span>}
             </div>
             {contribs.length > 0 && (
@@ -171,17 +171,25 @@ export default function CueCard({
 }) {
   const [selected, setSelected] = useState(new Set());
   const [songSuggestions, setSongSuggestions] = useState([]);
-  const [openSongDropdown, setOpenSongDropdown] = useState(null); // 'songCode' | 'isrc' | null
+  const [openSongDropdown, setOpenSongDropdown] = useState(null); // 'songTitle' | 'songCode' | 'isrc' | null
   const [contribSuggestions, setContribSuggestions] = useState({});
   const [openDropdown, setOpenDropdown] = useState(null); // { coId, field }
   const debounceTimers = useRef({});
   const songDebounceRef = useRef(null);
+  const songSeqRef = useRef(0);
 
   // Exclude Performer from share sum
   const sum = cue.contributors.reduce(
     (a, x) => a + (x.role === "Performer" ? 0 : Number(x.share || 0)), 0
   );
   const ok = Math.abs(sum - 100) < 0.02;
+
+  // Autosave writes a library row for every title the cue passes through ("t", "tu", "tum"…).
+  // Hide those stubs: this cue's own title-only row, and rows with nothing to fill in.
+  const visibleSongSuggestions = songSuggestions.filter((s) =>
+    s.isrc || s.song_code || s.work_number || s.ascap_work_id ||
+    (s.id !== cue.libraryId && (s.singer || s.contributors?.length))
+  );
 
   const sortedContribs = [...cue.contributors].sort(
     (a, b) => (ROLE_ORDER[a.role] ?? 5) - (ROLE_ORDER[b.role] ?? 5)
@@ -200,17 +208,20 @@ export default function CueCard({
 
   // ── Song lookup helpers ───────────────────────────────────────────────────────
 
-  const doSongTypeahead = useCallback((field, songCode, isrc) => {
+  const doSongTypeahead = useCallback((field, { title = "", songCode = "", isrc = "" }) => {
     if (isAdmin) return;
     if (songDebounceRef.current) clearTimeout(songDebounceRef.current);
+    const seq = ++songSeqRef.current;
+    const hasTitle = title && title.trim().length > 1;
     const hasCode = songCode && songCode.trim().length > 1;
     const hasIsrc = isrc && isrc.trim().length > 2;
-    if (!hasCode && !hasIsrc) { setSongSuggestions([]); setOpenSongDropdown(null); return; }
+    if (!hasTitle && !hasCode && !hasIsrc) { setSongSuggestions([]); setOpenSongDropdown(null); return; }
     songDebounceRef.current = setTimeout(async () => {
       try {
-        const results = await api.searchSongs("", songCode || "", isrc || "");
+        const results = await api.searchSongs(hasTitle ? title.trim() : "", songCode || "", isrc || "");
+        if (seq !== songSeqRef.current) return; // a newer keystroke superseded this search
         setSongSuggestions(results || []);
-        if (results && results.length > 0) setOpenSongDropdown(field);
+        setOpenSongDropdown(results && results.length > 0 ? field : null);
       } catch (_) {}
     }, 280);
   }, [isAdmin]);
@@ -236,6 +247,7 @@ export default function CueCard({
     if (song.work_number) onUpdate(cue.id, "workNumber", song.work_number);
     if (song.ascap_work_id) onUpdate(cue.id, "ascapWorkId", song.ascap_work_id);
     onApplyLibraryMatch?.(cue.id, song);
+    songSeqRef.current++; // drop any in-flight search so the dropdown doesn't reopen
     setSongSuggestions([]);
     setOpenSongDropdown(null);
   };
@@ -346,7 +358,22 @@ export default function CueCard({
       <div className="px-5 py-5">
         <div className="grid grid-cols-6 gap-3 mb-5">
           <Fld label="Song Title" tag="hybrid" span={3}>
-            <Inp value={cue.songTitle} onChange={(v) => onUpdate(cue.id, "songTitle", v)} onBlur={handleSongTitleBlur} readOnly={false} />
+            <div className="relative">
+              <Inp
+                value={cue.songTitle}
+                onChange={(v) => { onUpdate(cue.id, "songTitle", v); doSongTypeahead("songTitle", { title: v }); }}
+                onFocus={() => { if (visibleSongSuggestions.length > 0) setOpenSongDropdown("songTitle"); }}
+                onBlur={(v) => { handleSongTitleBlur(v); setTimeout(() => setOpenSongDropdown(null), 150); }}
+                readOnly={false}
+              />
+              {openSongDropdown === "songTitle" && (
+                <SongDropdown
+                  suggestions={visibleSongSuggestions}
+                  onSelect={applySongMatch}
+                  onClose={() => setOpenSongDropdown(null)}
+                />
+              )}
+            </div>
           </Fld>
           <Fld label="Usage Type" tag="auto">
             <UsageSelect value={cue.usageType} onChange={(v) => onUpdate(cue.id, "usageType", v)} readOnly={false} />
@@ -357,52 +384,52 @@ export default function CueCard({
           <Fld label="Usages" tag="auto">
             <Inp value={cue.usages} onChange={(v) => onUpdate(cue.id, "usages", parseInt(v) || 1)} readOnly={false} mono />
           </Fld>
-          <Fld label="Song Code" tag="manual">
+          <Fld label="IPRS Internal Number" tag="manual" span={2}>
             <div className="relative">
               <Inp
                 value={cue.songCode}
-                onChange={(v) => { onUpdate(cue.id, "songCode", v); doSongTypeahead("songCode", v, cue.isrc); }}
-                onFocus={() => { if (songSuggestions.length > 0) setOpenSongDropdown("songCode"); }}
+                onChange={(v) => { onUpdate(cue.id, "songCode", v); doSongTypeahead("songCode", { songCode: v, isrc: cue.isrc }); }}
+                onFocus={() => { if (visibleSongSuggestions.length > 0) setOpenSongDropdown("songCode"); }}
                 onBlur={() => setTimeout(() => setOpenSongDropdown(null), 150)}
                 readOnly={false}
                 mono
               />
               {openSongDropdown === "songCode" && (
                 <SongDropdown
-                  suggestions={songSuggestions}
+                  suggestions={visibleSongSuggestions}
                   onSelect={applySongMatch}
                   onClose={() => setOpenSongDropdown(null)}
                 />
               )}
             </div>
           </Fld>
-          <Fld label="ISRC" tag="manual">
+          <Fld label="ISRC" tag="manual" span={2}>
             <div className="relative">
               <Inp
                 value={cue.isrc || ""}
-                onChange={(v) => { onUpdate(cue.id, "isrc", v); doSongTypeahead("isrc", cue.songCode, v); }}
-                onFocus={() => { if (songSuggestions.length > 0) setOpenSongDropdown("isrc"); }}
+                onChange={(v) => { onUpdate(cue.id, "isrc", v); doSongTypeahead("isrc", { songCode: cue.songCode, isrc: v }); }}
+                onFocus={() => { if (visibleSongSuggestions.length > 0) setOpenSongDropdown("isrc"); }}
                 onBlur={() => setTimeout(() => setOpenSongDropdown(null), 150)}
                 readOnly={false}
                 mono
               />
               {openSongDropdown === "isrc" && (
                 <SongDropdown
-                  suggestions={songSuggestions}
+                  suggestions={visibleSongSuggestions}
                   onSelect={applySongMatch}
                   onClose={() => setOpenSongDropdown(null)}
                 />
               )}
             </div>
           </Fld>
-          <Fld label="Singer" tag="hybrid">
-            <Inp value={cue.singer} onChange={(v) => onUpdate(cue.id, "singer", v)} readOnly={false} />
-          </Fld>
           <Fld label="PRS Work No." tag="manual">
             <Inp value={cue.workNumber || ""} onChange={(v) => onUpdate(cue.id, "workNumber", v)} readOnly={false} mono />
           </Fld>
           <Fld label="ASCAP Work ID" tag="manual">
             <Inp value={cue.ascapWorkId || ""} onChange={(v) => onUpdate(cue.id, "ascapWorkId", v)} readOnly={false} mono />
+          </Fld>
+          <Fld label="Singer" tag="hybrid" span={3}>
+            <Inp value={cue.singer} onChange={(v) => onUpdate(cue.id, "singer", v)} readOnly={false} />
           </Fld>
           <Fld label="Validation Link" tag="manual" span={3}>
             <Inp value={cue.validationLink || ""} onChange={(v) => onUpdate(cue.id, "validationLink", v)} readOnly={false} />

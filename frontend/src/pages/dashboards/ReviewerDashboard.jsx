@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle2, XCircle, MessageSquare, Download, Search, X,
   Layers, ChevronDown, FileDown, ChevronLeft, ChevronRight, Film,
-  CalendarDays, Send, AlertCircle, Eye, Lock,
+  CalendarDays, Send, AlertCircle, Eye, Lock, Archive,
 } from "lucide-react";
 import { C, FONTS, alpha, T } from "../../styles/palette";
 import Select from "../../components/Select";
@@ -10,6 +10,7 @@ import DashboardShell from "./DashboardShell";
 import { api } from "../../utils/api";
 import { showAlert, showConfirm } from "../../components/Dialog";
 import { useApp } from "../../context/AppContext";
+import { WorkFileChip, downloadWorkFile } from "../../components/WorkFileUpload";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const PER_PAGE = 15;
@@ -131,7 +132,7 @@ function Paginator({ page, total, onChange }) {
 }
 
 // ── Per-episode download button with society picker ────────────────────────────
-function EpDownloadBtn({ episode, projectTitle }) {
+function EpDownloadBtn({ episode, projectTitle, projectId }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy]  = useState(false);
   const wrapRef = useRef(null);
@@ -148,6 +149,10 @@ function EpDownloadBtn({ episode, projectTitle }) {
   const download = async (soc) => {
     setOpen(false); setBusy(true);
     try {
+      if (soc === "workfile") {
+        await downloadWorkFile(projectId, projectTitle, episode.episode_number);
+        return;
+      }
       await api.downloadExport(
         episode.id, soc,
         `${projectTitle}_EP${episode.episode_number}_${soc.toUpperCase()}.xlsx`,
@@ -173,6 +178,11 @@ function EpDownloadBtn({ episode, projectTitle }) {
               className="block w-full text-left px-4 py-2 text-xs hover:opacity-70"
               style={{ color: C.dark }}>{s}</button>
           ))}
+          {episode.has_work_file && projectId && (
+            <button onMouseDown={() => download("workfile")}
+              className="block w-full text-left px-4 py-2 text-xs hover:opacity-70 whitespace-nowrap border-t"
+              style={{ color: C.dark, borderColor: alpha(C.mint1, "44") }}>Work File</button>
+          )}
         </div>
       )}
     </div>
@@ -267,12 +277,13 @@ function EpisodeTable({ episodes, projectTitle, projectId, onReview, onRefresh, 
             <th className="text-center px-4 py-2.5 w-24">Duration</th>
             <th className="text-center px-4 py-2.5 w-16">Songs</th>
             <th className="text-left px-4 py-2.5 w-36">Status</th>
+            <th className="text-left px-4 py-2.5 w-28">Work File</th>
             <th className="text-right px-4 py-2.5 w-48">Actions</th>
           </tr>
         </thead>
         <tbody>
           {episodes.length === 0 && (
-            <tr><td colSpan={7} className="px-4 py-8 text-center text-xs"
+            <tr><td colSpan={8} className="px-4 py-8 text-center text-xs"
               style={{ color: C.sub }}>No episodes.</td></tr>
           )}
           {episodes.map((ep) => (
@@ -292,6 +303,11 @@ function EpisodeTable({ episodes, projectTitle, projectId, onReview, onRefresh, 
               <td className="px-4 py-2.5 text-center text-xs font-medium"
                 style={{ color: C.dark }}>{ep.song_count ?? 0}</td>
               <td className="px-4 py-2.5"><StatusBadge status={ep.status} /></td>
+              <td className="px-4 py-2.5">
+                {ep.has_work_file
+                  ? <WorkFileChip projectId={projectId} projectTitle={projectTitle} epNum={ep.episode_number} />
+                  : <span className="text-xs" style={{ color: C.muted }}>—</span>}
+              </td>
               <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-end gap-2">
                   {ep.status === "submitted" && (
@@ -302,7 +318,7 @@ function EpisodeTable({ episodes, projectTitle, projectId, onReview, onRefresh, 
                     </>
                   )}
                   {ep.status === "approved" && (
-                    <EpDownloadBtn episode={ep} projectTitle={projectTitle} />
+                    <EpDownloadBtn episode={ep} projectTitle={projectTitle} projectId={projectId} />
                   )}
                 </div>
               </td>
@@ -320,25 +336,52 @@ function BulkDownloadBar({ serial }) {
   const [toEp,   setToEp]   = useState("");
   const [busy,   setBusy]   = useState(null);
 
-  const go = async (society) => {
+  const range = async () => {
     const from = parseInt(fromEp, 10);
     const to   = parseInt(toEp,   10);
     if (!from || !to || from > to) {
-      await showAlert("Enter a valid episode range (From ≤ To).", { variant: "warn" }); return;
+      await showAlert("Enter a valid episode range (From ≤ To).", { variant: "warn" });
+      return null;
     }
+    return { from, to };
+  };
+
+  const go = async (society) => {
+    const r = await range();
+    if (!r) return;
     setBusy(society);
     try {
-      const fname = `${serial.project_title}_${society.toUpperCase()}_EP${from}-${to}.xlsx`;
-      await api.downloadBulkExport(serial.project_id, society, from, to, fname);
+      const label = society === "workfile" ? "WorkFile" : society.toUpperCase();
+      const fname = `${serial.project_title}_${label}_EP${r.from}-${r.to}.xlsx`;
+      await api.downloadBulkExport(serial.project_id, society, r.from, r.to, fname);
+    } catch (ex) {
+      await showAlert(ex.message, { title: "Download Failed", variant: "error" });
+    } finally { setBusy(null); }
+  };
+
+  const goAll = async () => {
+    const r = await range();
+    if (!r) return;
+    setBusy("all");
+    try {
+      const got = await api.downloadBulkAll(
+        serial.project_id, r.from, r.to, `${serial.project_title}_All_EP${r.from}-${r.to}.zip`,
+      );
+      if (!got.workFiles) {
+        await showAlert(`No work files are uploaded for Ep ${r.from}–${r.to}, so the ZIP has the IPRS, PRS and ASCAP sheets only.`, { title: "Downloaded without Work File", variant: "warn" });
+      } else if (!got.episodes) {
+        await showAlert(`No cue sheets exist for Ep ${r.from}–${r.to}, so the ZIP has the work file only.`, { title: "Downloaded Work File only", variant: "warn" });
+      }
     } catch (ex) {
       await showAlert(ex.message, { title: "Download Failed", variant: "error" });
     } finally { setBusy(null); }
   };
 
   const societies = [
-    { key: "iprs",  label: "IPRS" },
-    { key: "prs",   label: "PRS"  },
-    { key: "ascap", label: "ASCAP" },
+    { key: "iprs",     label: "IPRS" },
+    { key: "prs",      label: "PRS"  },
+    { key: "ascap",    label: "ASCAP" },
+    { key: "workfile", label: "Work File" },
   ];
 
   return (
@@ -366,6 +409,13 @@ function BulkDownloadBar({ serial }) {
             {busy === key ? "Downloading…" : `Download ${label}`}
           </button>
         ))}
+        <button onClick={goAll} disabled={busy !== null}
+          title="One ZIP with the IPRS, PRS and ASCAP sheets and the work file for this range"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
+          style={{ background: C.mint1, color: C.dark }}>
+          <Archive className="w-3.5 h-3.5" />
+          {busy === "all" ? "Preparing ZIP…" : "Download All"}
+        </button>
       </div>
     </div>
   );

@@ -367,7 +367,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                 <span>Song Title</span>
                 <span>Usage</span>
                 <span>Duration</span>
-                <span>Song Code</span>
+                <span>IPRS Internal No.</span>
                 <span>ISRC</span>
                 <span>Singer</span>
                 <span>DB Match</span>

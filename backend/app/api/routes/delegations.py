@@ -1,3 +1,6 @@
+import re
+from collections import defaultdict
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -6,11 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
 from app.models.audit import AuditLog
+from app.models.episode import Episode
 from app.models.notification import Notification
 from app.models.project import Project
 from app.models.user import User, UserRole
 from app.models.work_delegation import WorkDelegation
 from app.services.audit import ADMIN_ONLY_ACTIONS
+from app.services.delegations import purge_delegations
 
 router = APIRouter()
 
@@ -46,7 +51,41 @@ class DelegationUpdate(BaseModel):
     project_id: int | None = None
 
 
-def _row(d: WorkDelegation, assignee: User | None = None, creator: User | None = None) -> dict:
+# A delegation whose serial was deleted keeps a NULL project_id (FK is SET NULL) — treat it as gone.
+_LIVE = WorkDelegation.project_id.isnot(None)
+
+_SPAN_RE = re.compile(r"(\d+)\s*(?:-|–|—|to)\s*(\d+)", re.IGNORECASE)
+
+
+def episode_spans(episode_range: str | None) -> list[tuple[int, int]]:
+    """'1-30, 35' → [(1, 30), (35, 35)]. Empty/None → [] meaning the whole serial."""
+    if not episode_range:
+        return []
+    spans = [(min(int(a), int(b)), max(int(a), int(b))) for a, b in _SPAN_RE.findall(episode_range)]
+    spans += [(int(n), int(n)) for n in re.findall(r"\d+", _SPAN_RE.sub(" ", episode_range))]
+    return spans
+
+
+async def _approved_counts(db: AsyncSession, rows: list[WorkDelegation]) -> dict[int, int]:
+    """Delegation id → approved episodes of its serial that fall inside its episode range."""
+    pids = {r.project_id for r in rows if r.project_id}
+    if not pids:
+        return {}
+    approved: dict[int, list[int]] = defaultdict(list)
+    for pid, num in (await db.execute(
+        select(Episode.project_id, Episode.episode_number)
+        .where(Episode.project_id.in_(pids), Episode.status == "approved")
+    )).all():
+        approved[pid].append(num)
+    out = {}
+    for r in rows:
+        spans = episode_spans(r.episode_range)
+        out[r.id] = sum(1 for n in approved.get(r.project_id, []) if not spans or any(a <= n <= b for a, b in spans))
+    return out
+
+
+def _row(d: WorkDelegation, assignee: User | None = None, creator: User | None = None, completed: int = 0) -> dict:
+    # `completed` is derived from approved episodes; the stored work_delegations.completed column is not used.
     return {
         "id": d.id,
         "project_id": d.project_id,
@@ -56,8 +95,8 @@ def _row(d: WorkDelegation, assignee: User | None = None, creator: User | None =
         "channel": d.channel,
         "episode_range": d.episode_range,
         "week_target": d.week_target,
-        "completed": d.completed or 0,
-        "balance": (d.week_target or 0) - (d.completed or 0),
+        "completed": completed,
+        "balance": (d.week_target or 0) - completed,
         "status": d.status,
         "notes": d.notes,
         "assigned_to": d.assigned_to,
@@ -83,7 +122,8 @@ async def _enrich(db: AsyncSession, rows: list[WorkDelegation]) -> list[dict]:
     users: dict[int, User] = {}
     if uids:
         users = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(uids)))).scalars().all()}
-    return [_row(r, users.get(r.assigned_to), users.get(r.created_by)) for r in rows]
+    done = await _approved_counts(db, rows)
+    return [_row(r, users.get(r.assigned_to), users.get(r.created_by), done.get(r.id, 0)) for r in rows]
 
 
 @router.post("/", dependencies=[Depends(require_roles(*WD_ROLES))])
@@ -151,7 +191,7 @@ async def create_delegation(
 
     await db.commit()
     await db.refresh(d)
-    return _row(d, assignee, current)
+    return (await _enrich(db, [d]))[0]
 
 
 @router.get("/projects/suggest")
@@ -361,7 +401,7 @@ async def editor_activity(
         raise HTTPException(404)
 
     delegations = (await db.execute(
-        select(WorkDelegation).where(WorkDelegation.assigned_to == user_id)
+        select(WorkDelegation).where(WorkDelegation.assigned_to == user_id, _LIVE)
         .order_by(WorkDelegation.created_at.desc())
     )).scalars().all()
     delegation_list = await _enrich(db, list(delegations))
@@ -461,11 +501,11 @@ async def list_delegations(
 ):
     if current.role in WD_ROLES:
         rows = (await db.execute(
-            select(WorkDelegation).order_by(WorkDelegation.created_at.desc())
+            select(WorkDelegation).where(_LIVE).order_by(WorkDelegation.created_at.desc())
         )).scalars().all()
     else:
         rows = (await db.execute(
-            select(WorkDelegation).where(WorkDelegation.assigned_to == current.id)
+            select(WorkDelegation).where(WorkDelegation.assigned_to == current.id, _LIVE)
             .order_by(WorkDelegation.created_at.desc())
         )).scalars().all()
     return await _enrich(db, rows)
@@ -543,6 +583,6 @@ async def delete_delegation(did: int, db: AsyncSession = Depends(get_db)):
     d = await db.get(WorkDelegation, did)
     if not d:
         raise HTTPException(404)
-    await db.delete(d)
+    await purge_delegations(db, [did])
     await db.commit()
     return {"ok": True}

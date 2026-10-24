@@ -6,6 +6,7 @@ import Header from "../components/Header";
 import MetaCard from "../components/MetaCard";
 import StatusBadge from "../components/StatusBadge";
 import RoughSheetPreview from "../components/RoughSheetPreview";
+import WorkFileCard, { WorkFileChip } from "../components/WorkFileUpload";
 import { api } from "../utils/api";
 import { ACTION_LABEL, fmtDateTime, timeAgo } from "../utils/format";
 import { useApp } from "../context/AppContext";
@@ -25,11 +26,13 @@ export default function SerialPage() {
   const [deleting, setDeleting] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [bootstrapping, setBootstrapping] = useState(false);
+  const [workFiles, setWorkFiles] = useState([]);
 
   const reload = async (pid) => {
     const id = pid || activeProject?.id || activeProjectId;
     if (!id) return;
-    const [p, eps] = await Promise.all([api.getProject(id), api.listEpisodes(id)]);
+    const [p, eps, wfs] = await Promise.all([api.getProject(id), api.listEpisodes(id), api.listWorkFiles(id).catch(() => [])]);
+    setWorkFiles(wfs);
     setProjects((prev) => {
       const exists = prev.find((proj) => proj.id === id);
       if (!exists) return [...prev, { id, title: p.title, episodes: [] }];
@@ -174,6 +177,8 @@ export default function SerialPage() {
   }, [proj.episodes, searchQ]);
 
   const pageEps = filteredEps.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const isSerial = proj.type !== "movie";
+  const workFileEps = new Set(workFiles.map((w) => w.episode_number));
   const pageIds = pageEps.map((e) => e.id);
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const toggleOne = (id) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -337,6 +342,10 @@ export default function SerialPage() {
           </div>
         )}
 
+        {!canReviewRole && isSerial && (
+          <WorkFileCard projectId={proj.id} projectTitle={proj.title} workFiles={workFiles} onChanged={() => reload()} />
+        )}
+
         <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <div className="px-6 py-4 border-b flex flex-wrap items-center gap-3 justify-between" style={{ borderColor: C.mint4, background: alpha(C.mint4, "66") }}>
             <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif }}>
@@ -397,12 +406,13 @@ export default function SerialPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-[0.625rem] uppercase tracking-wider" style={{ borderColor: C.mint4, color: C.sub, background: alpha(C.mint4, "33") }}>
-                {proj.type !== "movie" && <th className="text-left px-5 py-3 w-16">Ep.</th>}
+                {isSerial && <th className="text-left px-5 py-3 w-16">Ep.</th>}
                 <th className="text-left px-5 py-3">Title</th>
                 <th className="text-left px-5 py-3">Air Date</th>
                 <th className="text-left px-5 py-3 w-28">Duration</th>
                 <th className="text-left px-5 py-3 w-16">Songs</th>
                 <th className="text-left px-5 py-3 w-32">Status</th>
+                {isSerial && <th className="text-left px-5 py-3 w-28">Work File</th>}
                 <th className="text-left px-5 py-3">Last Activity</th>
                 <th className="text-right px-5 py-3 w-52">Action</th>
                 {!canReviewRole && (
@@ -415,7 +425,7 @@ export default function SerialPage() {
             <tbody>
               {filteredEps.length === 0 && (
                 <tr>
-                  <td colSpan={canReviewRole ? 8 : 9} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>
+                  <td colSpan={(canReviewRole ? 8 : 9) + (isSerial ? 1 : 0)} className="px-5 py-10 text-center text-sm" style={{ color: C.sub }}>
                     {proj.type === "movie"
                       ? "No cue sheet imported yet. Use the Import Rough Sheet option above."
                       : searchQ ? `No episodes match "${searchQ}".` : "No episodes yet."}
@@ -442,6 +452,13 @@ export default function SerialPage() {
                     <td className="px-5 py-3 text-xs" style={{ fontFamily: FONTS.mono, color: C.sub }}>{fmtDur(ep.totalDuration)}</td>
                     <td className="px-5 py-3 font-medium" style={{ color: C.dark }}>{ep.songCount ?? ep.cues.length}</td>
                     <td className="px-5 py-3"><StatusBadge status={ep.status} /></td>
+                    {isSerial && (
+                      <td className="px-5 py-3">
+                        {workFileEps.has(ep.number)
+                          ? <WorkFileChip projectId={proj.id} projectTitle={proj.title} epNum={ep.number} />
+                          : <span className="text-xs" style={{ color: C.muted }}>—</span>}
+                      </td>
+                    )}
                     <td className="px-5 py-3 text-xs" title={last ? `${last.details || ACTION_LABEL[last.action] || last.action} — ${fmtDateTime(last.at)}` : undefined}>
                       {last ? (
                         <div className="leading-snug">

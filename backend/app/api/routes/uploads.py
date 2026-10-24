@@ -43,6 +43,7 @@ from app.services.library_sync import (
     resolve_contributor_name,
 )
 from app.services.rough_parser import parse_rough_workbook
+from app.services.sheet_kind import SheetFormatError
 
 router = APIRouter()
 
@@ -177,6 +178,8 @@ async def upload_rough(
     data = await file.read()
     try:
         parsed = parse_rough_workbook(data, filename=file.filename or "")
+    except SheetFormatError as e:
+        raise HTTPException(400, str(e))
     except Exception:
         raise HTTPException(400, "Failed to parse the Excel file. Ensure it is a valid rough sheet.")
 
@@ -267,8 +270,8 @@ async def preview_rough(
         data = await file.read()
         try:
             parsed = parse_rough_workbook(data, filename=file.filename or "")
-        except HTTPException:
-            raise
+        except SheetFormatError as e:
+            raise HTTPException(400, str(e))
         except Exception:
             raise HTTPException(400, "Failed to parse the Excel file. Ensure it is a valid rough sheet.")
 

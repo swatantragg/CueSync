@@ -1,33 +1,33 @@
-export const APP_VERSION = "3.0.0";
+export const APP_VERSION = "3.1.1";
 
 // Shown once per user after sign-in whenever APP_VERSION changes.
 export const CHANGELOG = [
   {
-    title: "Personal profile menu",
-    body: "Click your name (top right) to see your email and role, switch light/dark mode and colour theme, open Settings or sign out.",
+    title: "Serial name check on work files",
+    body: "If a work file's title names a different serial, you're asked whether it's the right file with a name written differently, or the wrong file. Only files you confirm are uploaded. Differences in spacing or capital letters don't count.",
   },
   {
-    title: "Dark mode, text size & themes",
-    body: "Switch between Light, Dark or System appearance, pick one of five colour themes, and choose from five font sizes (larger by default) under Settings.",
+    title: "Work files",
+    body: "Editors can upload the per-episode work file next to the rough sheet. Episodes with one show a Work file tag; click it to download.",
   },
   {
-    title: "Live work notifications",
-    body: "Allocations pop up in the top-right corner for 3 seconds and stay in your notifications. Editors get a summary of assigned work when they sign in.",
+    title: "Right file, right place",
+    body: "A work file is rejected by Import Rough Sheet and a rough sheet is rejected by Upload Work File. Work files with mismatched episode numbers are flagged before saving.",
   },
   {
-    title: "Safer accounts",
-    body: "Accounts are created by admins only. New users set their own password on first sign-in, and passwords now need an uppercase letter, a number and a special character.",
+    title: "Download All",
+    body: "Reviewers can download the IPRS, PRS and ASCAP sheets plus the work file for an episode range as one ZIP, or the work file alone.",
   },
   {
-    title: "Review only after opening",
-    body: "Reviewers must open a submitted cue sheet before the Review button unlocks. Admins can see when each file was opened.",
+    title: "Find songs by name",
+    body: "Start typing a song title and matching songs from the library are suggested, just like when you type the IPRS Internal Number or ISRC. Pick one to fill in the song details.",
   },
   {
-    title: "Login activity",
-    body: "Admins can see every sign-in and sign-out with date and time under Activity → Logins.",
+    title: "IPRS Internal Number",
+    body: "The Song Code field is now called IPRS Internal Number.",
   },
   {
-    title: "Polish & fixes",
-    body: "Redesigned dropdowns, a correct Last Activity column, accurate song counts on the episode list and tidier modals.",
+    title: "Tidier song details",
+    body: "Singer now sits beside the Validation Link, just above the contributors.",
   },
 ];

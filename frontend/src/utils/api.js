@@ -59,6 +59,25 @@ async function request(path, { method = "GET", body, form, auth = true } = {}) {
   return data;
 }
 
+// Error text for a failed fetch: the backend's {"detail": …} message when present.
+async function responseError(res) {
+  const text = await res.text();
+  try { return new Error(JSON.parse(text).detail || text || res.statusText); }
+  catch { return new Error(text || res.statusText); }
+}
+
+// GET a file with auth and save it under `filename`. Returns the response (for headers).
+async function downloadFile(path, filename) {
+  const t = tokenStore.get();
+  const res = await fetch(apiUrl(path), { credentials: "include", headers: t ? { Authorization: `Bearer ${t}` } : {} });
+  if (!res.ok) throw await responseError(res);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  return res;
+}
+
 export const api = {
   base: BASE,
   health: () => request("/health", { auth: false }),
@@ -100,19 +119,8 @@ export const api = {
   listProjectActivity: (pid) => request(`/api/activity/project/${pid}`),
   logout: () => request("/api/auth/logout", { method: "POST" }).catch(() => {}),
 
-  downloadExport: async (episodeId, society, filename) => {
-    const t = tokenStore.get();
-    const res = await fetch(apiUrl(`/api/exports/episode/${episodeId}?society=${society}`), {
-      credentials: "include",
-      headers: t ? { Authorization: `Bearer ${t}` } : {},
-    });
-    if (!res.ok) throw new Error((await res.text()) || res.statusText);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-  },
+  downloadExport: (episodeId, society, filename) =>
+    downloadFile(`/api/exports/episode/${episodeId}?society=${society}`, filename),
   uploadRough: async (pid, file) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -127,7 +135,7 @@ export const api = {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`Rough upload request failed. ${msg}`);
     }
-    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    if (!res.ok) throw await responseError(res);
     return res.json();
   },
   previewRough: async (pid, file) => {
@@ -144,7 +152,7 @@ export const api = {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`Rough preview request failed. ${msg}`);
     }
-    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    if (!res.ok) throw await responseError(res);
     return res.json();
   },
   commitRough: (pid, payload) =>
@@ -197,17 +205,30 @@ export const api = {
   reviewerSerialEpisodes: (pid) => request(`/api/activity/reviewer-serials/${pid}`),
   reviewerMovies: () => request("/api/activity/reviewer-movies"),
 
-  downloadBulkExport: async (projectId, society, fromEp, toEp, filename) => {
-    const t = tokenStore.get();
-    const url = apiUrl(
-      `/api/exports/bulk/project/${projectId}?society=${society}&from_ep=${fromEp}&to_ep=${toEp}`
-    );
-    const res = await fetch(url, { credentials: "include", headers: t ? { Authorization: `Bearer ${t}` } : {} });
-    if (!res.ok) throw new Error((await res.text()) || res.statusText);
-    const blob = await res.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(a.href);
+  // society: iprs | prs | ascap | workfile
+  downloadBulkExport: (projectId, society, fromEp, toEp, filename) =>
+    downloadFile(`/api/exports/bulk/project/${projectId}?society=${society}&from_ep=${fromEp}&to_ep=${toEp}`, filename),
+  // One ZIP: IPRS + PRS + ASCAP + work file. Reports what the range actually contained.
+  downloadBulkAll: async (projectId, fromEp, toEp, filename) => {
+    const res = await downloadFile(`/api/exports/bulk/project/${projectId}/all?from_ep=${fromEp}&to_ep=${toEp}`, filename);
+    return { workFiles: Number(res.headers.get("X-Work-Files") || 0), episodes: Number(res.headers.get("X-Episodes") || 0) };
   },
+
+  // ── Work files (Source 1 format, one per episode) ───────────────────────────
+  listWorkFiles: (pid) => request(`/api/work-files/project/${pid}`),
+  previewWorkFiles: (pid, files) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    return request(`/api/work-files/project/${pid}/preview`, { method: "POST", form: fd });
+  },
+  // serialConfirmed[i]: uploader confirmed file i belongs to this serial despite its title.
+  uploadWorkFiles: (pid, files, episodeNumbers, serialConfirmed) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    fd.append("episode_numbers", JSON.stringify(episodeNumbers));
+    fd.append("serial_confirmed", JSON.stringify(serialConfirmed));
+    return request(`/api/work-files/project/${pid}`, { method: "POST", form: fd });
+  },
+  deleteWorkFile: (pid, epNum) => request(`/api/work-files/project/${pid}/episode/${epNum}`, { method: "DELETE" }),
+  downloadWorkFile: (pid, epNum, filename) => downloadFile(`/api/work-files/project/${pid}/episode/${epNum}`, filename),
 };

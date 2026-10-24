@@ -19,8 +19,9 @@ python-jose[cryptography]>=3.3
 bcrypt>=4.2
 python-multipart>=0.0.19
 
-# Excel
+# Excel (Pillow lets openpyxl keep embedded images, e.g. the work-file logo)
 openpyxl>=3.1.5
+pillow>=11.0
 
 # Utils
 python-dotenv>=1.0

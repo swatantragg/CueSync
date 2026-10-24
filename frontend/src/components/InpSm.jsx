@@ -1,6 +1,6 @@
 import { C, FONTS, alpha } from "../styles/palette";
 
-export default function InpSm({ value, onChange, onBlur, mono, placeholder, readOnly }) {
+export default function InpSm({ value, onChange, onBlur, onFocus, mono, placeholder, readOnly }) {
   return (
     <input
       value={value ?? ""}
@@ -13,7 +13,7 @@ export default function InpSm({ value, onChange, onBlur, mono, placeholder, read
         fontFamily: mono ? FONTS.mono : undefined,
         fontSize: mono ? "0.75rem" : undefined,
       }}
-      onFocus={(e) => { if (!readOnly) e.target.style.borderColor = C.mint1; }}
+      onFocus={(e) => { if (!readOnly) e.target.style.borderColor = C.mint1; onFocus?.(e); }}
       onBlur={(e) => { e.target.style.borderColor = alpha(C.mint1, "44"); onBlur?.(e.target.value); }}
     />
   );

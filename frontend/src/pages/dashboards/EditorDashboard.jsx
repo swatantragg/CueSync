@@ -184,8 +184,11 @@ function ReviewFeedbackTab() {
     try {
       const [projs, dels] = await Promise.all([api.projects(), api.listDelegations()]);
       const movieProjIds  = new Set(dels.filter((d) => d.work_type === "Movie Cue Sheet" && d.project_id).map((d) => d.project_id));
+      // Only serials currently assigned to this editor — a deleted serial or removed assignment drops out.
+      const assignedIds   = new Set(dels.map((d) => d.project_id).filter(Boolean));
       const result = [];
       for (const p of projs) {
+        if (!assignedIds.has(p.id)) continue;
         try {
           const eps = await api.listEpisodes(p.id);
           // Only include projects that have at least one reviewed episode

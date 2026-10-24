@@ -1,4 +1,5 @@
 import io
+import re
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -7,6 +8,13 @@ BORDER = Border(*(Side(style="thin"),) * 4)
 HEADER_FILL = PatternFill("solid", fgColor="D9E1F2")
 HEADER_FONT = Font(bold=True)
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def safe_filename(text: str) -> str:
+    """ASCII-only, so it survives the latin-1 Content-Disposition header."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", text).strip("_") or "file"
 
 
 def new_wb(title: str) -> tuple[Workbook, "Worksheet"]:

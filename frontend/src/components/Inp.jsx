@@ -1,6 +1,6 @@
 import { C, FONTS, alpha, T } from "../styles/palette";
 
-export default function Inp({ value, onChange, onBlur, placeholder, mono, readOnly }) {
+export default function Inp({ value, onChange, onBlur, onFocus, placeholder, mono, readOnly }) {
   return (
     <input
       value={value ?? ""}
@@ -14,7 +14,7 @@ export default function Inp({ value, onChange, onBlur, placeholder, mono, readOn
         fontSize: mono ? "0.8125rem" : undefined,
         background: readOnly ? T.neutralBg : C.white,
       }}
-      onFocus={(e) => { if (!readOnly) e.target.style.borderColor = C.mint1; }}
+      onFocus={(e) => { if (!readOnly) e.target.style.borderColor = C.mint1; onFocus?.(e); }}
       onBlur={(e) => { e.target.style.borderColor = alpha(C.mint1, "66"); onBlur?.(e.target.value); }}
     />
   );

@@ -8,7 +8,9 @@ from app.core.deps import get_current_user, require_roles
 from app.models.episode import Episode
 from app.models.project import Project, ProjectType
 from app.models.user import User, UserRole
+from app.models.work_delegation import WorkDelegation
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate
+from app.services.delegations import purge_delegations
 
 router = APIRouter()
 
@@ -62,6 +64,10 @@ async def delete_project(pid: int, db: AsyncSession = Depends(get_db)):
     p = await db.get(Project, pid)
     if not p:
         raise HTTPException(404)
+    # The delegation FK only nulls project_id, which would leave the assignment on the editor's dashboard.
+    await purge_delegations(db, (await db.execute(
+        select(WorkDelegation.id).where(WorkDelegation.project_id == pid)
+    )).scalars().all())
     await db.delete(p)
     await db.commit()
     return {"ok": True}

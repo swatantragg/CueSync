@@ -9,6 +9,7 @@ from app.models.cue import CueEntry
 from app.models.episode import Episode
 from app.models.project import Project
 from app.models.user import User, UserRole
+from app.models.work_file import WorkFile
 from app.services.audit import ADMIN_ONLY_ACTIONS, reviewer_opened_ids
 
 _REVIEWER_ROLES = (UserRole.ADMIN, UserRole.REVIEWER)
@@ -175,6 +176,9 @@ async def reviewer_serial_episodes(
         )).all()
         song_counts = {r.episode_id: r.cnt for r in rows}
     opened = await reviewer_opened_ids(db, current.id, ep_ids) if current.role == UserRole.REVIEWER else set(ep_ids)
+    work_file_eps = set((await db.execute(
+        select(WorkFile.episode_number).where(WorkFile.project_id == project_id)
+    )).scalars().all())
     return {
         "project_id":    proj.id,
         "project_title": proj.title,
@@ -189,6 +193,7 @@ async def reviewer_serial_episodes(
             "total_duration_sec": ep.total_duration_sec,
             "song_count":        song_counts.get(ep.id, 0),
             "opened":            ep.id in opened,
+            "has_work_file":     ep.episode_number in work_file_eps,
         } for ep in eps],
     }
 

@@ -17,6 +17,7 @@ from app.core.database import Base, engine
 import app.models.work_delegation       # noqa: F401
 import app.models.notification           # noqa: F401
 import app.models.society_submission     # noqa: F401
+import app.models.work_file              # noqa: F401
 from app.services.library_sync import (
     cleanup_contributor_duplicates,
     cleanup_cue_contributor_duplicates,
@@ -273,7 +274,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="3.0.0",
+    version="3.1.1",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
     # Disable automatic debug info exposure in OpenAPI errors
@@ -286,7 +287,7 @@ _cors_kwargs: dict = dict(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
-    expose_headers=["Content-Disposition"],
+    expose_headers=["Content-Disposition", "X-Work-Files", "X-Episodes"],
 )
 if settings.APP_ENV != "production":
     _cors_kwargs["allow_origin_regex"] = r"http://localhost:\d+"

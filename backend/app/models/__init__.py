@@ -5,10 +5,11 @@ from app.models.cue import CueEntry, Contributor, UsageType
 from app.models.library import SongLibrary, ContributorLibrary
 from app.models.audit import AuditLog
 from app.models.society_submission import SocietySubmission
+from app.models.work_file import WorkFile
 
 __all__ = [
     "User", "UserRole", "Project", "ProjectType", "Episode",
     "CueEntry", "Contributor", "UsageType",
     "SongLibrary", "ContributorLibrary", "AuditLog",
-    "SocietySubmission",
+    "SocietySubmission", "WorkFile",
 ]
