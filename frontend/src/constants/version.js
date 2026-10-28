@@ -1,7 +1,11 @@
-export const APP_VERSION = "3.1.1";
+export const APP_VERSION = "3.1.2";
 
 // Shown once per user after sign-in whenever APP_VERSION changes.
 export const CHANGELOG = [
+  {
+    title: "Activity timeline",
+    body: "Every activity log — on an episode, in editor and reviewer activity, and sign-in history — is now a timeline: who did it, what happened and when, newest first, with one dot per step.",
+  },
   {
     title: "Serial name check on work files",
     body: "If a work file's title names a different serial, you're asked whether it's the right file with a name written differently, or the wrong file. Only files you confirm are uploaded. Differences in spacing or capital letters don't count.",

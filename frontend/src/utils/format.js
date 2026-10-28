@@ -33,4 +33,5 @@ export const ACTION_LABEL = {
   upload: "Imported", create: "Added a song", update: "Edited", delete: "Removed a song",
   submit: "Submitted for review", approve: "Approved", reject: "Rejected", suggest: "Suggested changes",
   review_open: "Opened for review", login: "Signed in", logout: "Signed out", password_change: "Changed password",
+  society_submit: "Logged society submission", submit_to_iprs: "Submitted to IPRS", accept_iprs: "IPRS accepted",
 };

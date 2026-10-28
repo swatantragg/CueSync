@@ -10,6 +10,7 @@ import ProjectsTab from "./ProjectsTab";
 import { api } from "../../utils/api";
 import { fmtDateTime, timeAgo } from "../../utils/format";
 import { showAlert, showConfirm } from "../../components/Dialog";
+import Timeline from "../../components/Timeline";
 import { useApp } from "../../context/AppContext";
 
 const WORK_TYPES = ["TV Cue Sheet", "Movie Cue Sheet", "Album", "Other"];
@@ -828,28 +829,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
                             ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No activity for this episode</div>
                             : (
                               <MiniPager entries={epLog} pageSize={20}>
-                                {(paged, offset) => (
-                                  <table className="w-full text-sm">
-                                    <thead>
-                                      <tr className="border-b" style={thStyle}>
-                                        <th className={`text-left ${TH}`}>#</th>
-                                        <th className={`text-left ${TH}`}>Action</th>
-                                        <th className={`text-left ${TH}`}>Details</th>
-                                        <th className={`text-right ${TH}`}>Date</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {paged.map((e, i) => (
-                                        <tr key={e.id} className="border-b last:border-0 hover:bg-green-50/20" style={rowBorder}>
-                                          <td className="px-4 py-2.5 font-mono text-xs" style={{ color: C.sub }}>{offset + i + 1}</td>
-                                          <td className="px-4 py-2.5"><span className="capitalize font-medium text-xs" style={{ color: C.dark }}>{e.action}</span></td>
-                                          <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{e.details || "—"}</td>
-                                          <td className="px-4 py-2.5 text-right text-xs" style={{ color: C.sub }}>{e.at ? new Date(e.at).toLocaleString() : "—"}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                )}
+                                {(paged) => <Timeline rows={paged} who={log.user?.full_name} />}
                               </MiniPager>
                             );
                         })()}
@@ -927,21 +907,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
                     ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No activity log</div>
                     : (
                       <MiniPager entries={movieEntries}>
-                        {(paged, offset) => (
-                          <table className="w-full text-sm">
-                            <thead><tr className="border-b" style={thStyle}><th className={`text-left ${TH}`}>#</th><th className={`text-left ${TH}`}>Action</th><th className={`text-left ${TH}`}>Details</th><th className={`text-right ${TH}`}>Date</th></tr></thead>
-                            <tbody>
-                              {paged.map((e, i) => (
-                                <tr key={e.id} className="border-b last:border-0 hover:bg-green-50/20" style={rowBorder}>
-                                  <td className="px-4 py-2.5 font-mono text-xs" style={{ color: C.sub }}>{offset + i + 1}</td>
-                                  <td className="px-4 py-2.5"><span className="capitalize font-medium text-xs" style={{ color: C.dark }}>{e.action}</span></td>
-                                  <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{e.details || "—"}</td>
-                                  <td className="px-4 py-2.5 text-right text-xs" style={{ color: C.sub }}>{e.at ? new Date(e.at).toLocaleString() : "—"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
+                        {(paged) => <Timeline rows={paged} who={log.user?.full_name} />}
                       </MiniPager>
                     )}
                 </div>

@@ -11,6 +11,7 @@ import Inp from "../components/Inp";
 import CueCard from "../components/CueCard";
 import ExpBtn from "../components/ExpBtn";
 import { WorkFileChip, downloadWorkFile } from "../components/WorkFileUpload";
+import Timeline from "../components/Timeline";
 import { USERS_DB } from "../constants/users";
 import { uid } from "../utils/uid";
 import { now } from "../utils/format";
@@ -682,7 +683,6 @@ export default function EpisodePage() {
     if (!iso) return "";
     try { const d = new Date(iso); return d.toLocaleString(); } catch { return iso; }
   };
-  const initialsOf = (name) => (name || "??").trim().split(/\s+/).map((s) => s[0]).join("").slice(0, 2).toUpperCase();
 
   const handleSave = async () => {
     setSaving(true);
@@ -1002,22 +1002,10 @@ export default function EpisodePage() {
               {reviewOpen && <span>Opened by <strong>{reviewOpen.user_name}</strong> · {fmtAt(reviewOpen.at)}</span>}
             </span>
           </div>
-          <div className={"divide-y " + (showAllActivity ? "max-h-96 overflow-auto" : "")} style={{ borderColor: alpha(C.mint4, "88") }}>
-            {activity.length === 0 && (
-              <div className="px-5 py-4 text-xs" style={{ color: C.sub }}>No activity yet.</div>
-            )}
-            {(showAllActivity ? activity : activity.slice(0, 5)).map((h, i) => (
-              <div key={h.id} className="px-5 py-2.5 flex items-center gap-3 text-xs" style={{ background: i === 0 ? alpha(C.mint4, "44") : "" }}>
-                <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[0.5rem] font-bold shrink-0" style={{ background: h.user_id === currentUser?.id ? C.dark : C.mint1, color: h.user_id === currentUser?.id ? C.mint1 : C.dark }}>
-                  {initialsOf(h.user_name)}
-                </div>
-                <span className="font-medium" style={{ color: C.dark }}>{h.user_name}</span>
-                {h.user_role && <span className="text-[0.5625rem] px-1.5 py-0.5 rounded" style={{ background: C.mint4, color: C.sub }}>{h.user_role}</span>}
-                <span style={{ color: C.sub }}>{h.details || h.action}</span>
-                <span className="ml-auto" style={{ color: C.muted, fontFamily: FONTS.mono, fontSize: "0.625rem" }}>{fmtAt(h.at)}</span>
-                {i === 0 && <span className="text-[0.5625rem] px-1.5 py-0.5 rounded font-medium" style={{ background: C.mint1, color: C.dark }}>LATEST</span>}
-              </div>
-            ))}
+          <div className={showAllActivity ? "max-h-96 overflow-auto" : ""}>
+            {activity.length === 0
+              ? <div className="px-5 py-4 text-xs" style={{ color: C.sub }}>No activity yet.</div>
+              : <Timeline rows={showAllActivity ? activity : activity.slice(0, 5)} />}
           </div>
           {activity.length > 5 && (
             <div className="px-5 py-2 border-t flex items-center justify-center" style={{ borderColor: alpha(C.mint4, "88"), background: alpha(C.mint4, "22") }}>

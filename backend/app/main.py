@@ -274,7 +274,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="3.1.1",
+    version="3.1.2",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
     # Disable automatic debug info exposure in OpenAPI errors

@@ -3,7 +3,7 @@ import {
   Users, Tv, CheckCircle2, Clock, Search, X, Trash2,
   UserCog, Music2, FileText, ChevronLeft, ChevronRight,
   CalendarDays, History, ArrowLeft, Layers, ChevronDown, Film, Pencil, ShieldCheck,
-  LogIn, LogOut, KeyRound, Lock,
+  KeyRound, Lock,
 } from "lucide-react";
 import { C, FONTS, alpha, T } from "../../styles/palette";
 import Select from "../../components/Select";
@@ -12,8 +12,8 @@ import ProjectsTab from "./ProjectsTab";
 import { api, userStore } from "../../utils/api";
 import PasswordInput, { PasswordRules } from "../../components/PasswordInput";
 import { isStrongPassword } from "../../utils/password";
-import { ACTION_LABEL, fmtDateTime, timeAgo } from "../../utils/format";
 import { showAlert, showConfirm } from "../../components/Dialog";
+import Timeline from "../../components/Timeline";
 import { useApp } from "../../context/AppContext";
 
 const ROLES = ["admin", "work_delegator", "reviewer", "editor", "viewer"];
@@ -1358,28 +1358,7 @@ function EditorActivitySubTab({ editors, delegations }) {
                             ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No activity for this episode</div>
                             : (
                               <MiniPager entries={epLog} pageSize={20}>
-                                {(paged, offset) => (
-                                  <table className="w-full text-sm">
-                                    <thead>
-                                      <tr className="border-b" style={thStyle}>
-                                        <th className={`text-left ${TH} px-4 py-2`}>#</th>
-                                        <th className={`text-left ${TH} px-4 py-2`}>Action</th>
-                                        <th className={`text-left ${TH} px-4 py-2`}>Details</th>
-                                        <th className={`text-right ${TH} px-4 py-2`}>Date</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {paged.map((e, i) => (
-                                        <tr key={e.id} className="border-b last:border-0 hover:bg-green-50/20" style={rowBorder}>
-                                          <td className="px-4 py-2.5 font-mono text-xs" style={{ color: C.sub }}>{offset + i + 1}</td>
-                                          <td className="px-4 py-2.5"><span className="capitalize font-medium text-xs" style={{ color: C.dark }}>{e.action}</span></td>
-                                          <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{e.details || "—"}</td>
-                                          <td className="px-4 py-2.5 text-right text-xs" style={{ color: C.sub }}>{e.at ? new Date(e.at).toLocaleString() : "—"}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                )}
+                                {(paged) => <Timeline rows={paged} who={log.user?.full_name} />}
                               </MiniPager>
                             );
                         })()}
@@ -1455,21 +1434,7 @@ function EditorActivitySubTab({ editors, delegations }) {
                     ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No activity log</div>
                     : (
                       <MiniPager entries={movieEntries}>
-                        {(paged, offset) => (
-                          <table className="w-full text-sm">
-                            <thead><tr className="border-b" style={thStyle}><th className={`text-left ${TH}`}>#</th><th className={`text-left ${TH}`}>Action</th><th className={`text-left ${TH}`}>Details</th><th className={`text-right ${TH}`}>Date</th></tr></thead>
-                            <tbody>
-                              {paged.map((e, i) => (
-                                <tr key={e.id} className="border-b last:border-0 hover:bg-green-50/20" style={rowBorder}>
-                                  <td className="px-4 py-2.5 font-mono text-xs" style={{ color: C.sub }}>{offset + i + 1}</td>
-                                  <td className="px-4 py-2.5"><span className="capitalize font-medium text-xs" style={{ color: C.dark }}>{e.action}</span></td>
-                                  <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{e.details || "—"}</td>
-                                  <td className="px-4 py-2.5 text-right text-xs" style={{ color: C.sub }}>{e.at ? new Date(e.at).toLocaleString() : "—"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
+                        {(paged) => <Timeline rows={paged} who={log.user?.full_name} />}
                       </MiniPager>
                     )}
                 </div>
@@ -1852,32 +1817,7 @@ function ReviewerActivitySubTab({ reviewers }) {
                 </div>
                 <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
                   <MiniPager entries={episodeMap[selectedEpisode] || []} pageSize={20}>
-                    {(paged, offset) => (
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b" style={thStyle}>
-                            <th className={`text-left ${TH}`}>#</th>
-                            <th className={`text-left ${TH}`}>Action</th>
-                            <th className={`text-left ${TH}`}>Note</th>
-                            <th className={`text-right ${TH}`}>Date</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paged.map((e, i) => {
-                            const as = ACT_ACTION[e.action] || { bg: T.grayBg, color: T.gray };
-                            const note = e.action === "review_open" ? null : (e.details?.replace(/^(Approved episode\.?\s*|Rejected\s*[—-]\s*|Suggested changes\s*[—-]\s*)/i, "").trim() || null);
-                            return (
-                              <tr key={e.id} className="border-b last:border-0 hover:bg-green-50/20" style={rowBorder}>
-                                <td className="px-4 py-2.5 font-mono text-xs" style={{ color: C.sub }}>{offset + i + 1}</td>
-                                <td className="px-4 py-2.5"><span className="text-[0.625rem] px-2 py-0.5 rounded font-medium capitalize" style={{ background: as.bg, color: as.color }}>{as.label || e.action}</span></td>
-                                <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{note ? <span className="italic">{note.length > 80 ? note.slice(0,80)+"…" : note}</span> : "—"}</td>
-                                <td className="px-4 py-2.5 text-right text-xs whitespace-nowrap" style={{ color: C.sub }}>{e.at ? new Date(e.at).toLocaleString() : "—"}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    )}
+                    {(paged) => <Timeline rows={paged} who={log.user?.full_name} />}
                   </MiniPager>
                 </div>
               </div>
@@ -1929,32 +1869,7 @@ function ReviewerActivitySubTab({ reviewers }) {
                     ? <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No review activity</div>
                     : (
                       <MiniPager entries={reviewBySerial[selectedMovie]} pageSize={20}>
-                        {(paged, offset) => (
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="border-b" style={thStyle}>
-                                <th className={`text-left ${TH}`}>#</th>
-                                <th className={`text-left ${TH}`}>Action</th>
-                                <th className={`text-left ${TH}`}>Note</th>
-                                <th className={`text-right ${TH}`}>Date</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {paged.map((e, i) => {
-                                const as = ACT_ACTION[e.action] || { bg: T.grayBg, color: T.gray };
-                                const note = e.action === "review_open" ? null : (e.details?.replace(/^(Approved episode\.?\s*|Rejected\s*[—-]\s*|Suggested changes\s*[—-]\s*)/i, "").trim() || null);
-                                return (
-                                  <tr key={e.id} className="border-b last:border-0 hover:bg-green-50/20" style={rowBorder}>
-                                    <td className="px-4 py-2.5 font-mono text-xs" style={{ color: C.sub }}>{offset + i + 1}</td>
-                                    <td className="px-4 py-2.5"><span className="text-[0.625rem] px-2 py-0.5 rounded font-medium capitalize" style={{ background: as.bg, color: as.color }}>{as.label || e.action}</span></td>
-                                    <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{note ? <span className="italic">{note.length > 80 ? note.slice(0,80)+"…" : note}</span> : "—"}</td>
-                                    <td className="px-4 py-2.5 text-right text-xs whitespace-nowrap" style={{ color: C.sub }}>{e.at ? new Date(e.at).toLocaleString() : "—"}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        )}
+                        {(paged) => <Timeline rows={paged} who={log.user?.full_name} />}
                       </MiniPager>
                     )}
                 </div>
@@ -2226,12 +2141,6 @@ function AdminClientsTab({ delegations }) {
 
 
 // ── Login activity sub-tab ────────────────────────────────────────────────────
-const LOGIN_STYLE = {
-  login:           { Icon: LogIn,    bg: T.greenBg, color: T.green },
-  logout:          { Icon: LogOut,   bg: T.grayBg, color: T.gray },
-  password_change: { Icon: KeyRound, bg: T.orangeBg, color: T.orange },
-};
-
 function LoginActivitySubTab() {
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2293,50 +2202,7 @@ function LoginActivitySubTab() {
           <div className="p-8 text-center text-sm" style={{ color: C.sub }}>No login activity{q || kind !== "all" ? " matches these filters" : " recorded yet"}.</div>
         ) : (
           <MiniPager entries={filtered} pageSize={25}>
-            {(paged) => (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-[0.625rem] uppercase tracking-wider" style={{ borderColor: C.mint4, background: alpha(C.mint4, "33"), color: C.sub }}>
-                    <th className="text-left px-4 py-2.5">User</th>
-                    <th className="text-left px-4 py-2.5">Role</th>
-                    <th className="text-left px-4 py-2.5">Event</th>
-                    <th className="text-left px-4 py-2.5">Device</th>
-                    <th className="text-right px-4 py-2.5">Date &amp; Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paged.map((r) => {
-                    const st = LOGIN_STYLE[r.action] || LOGIN_STYLE.logout;
-                    const device = (r.details || "").split(" · ").slice(1).join(" · ") || "—";
-                    return (
-                      <tr key={r.id} className="border-b last:border-0" style={{ borderColor: alpha(C.mint4, "44") }}>
-                        <td className="px-4 py-2.5">
-                          <div className="font-medium" style={{ color: C.dark }}>{r.user_name}</div>
-                          {r.user_email && <div className="text-xs" style={{ color: C.sub }}>{r.user_email}</div>}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          {r.user_role && (
-                            <span className="text-[0.625rem] px-2 py-0.5 rounded font-semibold" style={{ background: ROLE_COLOR[r.user_role]?.bg, color: ROLE_COLOR[r.user_role]?.color }}>
-                              {ROLE_LABEL[r.user_role] || r.user_role}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-md font-semibold" style={{ background: st.bg, color: st.color }}>
-                            <st.Icon className="w-3 h-3" />{ACTION_LABEL[r.action] || r.action}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{device}</td>
-                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                          <div className="text-xs font-medium" style={{ color: C.dark }}>{fmtDateTime(r.at)}</div>
-                          <div className="text-[0.625rem]" style={{ color: C.muted }}>{timeAgo(r.at)}</div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
+            {(paged) => <Timeline rows={paged} showEmail />}
           </MiniPager>
         )}
       </div>
