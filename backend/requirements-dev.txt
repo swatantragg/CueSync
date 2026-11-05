@@ -1,0 +1,3 @@
+# Test tools only; the app itself needs requirements.txt.
+-r requirements.txt
+pytest>=8

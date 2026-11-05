@@ -76,13 +76,11 @@ function DialogCard({ dialog, onDone }) {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center px-4"
-      style={{ background: "rgba(0,0,0,0.62)", backdropFilter: "blur(2px)" }}
+      className="cs-backdrop fixed inset-0 z-[9999] flex items-center justify-center"
       onClick={onBackdrop}
     >
       <div
-        className="cs-dark w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"
-        style={{ background: C.dark, border: `1px solid ${C.mid}` }}
+        className="cs-dark cs-glass w-full max-w-sm rounded-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

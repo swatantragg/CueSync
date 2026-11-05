@@ -4,6 +4,7 @@ import { C, FONTS, alpha, T } from "../styles/palette";
 import { useApp } from "../context/AppContext";
 import Notifications from "./Notifications";
 import SettingsModal, { ModeSwitch, ThemeSwatches } from "./SettingsModal";
+import { APP_VERSION } from "../constants/version";
 
 const ROLE_LABEL = { admin: "Admin", work_delegator: "Work Delegator", reviewer: "Reviewer", editor: "Editor", viewer: "Viewer" };
 
@@ -39,12 +40,12 @@ function ProfileMenu({ roleLabel, onSettings }) {
         style={{ background: open ? C.mint4 : alpha(C.mint4, "88"), border: `1px solid ${open ? C.mint1 : "transparent"}` }}
       >
         {avatar("w-8 h-8 text-xs")}
-        <span className="text-sm font-semibold max-w-[10rem] truncate" style={{ color: C.dark }}>{firstName}</span>
+        <span className="hidden sm:block text-sm font-semibold max-w-[200px] truncate" style={{ color: C.dark }}>{firstName}</span>
         <ChevronDown className="w-4 h-4 transition-transform" style={{ color: C.sub, transform: open ? "rotate(180deg)" : "none" }} />
       </button>
 
       {open && (
-        <div role="menu" className="cs-pop absolute right-0 mt-2 w-72 rounded-2xl border shadow-2xl overflow-hidden z-50" style={{ background: C.white, borderColor: alpha(C.mint1, "66") }}>
+        <div role="menu" className="cs-pop absolute right-0 mt-2 w-72 max-w-[calc(100vw-24px)] rounded-2xl border shadow-2xl overflow-hidden z-50" style={{ background: C.white, borderColor: alpha(C.mint1, "66") }}>
           <div className="px-4 py-4 flex items-center gap-3" style={{ background: alpha(C.mint4, "88") }}>
             {avatar("w-11 h-11 text-sm")}
             <div className="min-w-0">
@@ -96,17 +97,17 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-30 border-b" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
-      <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={goHome}>
-          <div className="cs-dark w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: C.dark }}>
+      <div className="cs-page py-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 cursor-pointer min-w-0" onClick={goHome}>
+          <div className="cs-dark w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: C.dark }}>
             <Music2 className="w-4 h-4" style={{ color: C.mint1 }} />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="text-lg leading-none font-semibold" style={{ fontFamily: FONTS.serif, color: C.dark }}>CueSync</div>
-            <div className="text-[0.5625rem] uppercase tracking-widest mt-0.5" style={{ color: C.sub }}>v3 · {roleLabel}</div>
+            <div className="text-[0.5625rem] uppercase tracking-widest mt-0.5 truncate" style={{ color: C.sub }}>v{APP_VERSION.split(".")[0]} · {roleLabel}</div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1 sm:gap-3 shrink-0">
           <div className="relative">
             <button onClick={() => setShowNotifs(!showNotifs)} className="relative p-2 rounded-xl transition-colors" style={{ background: showNotifs ? C.mint4 : "transparent" }} aria-label="Notifications">
               <Bell className="w-5 h-5" style={{ color: C.sub }} />
@@ -121,7 +122,7 @@ export default function Header() {
           <ProfileMenu roleLabel={roleLabel} onSettings={() => setShowSettings(true)} />
         </div>
       </div>
-      <div className="max-w-7xl mx-auto px-6 pb-2 flex items-center gap-2 text-xs" style={{ color: C.sub }}>
+      <div className="cs-page pb-2 flex flex-wrap items-center gap-2 text-xs" style={{ color: C.sub }}>
         <button onClick={goHome} className="hover:underline">Projects</button>
         {activeProject && (
           <>

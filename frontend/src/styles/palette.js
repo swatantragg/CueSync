@@ -53,6 +53,8 @@ const TONES = {
   grayBg:       ["#F3F4F6", "#1F2925"], gray:         ["#374151", "#CAD4D0"], grayMid:      ["#6B7280", "#9BA8A3"],
   grayLight:    ["#9E9E9E", "#7E8B86"], neutralBg:    ["#F5F5F5", "#1A2420"], toggleOff:    ["#D1D5DB", "#3A4743"],
   teal:         ["#0D9488", "#5EE0CC"],
+  // Chart series: checked for colour-blind separation on both surfaces with dataviz's validate_palette.js.
+  chartSubmitted: ["#0D9488", "#12A594"], chartApproved: ["#1565C0", "#6A8FE8"], chartRejected: ["#E65100", "#DB7230"],
 };
 
 const cssVar = (prefix) => (key) => `var(--${prefix}-${key})`;

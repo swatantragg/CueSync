@@ -1,18 +1,21 @@
 import { C, FONTS, alpha } from "../../styles/palette";
 import Header from "../../components/Header";
 
-export default function DashboardShell({ title, subtitle, tabs, activeTab, onTab, children }) {
+export default function DashboardShell({ title, subtitle, actions, tabs, activeTab, onTab, children }) {
   return (
     <div className="min-h-screen" style={{ background: C.light, fontFamily: FONTS.sans, color: C.dark }}>
       <Header />
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <h2 className="text-4xl mb-1" style={{ fontFamily: FONTS.serif }}>{title}</h2>
-          {subtitle && <p className="text-sm" style={{ color: C.sub }}>{subtitle}</p>}
+      <main className="cs-page py-6 sm:py-8">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="text-3xl sm:text-4xl mb-1" style={{ fontFamily: FONTS.serif }}>{title}</h2>
+            {subtitle && <p className="text-sm" style={{ color: C.sub }}>{subtitle}</p>}
+          </div>
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
 
         {/* Tab bar */}
-        <div className="flex items-center gap-1 mb-6 border-b" style={{ borderColor: alpha(C.mint1, "44") }}>
+        <div className="flex flex-wrap items-center gap-1 mb-6 border-b" style={{ borderColor: alpha(C.mint1, "44") }}>
           {tabs.map((t) => (
             <button
               key={t.key}

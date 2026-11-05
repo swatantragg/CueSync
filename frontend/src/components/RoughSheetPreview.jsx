@@ -352,13 +352,14 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
             </div>
 
             {/* Cue list */}
-            <div className="rounded-xl border overflow-hidden" style={{ borderColor: alpha(C.mint1, "55") }}>
+            <div className="rounded-xl border overflow-x-auto" style={{ borderColor: alpha(C.mint1, "55") }}>
 
               {/* Column headers */}
               <div
                 className="grid px-3 py-2 text-[0.625rem] font-semibold uppercase tracking-wider"
                 style={{
                   gridTemplateColumns: "20px 1fr 110px 70px 90px 110px 90px 90px",
+                  minWidth: 760,
                   background: C.mint4,
                   color: C.sub,
                 }}
@@ -382,7 +383,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                     {/* Cue row */}
                     <div
                       className="grid items-center px-3 py-2 gap-2"
-                      style={{ gridTemplateColumns: "20px 1fr 110px 70px 90px 110px 90px 90px" }}
+                      style={{ gridTemplateColumns: "20px 1fr 110px 70px 90px 110px 90px 90px", minWidth: 760 }}
                     >
                       {/* Expand toggle */}
                       <button
@@ -449,7 +450,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                     {/* Contributors panel */}
                     {cue._open && (
                       <div
-                        className="mx-3 mb-3 rounded-xl border overflow-hidden"
+                        className="mx-3 mb-3 rounded-xl border overflow-x-auto"
                         style={{ borderColor: alpha(C.mint1, "44"), background: alpha(C.mint4, "55") }}
                       >
                         {/* Contrib header */}
@@ -457,6 +458,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                           className="grid px-3 py-1.5 text-[0.625rem] uppercase tracking-wider border-b"
                           style={{
                             gridTemplateColumns: "2fr 1fr 1fr 80px 140px 24px",
+                            minWidth: 640,
                             color: C.sub,
                             borderColor: alpha(C.mint1, "44"),
                           }}
@@ -475,6 +477,7 @@ export default function RoughSheetPreview({ projectId, data, onClose, onSaved })
                             className="grid items-center px-3 py-1.5 gap-2 border-b last:border-0"
                             style={{
                               gridTemplateColumns: "2fr 1fr 1fr 80px 140px 24px",
+                            minWidth: 640,
                               borderColor: alpha(C.mint1, "22"),
                             }}
                           >

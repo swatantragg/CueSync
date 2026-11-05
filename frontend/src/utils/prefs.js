@@ -28,7 +28,7 @@ export function savePrefs(prefs) {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* storage unavailable */ }
 }
 
-// Every rem-based size in the app scales from the root font size.
+// Text sizes are rem, so they follow the root font size; layout is pinned in px (styles/global.css).
 export function applyFontSize(key) {
   const size = FONT_SIZES.find((f) => f.key === key) || FONT_SIZES.find((f) => f.key === DEFAULT_PREFS.fontSize);
   document.documentElement.style.fontSize = `${size.px}px`;

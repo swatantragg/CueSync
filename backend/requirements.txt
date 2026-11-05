@@ -16,6 +16,7 @@ email-validator>=2.2
 
 # Auth
 python-jose[cryptography]>=3.3
+cryptography>=42  # Fernet: encrypts client Gmail refresh tokens
 bcrypt>=4.2
 python-multipart>=0.0.19
 
@@ -27,6 +28,7 @@ pillow>=11.0
 python-dotenv>=1.0
 orjson>=3.10
 httpx>=0.28
+tzdata>=2024.1  # REPORT_TIMEZONE on slim images without system time zones
 
 # Token blacklist (optional — falls back to in-memory if not configured)
 redis[hiredis]>=5.0

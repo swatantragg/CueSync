@@ -30,6 +30,21 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
       # Only used to create the hidden super admin if that account doesn't exist yet
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
+      # Client Gmail connections (Google OAuth) — see backend/.env.example
+      FRONTEND_URL: ${FRONTEND_URL:-https://cuesync.musicrightsmanagement.in}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-https://cuesync-b.musicrightsmanagement.in/api/mail/oauth/callback}
+      MAIL_TOKEN_KEY: ${MAIL_TOKEN_KEY:-}
+      # Weekly email reports through Brevo — see backend/.env.example
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      BREVO_SENDER_EMAIL: ${BREVO_SENDER_EMAIL:-}
+      BREVO_SENDER_NAME: ${BREVO_SENDER_NAME:-CueSync Reports}
+      BREVO_REPLY_TO: ${BREVO_REPLY_TO:-}
+      REPORT_ENABLED: ${REPORT_ENABLED:-false}
+      REPORT_DAY: ${REPORT_DAY:-monday}
+      REPORT_TIME: ${REPORT_TIME:-09:00}
+      REPORT_TIMEZONE: ${REPORT_TIMEZONE:-Asia/Kolkata}
     depends_on:
       redis:
         condition: service_healthy

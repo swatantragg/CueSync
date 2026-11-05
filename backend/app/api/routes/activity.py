@@ -77,6 +77,17 @@ async def submitted_episodes(
     projects = {p.id: p for p in (await db.execute(select(Project).where(Project.id.in_(pids)))).scalars().all()} if pids else {}
     ids = [ep.id for ep in rows]
     opened = await reviewer_opened_ids(db, current.id, ids) if current.role == UserRole.REVIEWER else set(ids)
+    # Who sent each one for review, and when (the latest submit).
+    submits: dict[int, tuple] = {}
+    if ids:
+        for eid, uid, at in (await db.execute(
+            select(AuditLog.entity_id, AuditLog.user_id, AuditLog.created_at).where(
+                AuditLog.entity == "episode", AuditLog.action == "submit", AuditLog.entity_id.in_(ids),
+            ).order_by(AuditLog.created_at)
+        )).all():
+            submits[eid] = (uid, at)
+    uids = {uid for uid, _ in submits.values() if uid}
+    names = dict((await db.execute(select(User.id, User.full_name).where(User.id.in_(uids)))).all()) if uids else {}
     return [{
         "id": ep.id, "episode_number": ep.episode_number, "title": ep.title,
         "status": ep.status, "project_id": ep.project_id,
@@ -84,6 +95,8 @@ async def submitted_episodes(
         "project_type": projects[ep.project_id].type.value if ep.project_id in projects else None,
         "air_date": ep.air_date,
         "opened": ep.id in opened,
+        "submitted_by": names.get(submits[ep.id][0]) if ep.id in submits else None,
+        "submitted_at": submits[ep.id][1].isoformat() if ep.id in submits and submits[ep.id][1] else None,
     } for ep in rows]
 
 

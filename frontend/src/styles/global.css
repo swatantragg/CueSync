@@ -1,9 +1,49 @@
 @import "tailwindcss";
 
-/* Root size is overridden at runtime from Settings → Font size (see utils/prefs.js). */
-html { font-size: 20px; }
-html, body, #root { margin: 0; padding: 0; min-height: 100vh; }
-body { font-family: 'DM Sans', system-ui, -apple-system, sans-serif; background: var(--c-light, #F6FFF8); color: var(--c-dark, #1B3A2D); }
+/* Settings → Font size sets the root font size at runtime (see utils/prefs.js), so every rem — i.e. text —
+   follows it. Layout must not: Tailwind's spacing, widths, containers and radii are pinned here in px at the
+   default 20px root, so changing the font size resizes text only instead of zooming the whole page.
+   Rule of thumb: text sizes in rem, layout sizes in Tailwind units or px. Breakpoints are px too, so a browser's
+   own default font size can't change which layout it gets. */
+@theme {
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+  --spacing: 5px;
+  --container-3xs: 320px;
+  --container-2xs: 360px;
+  --container-xs: 400px;
+  --container-sm: 480px;
+  --container-md: 560px;
+  --container-lg: 640px;
+  --container-xl: 720px;
+  --container-2xl: 840px;
+  --container-3xl: 960px;
+  --container-4xl: 1120px;
+  --container-5xl: 1280px;
+  --container-6xl: 1440px;
+  --container-7xl: 1600px;
+  --radius-xs: 2.5px;
+  --radius-sm: 5px;
+  --radius-md: 7.5px;
+  --radius-lg: 10px;
+  --radius-xl: 15px;
+  --radius-2xl: 20px;
+  --radius-3xl: 30px;
+  --radius-4xl: 40px;
+  --radius: 5px;
+}
+
+/* -webkit-text-size-adjust: phones (Safari above all) otherwise inflate text on their own in landscape. */
+html { font-size: 20px; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+html, body, #root { margin: 0; padding: 0; min-height: 100vh; min-height: 100dvh; }
+/* clip, not hidden: hidden would turn body into a scroll container and break the sticky header. */
+body { overflow-x: clip; font-family: 'DM Sans', system-ui, -apple-system, sans-serif; background: var(--c-light, #F6FFF8); color: var(--c-dark, #1B3A2D); }
+
+/* Every page's content: the full window width, with a side gutter that scales with the window (not the font). */
+.cs-page { width: 100%; padding-inline: clamp(12px, 1.6vw, 32px); }
 
 @keyframes progress-shimmer {
   0%   { background-position: -200% center; }
@@ -18,6 +58,10 @@ body { font-family: 'DM Sans', system-ui, -apple-system, sans-serif; background:
   from { transform: scaleX(1); }
   to   { transform: scaleX(0); }
 }
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 @keyframes pop-in {
   from { opacity: 0; transform: translateY(-4px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
@@ -25,9 +69,55 @@ body { font-family: 'DM Sans', system-ui, -apple-system, sans-serif; background:
 
 .cs-pop { animation: pop-in 120ms ease-out; }
 
+/* Every pop-up: .cs-backdrop on the full-screen layer puts the page out of focus, .cs-glass on the panel is the frosted
+   glass. The blur lives on the backdrop only: a filter on the panel would break position: fixed inside it.
+   Tall panels scroll inside the backdrop and stay centred otherwise, so no button is ever out of reach. */
+.cs-backdrop {
+  align-items: flex-start;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(6, 18, 12, 0.34);
+  -webkit-backdrop-filter: blur(10px) saturate(125%);
+  backdrop-filter: blur(10px) saturate(125%);
+  animation: backdrop-in 140ms ease-out;
+}
+.cs-backdrop > .cs-glass { margin-block: auto; }
+.cs-glass {
+  background: var(--c-white);
+  background: color-mix(in srgb, var(--c-white) 90%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  animation: pop-in 140ms ease-out;
+}
+.cs-glass.cs-dark {
+  background: var(--c-dark);
+  background: color-mix(in srgb, var(--c-dark) 87%, transparent);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+html[data-mode="dark"] .cs-glass:not(.cs-dark) { border-color: rgba(255, 255, 255, 0.14); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+/* Solid panels where glass isn't available or the viewer asked for less transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .cs-backdrop { background: rgba(0, 0, 0, 0.55); }
+  .cs-glass { background: var(--c-white); }
+  .cs-glass.cs-dark { background: var(--c-dark); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .cs-glass { background: var(--c-white); }
+  .cs-glass.cs-dark { background: var(--c-dark); }
+}
+
+/* Timeline rows: who | what | when, stacked on phones where three columns don't fit. */
+.cs-timeline { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 640px) { .cs-timeline { grid-template-columns: minmax(180px, 260px) minmax(0, 1fr) auto; } }
+
 .cs-scroll { scrollbar-width: thin; }
 .cs-scroll::-webkit-scrollbar { width: 8px; }
 .cs-scroll::-webkit-scrollbar-thumb { border-radius: 8px; background: rgba(0, 0, 0, 0.18); }
+
+/* A table wider than its card (phones, big fonts) scrolls sideways instead of being cut off by the card's rounded corners. */
+.overflow-hidden:has(> table), .overflow-hidden > div:has(> table) { overflow-x: auto; }
 
 /* Tailwind v4 borders default to currentColor; dividers take the colour set on their parent instead. */
 .divide-x > *, .divide-y > * { border-color: inherit; }

@@ -6,6 +6,7 @@ import {
 import { C, FONTS, alpha, T } from "../../styles/palette";
 import Select from "../../components/Select";
 import DashboardShell from "./DashboardShell";
+import EditorInsights from "./EditorInsights";
 import { api } from "../../utils/api";
 import { useApp } from "../../context/AppContext";
 
@@ -80,7 +81,7 @@ function MyWorkTab() {
 
   return (
     <div>
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
+      <div className="flex flex-wrap gap-1 mb-5 p-1 rounded-xl w-fit max-w-full" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {[{ key: "serial", label: "TV Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
           <button key={key} onClick={() => setWorkSubTab(key)}
             className="px-5 py-1.5 rounded-lg text-xs font-semibold transition-all"
@@ -101,9 +102,9 @@ function MyWorkTab() {
             const movie = isMovie(d);
             return (
               <div key={d.id} className="rounded-xl border p-5" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex-1 min-w-48">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="font-semibold" style={{ fontFamily: FONTS.serif, color: C.dark }}>{d.serial_name}</span>
                       <span className="text-[0.625rem] px-2 py-0.5 rounded font-medium" style={{ background: s.bg, color: s.color }}>{s.label}</span>
                     </div>
@@ -130,7 +131,7 @@ function MyWorkTab() {
                     </div>
                   )}
                 </div>
-                <div className="flex items-center justify-between mt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 mt-4">
                   <Select value={d.status} onChange={(e) => handleStatusUpdate(d.id, e.target.value)}
                     className="text-xs px-3 py-1.5 rounded-lg focus:outline-none"
                     style={{ background: s.bg, color: s.color, border: `1px solid ${alpha(s.color, "33")}`, fontWeight: 600 }}>
@@ -269,7 +270,7 @@ function ReviewFeedbackTab() {
   return (
     <div>
       {/* Serial / Movie top tabs */}
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
+      <div className="flex flex-wrap gap-1 mb-5 p-1 rounded-xl w-fit max-w-full" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {[{ key: "serial", label: "TV Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
           <button key={key} onClick={() => setReviewSubTab(key)}
             className="px-5 py-1.5 rounded-lg text-xs font-semibold transition-all"
@@ -436,17 +437,21 @@ function ReviewFeedbackTab() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function EditorDashboard() {
   const { notifications } = useApp();
-  const [tab, setTab] = useState("work");
+  const openSerial = useOpenSerial();
+  const [tab, setTab] = useState("dashboard");
 
   const feedbackUnread = notifications.filter((n) => !n.is_read && n.entity_type === "episode").length;
+  const emailsUnread = notifications.filter((n) => !n.is_read && n.entity_type === "editor_notice").length;
 
   const tabs = [
+    { key: "dashboard", label: "Dashboard", badge: emailsUnread },
     { key: "work",     label: "My Assignments"  },
     { key: "feedback", label: feedbackUnread > 0 ? `Review Feedback (${feedbackUnread})` : "Review Feedback" },
   ];
 
   return (
     <DashboardShell title="Editor Workspace" subtitle="Manage your assigned work and cue sheets" tabs={tabs} activeTab={tab} onTab={setTab}>
+      {tab === "dashboard" && <EditorInsights onOpenSerial={openSerial} />}
       {tab === "work"     && <MyWorkTab />}
       {tab === "feedback" && <ReviewFeedbackTab />}
     </DashboardShell>

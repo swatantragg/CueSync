@@ -14,7 +14,7 @@ export default function AuthShell({ title, subtitle, children, footer }) {
           <h1 className="text-5xl mb-2" style={{ fontFamily: FONTS.serif, color: C.mint4, letterSpacing: "-0.03em" }}>CueSync</h1>
           <p className="text-[0.6875rem] tracking-[0.3em] uppercase" style={{ color: alpha(C.mint2, "99") }}>CUE SHEET AUTOMATION</p>
         </div>
-        <div className="p-8 rounded-2xl border" style={{ background: "rgba(255,255,255,0.05)", borderColor: alpha(C.mint1, "22"), backdropFilter: "blur(12px)" }}>
+        <div className="p-8 rounded-2xl border" style={{ background: "rgba(255,255,255,0.05)", borderColor: alpha(C.mint1, "22"), backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}>
           <div className="mb-6 text-center">
             <h2 className="text-xl font-semibold mb-1" style={{ color: C.mint4, fontFamily: FONTS.serif }}>{title}</h2>
             {subtitle && <p className="text-xs" style={{ color: alpha(C.mint4, "AA") }}>{subtitle}</p>}
@@ -39,7 +39,7 @@ export function AuthField({ label, type, ...props }) {
           {...props}
           type={isPassword ? (show ? "text" : "password") : type}
           className="w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors"
-          style={{ background: "rgba(255,255,255,0.05)", color: C.mint4, borderColor: alpha(C.mint1, "44"), paddingRight: isPassword ? "2.75rem" : undefined }}
+          style={{ background: "rgba(255,255,255,0.05)", color: C.mint4, borderColor: alpha(C.mint1, "44"), paddingRight: isPassword ? 55 : undefined }}
           onFocus={(e) => (e.target.style.borderColor = C.mint1)}
           onBlur={(e) => (e.target.style.borderColor = alpha(C.mint1, "44"))}
         />

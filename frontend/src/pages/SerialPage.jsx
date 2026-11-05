@@ -209,8 +209,8 @@ export default function SerialPage() {
       )}
 
       {reviewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
-          <div className="cs-dark rounded-2xl p-6 w-full max-w-md shadow-2xl" style={{ background: C.dark }}>
+        <div className="cs-backdrop fixed inset-0 z-50 flex items-center justify-center">
+          <div className="cs-dark cs-glass rounded-2xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <div className="font-semibold text-lg" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>
                 {reviewModal.action === "reject" ? "Reject" : "Suggest Changes"} — Ep {String(reviewModal.ep.number).padStart(2, "0")}
@@ -247,14 +247,14 @@ export default function SerialPage() {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-6 py-10">
+      <main className="cs-page py-6 sm:py-10">
         <button onClick={goHome} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "55")}`, color: C.dark }}>
           <ArrowLeft className="w-3.5 h-3.5" /> Back
         </button>
-        <div className="flex items-end justify-between mb-8">
-          <div>
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-8">
+          <div className="min-w-0">
             <div className="text-xs uppercase tracking-widest mb-2" style={{ color: C.sub }}>{proj.type} · {proj.language}</div>
-            <h2 className="text-5xl" style={{ fontFamily: FONTS.serif }}>{proj.title}</h2>
+            <h2 className="text-4xl sm:text-5xl break-words" style={{ fontFamily: FONTS.serif }}>{proj.title}</h2>
           </div>
         </div>
         {proj.type !== "movie" && (
@@ -278,9 +278,9 @@ export default function SerialPage() {
 
         {!canReviewRole && (
           <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: alpha(C.mint1, "66"), background: alpha(C.mint4, "88") }}>
-            <div className="px-6 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: C.mint1 }}>
+            <div className="px-4 sm:px-6 py-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: C.mint1 }}>
                   <Upload className="w-5 h-5" style={{ color: C.dark }} />
                 </div>
                 <div>
@@ -462,7 +462,7 @@ export default function SerialPage() {
                     <td className="px-5 py-3 text-xs" title={last ? `${last.details || ACTION_LABEL[last.action] || last.action} — ${fmtDateTime(last.at)}` : undefined}>
                       {last ? (
                         <div className="leading-snug">
-                          <div className="truncate max-w-[14rem]" style={{ color: C.dark }}>
+                          <div className="truncate max-w-[280px]" style={{ color: C.dark }}>
                             <span className="font-semibold">{last.by || "System"}</span>
                             <span style={{ color: C.sub }}> · {ACTION_LABEL[last.action] || last.action}</span>
                           </div>

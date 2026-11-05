@@ -105,8 +105,8 @@ function WorkFilePreview({ projectId, projectTitle, preview, onClose, onSaved })
   const rejected = rows.filter(locked).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }}>
-      <div className="rounded-2xl w-full max-w-5xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden" style={{ background: C.white }}>
+    <div className="cs-backdrop fixed inset-0 z-50 flex items-center justify-center">
+      <div className="cs-glass rounded-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
         <div className="px-6 py-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: alpha(C.mint1, "55") }}>
           <div>
             <div className="font-semibold text-lg" style={{ fontFamily: FONTS.serif, color: C.dark }}>Review Work Files</div>
@@ -286,9 +286,9 @@ export default function WorkFileCard({ projectId, projectTitle, workFiles, onCha
       {preview && (
         <WorkFilePreview projectId={projectId} projectTitle={projectTitle} preview={preview} onClose={() => setPreview(null)} onSaved={handleSaved} />
       )}
-      <div className="px-6 py-5 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: C.mint1 }}>
+      <div className="px-4 sm:px-6 py-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: C.mint1 }}>
             <FileUp className="w-5 h-5" style={{ color: C.dark }} />
           </div>
           <div>

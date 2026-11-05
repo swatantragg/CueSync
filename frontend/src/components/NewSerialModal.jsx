@@ -30,14 +30,14 @@ export default function NewSerialModal({ onClose, onCreate }) {
   const inp = { padding: "0.5rem 0.75rem", borderRadius: 10, border: `1px solid ${alpha(C.mint1, "88")}`, fontSize: "0.875rem", width: "100%", background: C.white, color: C.dark };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#0008", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-      <form onSubmit={submit} style={{ background: C.white, borderRadius: 16, padding: "1.5rem", width: "min(28rem, calc(100vw - 2rem))", fontFamily: FONTS.sans, color: C.dark }}>
+    <div className="cs-backdrop fixed inset-0 z-50 flex items-center justify-center">
+      <form onSubmit={submit} className="cs-glass" style={{ borderRadius: 16, padding: 30, width: "min(560px, calc(100vw - 40px))", fontFamily: FONTS.sans, color: C.dark }}>
         <div className="flex items-center justify-between mb-4">
           <h3 style={{ fontFamily: FONTS.serif, fontSize: "1.5rem" }}>{f.type === "movie" ? "New Movie" : "New Serial"}</h3>
           <button type="button" onClick={onClose}><X className="w-5 h-5" /></button>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="col-span-2 text-xs" style={{ color: C.sub }}>{f.type === "movie" ? "Movie Title" : "Serial Title"}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="sm:col-span-2 text-xs" style={{ color: C.sub }}>{f.type === "movie" ? "Movie Title" : "Serial Title"}
             <input style={inp} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} autoFocus />
           </label>
           <label className="text-xs" style={{ color: C.sub }}>Type

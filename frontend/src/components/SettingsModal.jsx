@@ -65,10 +65,10 @@ export function ModeSwitch({ compact = false }) {
 export default function SettingsModal({ onClose }) {
   const { prefs, setFontSize } = useApp();
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose}>
+    <div className="cs-backdrop fixed inset-0 z-[60] flex items-center justify-center" onClick={onClose}>
       <div
-        className="cs-pop w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden"
-        style={{ background: C.white, fontFamily: FONTS.sans, color: C.dark }}
+        className="cs-glass w-full max-w-lg rounded-2xl overflow-hidden"
+        style={{ fontFamily: FONTS.sans, color: C.dark }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -90,8 +90,8 @@ export default function SettingsModal({ onClose }) {
 
           <section>
             <div className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: C.sub }}>Font size</div>
-            <p className="text-xs mb-3" style={{ color: C.sub }}>Scales all text and spacing across CueSync on this device.</p>
-            <div className="grid grid-cols-5 gap-2">
+            <p className="text-xs mb-3" style={{ color: C.sub }}>Makes text bigger or smaller across CueSync on this device. The layout stays the same.</p>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
               {FONT_SIZES.map((f, i) => {
                 const on = prefs.fontSize === f.key;
                 return (

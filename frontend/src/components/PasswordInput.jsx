@@ -12,7 +12,7 @@ export default function PasswordInput({ className = "", style, ...props }) {
         {...props}
         type={show ? "text" : "password"}
         className={`w-full ${className}`}
-        style={{ ...style, paddingRight: "2.5rem" }}
+        style={{ ...style, paddingRight: 50 }}
       />
       <button
         type="button"
@@ -33,7 +33,7 @@ export default function PasswordInput({ className = "", style, ...props }) {
 export function PasswordRules({ value, tone = "light" }) {
   const dark = tone === "dark";
   return (
-    <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
+    <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
       {PASSWORD_RULES.map((r) => {
         const ok = r.test(value || "");
         const color = ok ? (dark ? C.mint1 : C.ok) : (dark ? alpha(C.mint4, "99") : C.sub);

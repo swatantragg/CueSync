@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, XCircle, Info, MessageSquare, Briefcase } from "lucide-react";
+import { CheckCircle2, XCircle, Info, MessageSquare, Briefcase, Mail } from "lucide-react";
 import { C, FONTS, alpha, T } from "../styles/palette";
 import { useApp } from "../context/AppContext";
 
@@ -14,6 +14,7 @@ function timeAgo(iso) {
 
 function categorize(n) {
   if (n.entity_type === "delegation") return "allotted";
+  if (n.entity_type === "editor_notice") return "email";
   const t = (n.title || "").toLowerCase();
   if (t.includes("approved") || t.includes("approval")) return "approved";
   if (t.includes("reject")) return "rejected";
@@ -27,6 +28,7 @@ const TABS = [
   { key: "rejected",  label: "Rejected"  },
   { key: "approved",  label: "Approved"  },
   { key: "suggested", label: "Suggested" },
+  { key: "email",     label: "Emails"    },
 ];
 
 const CAT_STYLE = {
@@ -34,6 +36,7 @@ const CAT_STYLE = {
   rejected:  { color: T.red, bg: T.redBg, Icon: XCircle       },
   approved:  { color: T.green, bg: T.greenBg, Icon: CheckCircle2  },
   suggested: { color: T.blue, bg: T.blueBg, Icon: MessageSquare },
+  email:     { color: T.orangeDeep, bg: T.orangeBg, Icon: Mail },
   // Getters so a theme switch is picked up without a reload.
   other:     { get color() { return C.sub; }, get bg() { return C.mint4; }, Icon: Info },
 };
@@ -47,6 +50,8 @@ export default function Notifications({ onClose }) {
   const { notifications, markRead, markAllRead } = useApp();
   const [activeTab, setActiveTab] = useState("all");
 
+  // Emails from a Work Delegator only exist for editors, so everyone else keeps the original tabs.
+  const tabs = TABS.filter((t) => t.key !== "email" || notifications.some((n) => categorize(n) === "email"));
   const filtered = activeTab === "all"
     ? notifications
     : notifications.filter((n) => categorize(n) === activeTab);
@@ -59,7 +64,7 @@ export default function Notifications({ onClose }) {
   return (
     <div
       className="absolute right-0 top-12 rounded-2xl border shadow-2xl z-50 overflow-hidden flex flex-col"
-      style={{ background: C.white, borderColor: alpha(C.mint1, "44"), width: "min(26rem, calc(100vw - 2rem))", maxHeight: "min(32rem, calc(100vh - 6rem))" }}
+      style={{ background: C.white, borderColor: alpha(C.mint1, "44"), width: "min(520px, calc(100vw - 40px))", maxHeight: "min(640px, calc(100vh - 120px))" }}
     >
       {/* Header */}
       <div className="px-4 py-3 border-b flex items-center justify-between shrink-0" style={{ borderColor: C.mint4, background: alpha(C.mint4, "66") }}>
@@ -74,8 +79,8 @@ export default function Notifications({ onClose }) {
       </div>
 
       {/* Category tabs */}
-      <div className="flex border-b shrink-0" style={{ borderColor: alpha(C.mint4, "88") }}>
-        {TABS.map(({ key, label }) => {
+      <div className="flex overflow-x-auto border-b shrink-0" style={{ borderColor: alpha(C.mint4, "88") }}>
+        {tabs.map(({ key, label }) => {
           const count    = unreadCount(key);
           const isActive = activeTab === key;
           const cs       = CAT_STYLE[key] || { color: C.dark, bg: C.mint4 };

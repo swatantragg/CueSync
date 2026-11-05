@@ -2,10 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { api, tokenStore, userStore } from "../utils/api";
 import { applyFontSize, loadPrefs, savePrefs } from "../utils/prefs";
 import { applyTheme } from "../styles/palette";
-import { APP_VERSION } from "../constants/version";
+import { APP_VERSION, whatsNewFor } from "../constants/version";
 
 const AppContext = createContext(null);
 const TOAST_MS = 3000;
+const MAX_TOASTS = 12;
 
 const withAvatar = (u) => (u ? { ...u, avatar: (u.full_name || u.email || "?").slice(0, 2).toUpperCase() } : u);
 
@@ -33,19 +34,20 @@ export function AppProvider({ children }) {
   const isEditor = role === "editor";
   const isPrivileged = isAdmin || isWD || isReviewer;
   const mustChangePassword = !!currentUser?.must_change_password;
-  const showWhatsNew = !!currentUser && !mustChangePassword && currentUser.last_seen_version !== APP_VERSION;
+  // Only when this release changed something for this role; everyone else just never sees a popup for it.
+  const whatsNew = currentUser && !mustChangePassword ? whatsNewFor(role, currentUser.last_seen_version) : [];
+  const showWhatsNew = whatsNew.length > 0;
 
   const activeProject = projects.find((p) => p.id === activeProjectId) || null;
   const activeEpisode = activeProject?.episodes?.find((e) => e.id === activeEpisodeId) || null;
 
   // ── Toasts ────────────────────────────────────────────────────────────────
+  // ToastHost shows them in order and runs each one's timer in turn; older ones are never pushed out by newer ones.
   const dismissToast = useCallback((id) => setToasts((prev) => prev.filter((t) => t.id !== id)), []);
   const pushToast = useCallback((toast) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const duration = toast.duration || TOAST_MS;
-    setToasts((prev) => [...prev.slice(-3), { kind: "info", ...toast, id, duration }]);
-    setTimeout(() => dismissToast(id), duration);
-  }, [dismissToast]);
+    setToasts((prev) => [...prev, { kind: "info", ...toast, id, duration: toast.duration || TOAST_MS }].slice(-MAX_TOASTS));
+  }, []);
 
   // ── Preferences ───────────────────────────────────────────────────────────
   const updatePrefs = (patch) => setPrefs((prev) => {
@@ -165,14 +167,15 @@ export function AppProvider({ children }) {
     return next;
   };
 
-  const login = async (email, password) => {
-    const res = await api.login(email, password);
+  const startSession = (res) => {
     if (res.access_token) tokenStore.set(res.access_token);
     seenNotifIds.current = null;
     pendingLoginSummary.current = true;
     applyUser(res.user);
     setScreen("workspace");
   };
+  const login = async (email, password) => startSession(await api.login(email, password));
+  const loginWithGoogle = async (ticket) => startSession(await api.googleExchange(ticket));
   const changePassword = async (payload) => applyUser(await api.changePassword(payload));
   const dismissWhatsNew = async () => {
     applyUser({ ...currentUser, last_seen_version: APP_VERSION });
@@ -195,9 +198,9 @@ export function AppProvider({ children }) {
     toasts, pushToast, dismissToast,
     prefs, setFontSize, setTheme, setMode,
     isAdmin, isSuperAdmin, isWD, isReviewer, isEditor, isPrivileged, role,
-    mustChangePassword, changePassword, showWhatsNew, dismissWhatsNew,
+    mustChangePassword, changePassword, showWhatsNew, whatsNew, dismissWhatsNew,
     updateProject, updateEpisode,
-    goHome, login, logout,
+    goHome, login, loginWithGoogle, logout,
   };
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

@@ -6,6 +6,9 @@ function apiUrl(path) {
   return BASE ? `${BASE}${path}` : path;
 }
 
+// Origin that serves /api — the Gmail sign-in popup reports back from there.
+export const API_ORIGIN = BASE ? new URL(BASE).origin : window.location.origin;
+
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY),
   set: (t) => localStorage.setItem(TOKEN_KEY, t),
@@ -81,6 +84,9 @@ async function downloadFile(path, filename) {
 export const api = {
   base: BASE,
   health: () => request("/health", { auth: false }),
+  googleConfig: () => request("/api/auth/google/config", { auth: false }),
+  googleStartUrl: () => apiUrl(`/api/auth/google/start?origin=${encodeURIComponent(window.location.origin)}`),
+  googleExchange: (ticket) => request("/api/auth/google/exchange", { method: "POST", body: { ticket }, auth: false }),
   login: (email, password) => {
     const form = new URLSearchParams({ username: email, password });
     return request("/api/auth/login", { method: "POST", form, auth: false });
@@ -181,11 +187,68 @@ export const api = {
   listSubmissions: () => request("/api/society-submissions/"),
   createSubmission: (payload) => request("/api/society-submissions/", { method: "POST", body: payload }),
   submissionsBySerial: (pid) => request(`/api/society-submissions/serial/${pid}`),
-  suggestClients: () => request("/api/society-submissions/suggest-clients"),
   submissionStats: () => request("/api/society-submissions/stats/overview"),
   markSubmittedToIprs: (id) => request(`/api/society-submissions/${id}/submit-to-iprs`, { method: "POST" }),
   markAcceptedByIprs: (id) => request(`/api/society-submissions/${id}/accept-iprs`, { method: "POST" }),
-  reviewerCalendar: (year) => request(`/api/delegations/activity/reviewer-calendar?year=${year}`),
+
+  // ── Admin Dashboard ─────────────────────────────────────────────────────────
+  adminInsights: () => request("/api/insights/dashboard"),
+  editorInsights: () => request("/api/insights/editor-dashboard"),
+  wdInsights: () => request("/api/insights/wd-dashboard"),
+  reviewerCalendar: (year, clientId, societyId) => {
+    const q = new URLSearchParams({ year: String(year) });
+    if (clientId) q.set("client_id", clientId);
+    if (societyId) q.set("society_id", societyId);
+    return request(`/api/insights/reviewer-calendar?${q}`);
+  },
+  insightsCalendar: (year, clientId, societyId) => {
+    const q = new URLSearchParams({ year: String(year) });
+    if (clientId) q.set("client_id", clientId);
+    if (societyId) q.set("society_id", societyId);
+    return request(`/api/insights/calendar?${q}`);
+  },
+
+  // ── Notify Editor: the sender's own Gmail, and the emails ───────────────────
+  myMailbox: () => request("/api/editor-notices/mailbox"),
+  connectMyMailbox: () => request("/api/editor-notices/mailbox/connect", { method: "POST" }),
+  disconnectMyMailbox: () => request("/api/editor-notices/mailbox", { method: "DELETE" }),
+  previewEditorNotice: (editorId, period) => request(`/api/editor-notices/preview/${editorId}?period=${period}`),
+  sendEditorNotice: (payload) => request("/api/editor-notices/send", { method: "POST", body: payload }),
+  markEditorNoticeRead: (id) => request(`/api/editor-notices/${id}/read`, { method: "POST" }),
+
+  // ── Weekly email reports ────────────────────────────────────────────────────
+  reportStatus: () => request("/api/reports/status"),
+  previewReport: (role) => request(`/api/reports/preview?role=${role}`),
+  testReport: (role) => request("/api/reports/test", { method: "POST", body: { role } }),
+  reportRecipients: () => request("/api/reports/recipients"),
+  setReportRecipient: (id, enabled) => request(`/api/reports/recipients/${id}`, { method: "PUT", body: { enabled } }),
+
+  // ── Clients + their Gmail connection ────────────────────────────────────────
+  listClients: () => request("/api/clients/"),
+  createClient: (payload) => request("/api/clients/", { method: "POST", body: payload }),
+  updateClient: (id, payload) => request(`/api/clients/${id}`, { method: "PUT", body: payload }),
+  deleteClient: (id) => request(`/api/clients/${id}`, { method: "DELETE" }),
+  clientMailConfig: () => request("/api/clients/mail-config"),
+  legacyClientNames: () => request("/api/clients/legacy-names"),
+  linkClientNames: (id, names) => request(`/api/clients/${id}/link-names`, { method: "POST", body: { names } }),
+  connectClientMailbox: (id) => request(`/api/clients/${id}/mailbox/connect`, { method: "POST" }),
+  checkClientMailbox: (id) => request(`/api/clients/${id}/mailbox/check`, { method: "POST" }),
+  disconnectClientMailbox: (id) => request(`/api/clients/${id}/mailbox`, { method: "DELETE" }),
+
+  // ── Societies (where Send to Society emails go) ─────────────────────────────
+  listSocieties: () => request("/api/societies/"),
+  societyOptions: () => request("/api/societies/options"),
+  createSociety: (payload) => request("/api/societies/", { method: "POST", body: payload }),
+  updateSociety: (id, payload) => request(`/api/societies/${id}`, { method: "PUT", body: payload }),
+  deleteSociety: (id) => request(`/api/societies/${id}`, { method: "DELETE" }),
+  previewSocietyMail: (payload) => request("/api/society-submissions/mail/preview", { method: "POST", body: payload }),
+  sendSocietyMail: (payload) => request("/api/society-submissions/mail/send", { method: "POST", body: payload }),
+  approvedEpisodes: (pid, societyId) => request(`/api/society-submissions/approved-episodes/${pid}${societyId ? `?society_id=${societyId}` : ""}`),
+  mailOverview: () => request("/api/society-submissions/mail/overview"),
+  syncMail: () => request("/api/society-submissions/mail/sync", { method: "POST" }),
+  keepWaiting: (id) => request(`/api/society-submissions/${id}/keep-waiting`, { method: "POST" }),
+  confirmDetectedMail: (id, payload) => request(`/api/society-submissions/detected/${id}/confirm`, { method: "POST", body: payload }),
+  dismissDetectedMail: (id) => request(`/api/society-submissions/detected/${id}/dismiss`, { method: "POST" }),
 
   // ── Notifications ───────────────────────────────────────────────────────────
   listNotifications: () => request("/api/notifications/"),

@@ -14,6 +14,7 @@ class WorkDelegation(Base):
     serial_name: Mapped[str] = mapped_column(String(500), nullable=False)
     work_type: Mapped[str] = mapped_column(String(100), default="TV Cue Sheet")
     client: Mapped[str | None] = mapped_column(String(255))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)
     channel: Mapped[str | None] = mapped_column(String(255))
     episode_range: Mapped[str | None] = mapped_column(String(255))
     week_target: Mapped[int | None] = mapped_column(Integer)
