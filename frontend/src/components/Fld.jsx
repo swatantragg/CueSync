@@ -1,6 +1,7 @@
 import { C } from "../styles/palette";
 
-const SPAN = { 2: "col-span-2", 3: "col-span-3", 4: "col-span-4" };
+// Full width on the phone layout's 2 columns; the real span from md up (grids are 2 columns, then 4 or 6).
+const SPAN = { 2: "col-span-2", 3: "col-span-2 md:col-span-3", 4: "col-span-2 md:col-span-4" };
 const TAG = {
   auto:   { c: "#27AE60", l: "A" },
   once:   { c: "#1D4E89", l: "S" },

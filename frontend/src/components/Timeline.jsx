@@ -9,12 +9,16 @@ const DOT = {
   suggest: T.blue, update: T.blue,
   submit: T.purple, society_submit: T.purple, submit_to_iprs: T.purple, review_open: T.purple2,
   password_change: T.orange, logout: T.grayMid,
+  client_add: T.teal, client_link: T.teal, mailbox_connect: T.green,
+  client_remove: T.red, mailbox_disconnect: T.grayMid, mailbox_lost: T.orange,
+  society_add: T.teal, society_edit: T.blue, society_remove: T.red, society_mail_sent: T.purple,
+  society_reply: T.purple2, society_bounce: T.red, mail_detected: T.orange, detected_confirm: T.green,
+  detected_dismiss: T.grayMid, reply_keep_waiting: T.blue,
+  editor_notice: T.orange, user_mailbox_connect: T.green, user_mailbox_disconnect: T.grayMid,
 };
 
 // Detail prefixes that only repeat the action title ("Rejected — note" → "note").
 const REPEATED = /^(Approved episode|Submitted for approval|Opened cue sheet for review|Rejected|Suggested changes|Signed in|Signed out|Changed password)\.?\s*[—·-]?\s*/i;
-
-const COLS = { gridTemplateColumns: "minmax(9rem, 13rem) minmax(0, 1fr) auto" };
 
 const titleCase = (s) => (s || "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -46,29 +50,29 @@ export default function Timeline({ rows, who, showEmail = false }) {
   const { currentUser } = useApp();
   return (
     <div className="px-4 py-3">
-      <div className="grid gap-x-6 pb-1.5 text-[0.625rem] font-bold uppercase tracking-widest" style={{ ...COLS, color: C.sub }}>
+      <div className="hidden sm:grid cs-timeline gap-x-6 pb-1.5 text-[0.625rem] font-bold uppercase tracking-widest" style={{ color: C.sub }}>
         <span className="pl-5">Who</span>
         <span>What</span>
         <span className="text-right">Date and time</span>
       </div>
       <ol className="relative">
-        <span aria-hidden className="absolute left-[0.3125rem] top-3 bottom-3 w-px" style={{ background: C.mint1 }} />
+        <span aria-hidden className="absolute left-[6.5px] top-3 bottom-3 w-px" style={{ background: C.mint1 }} />
         {rows.map((r) => {
           const { title, body } = activityText(r.action, r.details);
           const sub = [r.user_role && titleCase(r.user_role), showEmail && r.user_email].filter(Boolean).join(" · ");
           return (
-            <li key={r.id} className="relative grid gap-x-6 py-2" style={COLS}>
-              <span aria-hidden className="absolute left-0 top-[0.9rem] w-[0.6875rem] h-[0.6875rem] rounded-full"
+            <li key={r.id} className="relative grid cs-timeline gap-x-6 py-2">
+              <span aria-hidden className="absolute left-0 top-[0.9rem] size-[14px] rounded-full"
                 style={{ background: DOT[r.action] || C.muted, boxShadow: `0 0 0 3px ${C.white}` }} />
               <div className="pl-5 min-w-0">
                 <WhoPill name={r.user_name || who} me={currentUser && r.user_id != null && r.user_id === currentUser.id} />
                 {sub && <div className="text-[0.625rem] mt-1 pl-1 truncate" style={{ color: C.sub }}>{sub}</div>}
               </div>
-              <div className="min-w-0 pt-0.5">
+              <div className="min-w-0 pt-0.5 pl-5 sm:pl-0">
                 <div className="text-sm font-semibold" style={{ color: C.dark }}>{title}</div>
                 {body && <div className="text-xs mt-0.5 break-words" style={{ color: C.sub }}>{body}</div>}
               </div>
-              <div className="pt-1 text-xs text-right whitespace-nowrap" style={{ color: C.sub }} title={timeAgo(r.at)}>
+              <div className="pt-1 pl-5 sm:pl-0 text-xs sm:text-right whitespace-nowrap" style={{ color: C.sub }} title={timeAgo(r.at)}>
                 {fmtDateTime(r.at) || "—"}
               </div>
             </li>

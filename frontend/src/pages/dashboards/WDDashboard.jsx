@@ -1,16 +1,19 @@
 import { useEffect, useState, useRef } from "react";
 import {
   Plus, Trash2, Search, Edit2, X, ChevronLeft, ChevronRight,
-  FileText, ArrowLeft, CalendarDays, History, Layers, ChevronDown, Film, Users,
+  ArrowLeft, CalendarDays, History, Layers, ChevronDown, Film, Mail, Users,
 } from "lucide-react";
 import { C, FONTS, alpha, T } from "../../styles/palette";
 import Select from "../../components/Select";
 import DashboardShell from "./DashboardShell";
 import ProjectsTab from "./ProjectsTab";
+import WDInsights from "./WDInsights";
+import { QuarterCalendar } from "./AdminInsights";
 import { api } from "../../utils/api";
 import { fmtDateTime, timeAgo } from "../../utils/format";
 import { showAlert, showConfirm } from "../../components/Dialog";
 import Timeline from "../../components/Timeline";
+import NotifyEditorModal from "../../components/NotifyEditorModal";
 import { useApp } from "../../context/AppContext";
 
 const WORK_TYPES = ["TV Cue Sheet", "Movie Cue Sheet", "Album", "Other"];
@@ -20,7 +23,6 @@ const STATUS_STYLE = {
   in_progress: { bg: T.blueBg, color: T.blue, label: "In Progress" },
   completed:   { bg: T.greenBg, color: T.green, label: "Completed" },
 };
-const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTH_FULL  = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function StatusBadge({ status }) {
@@ -32,12 +34,15 @@ function StatusBadge({ status }) {
   );
 }
 
+// Client select value for an old delegation whose typed client name isn't linked to the client list.
+const KEEP_OLD_CLIENT = "__keep__";
+
 // ─── Delegation form ──────────────────────────────────────────────────────────
 function DelegationForm({ editors, onSave, onClose, initial = null }) {
   const [form, setForm] = useState({
     serial_name:  initial?.serial_name  || "",
     work_type:    initial?.work_type    || "TV Cue Sheet",
-    client:       initial?.client       || "",
+    client_id:    initial?.client_id ? String(initial.client_id) : initial?.client ? KEEP_OLD_CLIENT : "",
     channel:      initial?.channel      || "",
     episode_range:initial?.episode_range|| "",
     week_target:  initial?.week_target  || "",
@@ -52,14 +57,10 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
   const [saving, setSaving] = useState(false);
   const suggestRef = useRef(null);
   const [clients, setClients] = useState([]);
-  const [clientSug, setClientSug] = useState(false);
 
-  useEffect(() => { api.suggestClients().then(setClients).catch(() => {}); }, []);
+  useEffect(() => { api.listClients().then(setClients).catch(() => {}); }, []);
 
-  const filteredClients = clients.filter((c) => {
-    const q = (form.client || "").trim().toLowerCase();
-    return c.toLowerCase().includes(q) && c.toLowerCase() !== q;
-  });
+  const clientOptions = clients.filter((c) => c.is_active || c.id === initial?.client_id);
 
   const searchProjects = async (q) => {
     if (!q.trim()) { setSuggestions([]); setShowSuggest(false); setIsNewSerial(false); return; }
@@ -78,8 +79,11 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
       return;
     }
     setSaving(true);
+    const { client_id, ...rest } = form;
+    // Leaving an old typed client name untouched sends no client fields, so the server keeps it.
+    const client = client_id === KEEP_OLD_CLIENT ? {} : { client_id: client_id ? parseInt(client_id) : null };
     try {
-      await onSave({ ...form, week_target: form.week_target ? parseInt(form.week_target) : null, assigned_to: parseInt(form.assigned_to) });
+      await onSave({ ...rest, ...client, week_target: form.week_target ? parseInt(form.week_target) : null, assigned_to: parseInt(form.assigned_to) });
       onClose();
     } catch (ex) {
       await showAlert(ex.message, { title: "Save Failed", variant: "error" });
@@ -90,8 +94,8 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
   const inpStyle = { background: C.mid, color: C.mint4, border: `1px solid ${alpha(C.mint1, "33")}` };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
-      <div className="cs-dark rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden" style={{ background: C.dark }}>
+    <div className="cs-backdrop fixed inset-0 z-50 flex items-center justify-center">
+      <div className="cs-dark cs-glass rounded-2xl w-full max-w-xl overflow-hidden">
         <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.mid }}>
           <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>
             {initial ? "Edit Delegation" : "New Delegation"}
@@ -127,7 +131,7 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Work Type</label>
               <Select tone="dark" value={form.work_type} onChange={(e) => setForm((f) => ({ ...f, work_type: e.target.value, episode_range: e.target.value === "Movie Cue Sheet" ? "" : f.episode_range }))} className={inp} style={inpStyle}>
@@ -143,28 +147,19 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
             </div>
           </div>
 
-          <div className={`grid gap-4 ${form.work_type === "Movie Cue Sheet" ? "grid-cols-1" : "grid-cols-2"}`}>
-            <div className="relative">
+          <div className={`grid gap-4 ${form.work_type === "Movie Cue Sheet" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"}`}>
+            <div>
               <label className="block text-xs font-medium mb-1" style={{ color: C.muted }}>Client</label>
-              <input
-                value={form.client}
-                onChange={(e) => { setForm((f) => ({ ...f, client: e.target.value })); setClientSug(true); }}
-                onFocus={() => setClientSug(true)}
-                onBlur={() => setTimeout(() => setClientSug(false), 150)}
-                placeholder="Client name"
-                className={inp} style={inpStyle}
-              />
-              {clientSug && filteredClients.length > 0 && (
-                <div className="absolute left-0 right-0 z-50 rounded-lg shadow-xl mt-1 overflow-hidden max-h-44 overflow-y-auto" style={{ background: C.mid, border: `1px solid ${alpha(C.mint1, "44")}` }}>
-                  {filteredClients.map((c) => (
-                    <button key={c} type="button"
-                      onMouseDown={() => { setForm((f) => ({ ...f, client: c })); setClientSug(false); }}
-                      className="w-full text-left px-4 py-2 hover:opacity-80 text-sm" style={{ color: C.mint4 }}>
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <Select tone="dark" value={form.client_id} onChange={(e) => setForm((f) => ({ ...f, client_id: e.target.value }))} className={inp} style={inpStyle}>
+                <option value="">No client</option>
+                {initial?.client && !initial.client_id && (
+                  <option value={KEEP_OLD_CLIENT}>{initial.client} (old name, not in client list)</option>
+                )}
+                {clientOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+              <p className="text-[0.6875rem] mt-1" style={{ color: C.muted }}>
+                Missing a client? An Admin or Reviewer adds it under Clients.
+              </p>
             </div>
             {form.work_type !== "Movie Cue Sheet" && (
               <div>
@@ -174,7 +169,7 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: form.work_type === "Movie Cue Sheet" ? alpha(C.muted, "55") : C.muted }}>Episode Range</label>
               <input
@@ -211,243 +206,6 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
             </button>
           </div>
         </form>
-      </div>
-    </div>
-  );
-}
-
-// ─── Calendar Activity tab ────────────────────────────────────────────────────
-function CalendarActivity({ delegations = [] }) {
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: Math.max(1, currentYear - 2026 + 1) }, (_, i) => 2026 + i);
-
-  const [selectedYear, setSelectedYear] = useState(currentYear >= 2026 ? currentYear : 2026);
-  const [calData, setCalData]           = useState(null);
-  const [loading, setLoading]           = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(null);
-
-  // Build per-month and per-week target maps from delegation created_at dates.
-  // targetByMonth[year][month] = sum of week_targets for delegations created that month.
-  // targetByWeek[year][month][weekOfMonth] = same, split by week.
-  const targetByMonth = {};
-  const targetByWeek  = {};
-  for (const d of delegations) {
-    if (!d.created_at || !d.week_target) continue;
-    const dt  = new Date(d.created_at);
-    const y   = dt.getFullYear();
-    const mo  = dt.getMonth() + 1;
-    const wk  = String(Math.ceil(dt.getDate() / 7));
-    const tgt = Number(d.week_target) || 0;
-
-    if (!targetByMonth[y])       targetByMonth[y]       = {};
-    if (!targetByWeek[y])        targetByWeek[y]        = {};
-    if (!targetByWeek[y][mo])    targetByWeek[y][mo]    = {};
-
-    targetByMonth[y][mo]      = (targetByMonth[y][mo]      || 0) + tgt;
-    targetByWeek[y][mo][wk]   = (targetByWeek[y][mo][wk]  || 0) + tgt;
-  }
-
-  useEffect(() => {
-    setLoading(true);
-    setSelectedMonth(null);
-    api.activityCalendar(selectedYear)
-      .then(setCalData)
-      .catch(() => setCalData(null))
-      .finally(() => setLoading(false));
-  }, [selectedYear]);
-
-  // per-month aggregates: target (from delegation created_at), submitted, approved.
-  // Pending = Target − Submitted  (work assigned but editor hasn't submitted yet).
-  const mTotal = (m) => {
-    const d      = calData?.months?.[String(m)];
-    const sub    = d ? (d.submitted || 0) : 0;
-    const app    = d ? (d.approved  || 0) : 0;
-    const target = (targetByMonth[selectedYear] || {})[m] || 0;
-    return { target, sub, app, pending: Math.max(0, target - sub) };
-  };
-
-  const qTotal = (months) =>
-    months.reduce(
-      (acc, m) => { const t = mTotal(m); return { target: acc.target + t.target, sub: acc.sub + t.sub, app: acc.app + t.app, pending: acc.pending + t.pending }; },
-      { target: 0, sub: 0, app: 0, pending: 0 }
-    );
-
-  const quarters  = [[1,2,3,4],[5,6,7,8],[9,10,11,12]];
-  const selData   = selectedMonth ? (calData?.months?.[String(selectedMonth)] ?? {}) : null;
-  const selTarget = selectedMonth ? ((targetByMonth[selectedYear] || {})[selectedMonth] || 0) : 0;
-  const selSub    = selData?.submitted || 0;
-  const selApp    = selData?.approved  || 0;
-  const selPend   = Math.max(0, selTarget - selSub);
-
-  // compact metric widget used inside month cells
-  const Metric = ({ val, label, color, dark }) => (
-    <div>
-      <div className="text-lg font-bold leading-none" style={{ color: color }}>{val}</div>
-      <div className="text-[0.5625rem] mt-0.5 font-medium uppercase tracking-wide" style={{ color: dark ? alpha(color, "cc") : alpha(color, "99") }}>{label}</div>
-    </div>
-  );
-
-  return (
-    <div className="flex gap-5">
-      {/* Year sidebar */}
-      <div className="w-16 shrink-0">
-        <div className="text-[0.625rem] uppercase tracking-wider font-semibold mb-2 text-center" style={{ color: C.sub }}>Year</div>
-        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
-          {years.map((y) => (
-            <button key={y} onClick={() => setSelectedYear(y)}
-              className="w-full py-2.5 text-sm font-semibold border-b last:border-0 transition"
-              style={{ borderColor: alpha(C.mint4, "55"), background: selectedYear === y ? C.dark : "transparent", color: selectedYear === y ? C.mint4 : C.dark }}>
-              {y}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Calendar grid + detail */}
-      <div className="flex-1 min-w-0">
-        {loading ? (
-          <div className="p-10 text-center text-sm" style={{ color: C.sub }}>Loading…</div>
-        ) : (
-          <div className="space-y-3">
-            {quarters.map((qMonths, qi) => {
-              const qt = qTotal(qMonths);
-              return (
-                <div key={qi} className="flex gap-2 items-stretch">
-                  {qMonths.map((m) => {
-                    const mt             = mTotal(m);
-                    const isSel          = selectedMonth === m;
-                    const isCurrent      = selectedYear === new Date().getFullYear() && m === new Date().getMonth() + 1;
-                    const hasActivity    = mt.sub > 0 || mt.app > 0;
-                    return (
-                      <button key={m} onClick={() => setSelectedMonth(isSel ? null : m)}
-                        className={`${isSel ? "cs-dark " : ""}flex-1 rounded-xl border p-3 text-left transition-all hover:shadow-md`}
-                        style={{
-                          background:  isSel ? C.dark : isCurrent ? alpha(C.mint4, "cc") : C.white,
-                          borderColor: isSel ? C.mint1 : isCurrent ? C.mint1 : hasActivity ? alpha(C.mint1, "88") : alpha(C.mint1, "33"),
-                          borderWidth: isCurrent && !isSel ? 2 : 1,
-                        }}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-[0.625rem] font-bold uppercase tracking-widest" style={{ color: isSel ? C.mint1 : C.sub }}>
-                            {MONTH_NAMES[m - 1]}
-                          </div>
-                          {isCurrent && !isSel && (
-                            <span className="text-[0.5rem] font-bold uppercase px-1.5 py-0.5 rounded-full" style={{ background: C.mint1, color: C.dark }}>Now</span>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                          <div>
-                            <div className="text-base font-bold leading-none" style={{ color: isSel ? "#fde68a" : T.orange }}>{mt.target}</div>
-                            <div className="text-[0.5625rem] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? "#fde68a88" : alpha(T.orange, "77") }}>Target</div>
-                          </div>
-                          <div>
-                            <div className="text-base font-bold leading-none" style={{ color: isSel ? "#fca5a5" : C.danger }}>{mt.pending}</div>
-                            <div className="text-[0.5625rem] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? "#fca5a588" : alpha(C.danger, "77") }}>Pending</div>
-                          </div>
-                          <div>
-                            <div className="text-base font-bold leading-none" style={{ color: isSel ? C.mint4 : C.dark }}>{mt.sub}</div>
-                            <div className="text-[0.5625rem] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? C.muted : C.sub }}>Submitted</div>
-                          </div>
-                          <div>
-                            <div className="text-base font-bold leading-none" style={{ color: isSel ? "#86efac" : C.ok }}>{mt.app}</div>
-                            <div className="text-[0.5625rem] mt-0.5 uppercase tracking-wide" style={{ color: isSel ? "#86efac88" : alpha(C.ok, "88") }}>Approved</div>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                  {/* Quarter total */}
-                  <div className="w-24 shrink-0 rounded-xl border p-3 flex flex-col justify-center"
-                    style={{ background: alpha(C.mint4, "33"), borderColor: alpha(C.mint4, "55") }}>
-                    <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-2 text-center" style={{ color: C.sub }}>Q{qi + 1}</div>
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-center">
-                      <div>
-                        <div className="text-sm font-bold" style={{ color: T.orange }}>{qt.target}</div>
-                        <div className="text-[0.5rem] uppercase" style={{ color: alpha(T.orange, "77") }}>Target</div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold" style={{ color: C.danger }}>{qt.pending}</div>
-                        <div className="text-[0.5rem] uppercase" style={{ color: alpha(C.danger, "77") }}>Pending</div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold" style={{ color: C.dark }}>{qt.sub}</div>
-                        <div className="text-[0.5rem] uppercase" style={{ color: C.sub }}>Sub</div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold" style={{ color: C.ok }}>{qt.app}</div>
-                        <div className="text-[0.5rem] uppercase" style={{ color: alpha(C.ok, "88") }}>App</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Month detail — week breakdown only, no "By Editor" */}
-        {selectedMonth && selData !== null && (
-          <div className="mt-5 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
-            {/* Header with 4 totals */}
-            <div className="px-5 py-3 border-b flex items-center gap-6 flex-wrap"
-              style={{ borderColor: C.mint4, background: alpha(C.mint4, "33") }}>
-              <div className="font-semibold text-sm" style={{ fontFamily: FONTS.serif, color: C.dark }}>
-                {MONTH_FULL[selectedMonth - 1]} {selectedYear}
-              </div>
-              <div className="flex gap-5 ml-auto">
-                {[
-                  { label: "Target",    val: selTarget,   color: T.orange },
-                  { label: "Submitted", val: selSub,      color: C.dark    },
-                  { label: "Approved",  val: selApp,      color: C.ok      },
-                  { label: "Pending",   val: selPend,     color: C.danger  },
-                ].map(({ label, val, color }) => (
-                  <div key={label} className="text-center">
-                    <div className="text-lg font-bold leading-none" style={{ color }}>{val}</div>
-                    <div className="text-[0.625rem] mt-0.5 uppercase tracking-wide" style={{ color: alpha(color, "88") }}>{label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Weekly breakdown table */}
-            <div className="p-4">
-              <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-3" style={{ color: C.sub }}>Weekly Breakdown</div>
-              {Object.entries(selData.weeks || {}).length === 0 ? (
-                <div className="text-xs py-4 text-center" style={{ color: C.sub }}>No weekly data</div>
-              ) : (
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b" style={{ borderColor: alpha(C.mint4, "88") }}>
-                      {["Week", "Target", "Submitted", "Approved", "Pending"].map((h) => (
-                        <th key={h} className="text-left pb-2 pr-6 font-semibold uppercase tracking-wide"
-                          style={{ color: C.sub }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(selData.weeks || {})
-                      .sort(([a], [b]) => parseInt(a) - parseInt(b))
-                      .map(([wk, wd]) => {
-                        const wSub    = wd.submitted || 0;
-                        const wApp    = wd.approved  || 0;
-                        const wTarget = (targetByWeek[selectedYear]?.[selectedMonth] || {})[wk] || 0;
-                        const wPend   = Math.max(0, wTarget - wSub);
-                        return (
-                          <tr key={wk} className="border-b last:border-0" style={{ borderColor: alpha(C.mint4, "44") }}>
-                            <td className="py-2.5 pr-6 font-semibold" style={{ color: C.dark }}>Week {wk}</td>
-                            <td className="py-2.5 pr-6 font-bold" style={{ color: T.orange }}>{wTarget || "—"}</td>
-                            <td className="py-2.5 pr-6 font-bold" style={{ color: C.dark }}>{wSub}</td>
-                            <td className="py-2.5 pr-6 font-bold" style={{ color: C.ok }}>{wApp}</td>
-                            <td className="py-2.5 font-bold" style={{ color: wPend > 0 ? C.danger : C.ok }}>{wPend}</td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -572,7 +330,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
   const rowBorder = { borderColor: alpha(C.mint4, "44") };
 
   return (
-    <div className="grid grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Editor list */}
       <div className="rounded-xl border overflow-hidden self-start" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
         <div className="px-4 py-3 border-b text-[0.625rem] font-bold uppercase tracking-widest"
@@ -590,7 +348,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
       </div>
 
       {/* Right panel */}
-      <div className="col-span-2">
+      <div className="lg:col-span-2 min-w-0">
         {!selected && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Select an editor to view their activity</div>}
         {selected && loading && <div className="rounded-xl border p-10 text-center text-sm" style={{ background: C.white, borderColor: alpha(C.mint1, "44"), color: C.sub }}>Loading…</div>}
 
@@ -698,7 +456,7 @@ function ActivityPanel({ editors, selected, onSelect }) {
                           )}
                         </div>
                       </div>
-                      <div className="grid grid-cols-5 divide-x text-center py-3" style={{ borderColor: alpha(C.mint4, "44") }}>
+                      <div className="grid grid-cols-3 sm:grid-cols-5 divide-x text-center py-3" style={{ borderColor: alpha(C.mint4, "44") }}>
                         {[
                           { label: "Target",   val: sTarget,   color: T.orange },
                           { label: "Submitted",val: sSub,      color: C.dark    },
@@ -1062,7 +820,7 @@ function SubmissionsTab() {
 
   return (
     <div>
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
+      <div className="flex flex-wrap gap-1 mb-5 p-1 rounded-xl w-fit max-w-full" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {[{ key: "serial", label: "Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
           <button key={key} onClick={() => setSubTab(key)}
             className="px-5 py-1.5 rounded-lg text-xs font-semibold transition-all"
@@ -1139,7 +897,7 @@ function ClientsTab({ delegations }) {
           </div>
         </div>
         {/* Serial / Movie tabs — only in detail view */}
-        <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
+        <div className="flex flex-wrap gap-1 mb-4 p-1 rounded-xl w-fit max-w-full" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
           {[
             { key: "serial", label: `Serials (${serialRows.length})` },
             { key: "movie",  label: `Movies (${movieRows.length})`   },
@@ -1256,22 +1014,200 @@ function ClientsTab({ delegations }) {
 }
 
 
+// ─── Editors and the serials allotted to them (Dashboard) ─────────────────────
+function EditorWork({ editors, delegations, loading, onEdit, onDelete, onStatus }) {
+  const [notify, setNotify] = useState(null);
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(null);
+
+  const rows = (() => {
+    const byEditor = new Map(editors.map((e) => [e.id, { id: e.id, name: e.full_name, items: [] }]));
+    for (const d of delegations) {
+      if (!byEditor.has(d.assigned_to)) byEditor.set(d.assigned_to, { id: d.assigned_to, name: d.assigned_to_name || "Unknown", inactive: true, items: [] });
+      byEditor.get(d.assigned_to).items.push(d);
+    }
+    const order = (d) => (d.status === "completed" ? 1 : 0);
+    const all = [...byEditor.values()]
+      .map((r) => ({ ...r, items: [...r.items].sort((a, b) => order(a) - order(b) || a.serial_name.localeCompare(b.serial_name)) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const needle = q.trim().toLowerCase();
+    if (!needle) return all;
+    return all.flatMap((r) => {
+      if (r.name.toLowerCase().includes(needle)) return [r];
+      const items = r.items.filter((d) => (d.serial_name || "").toLowerCase().includes(needle) || (d.client || "").toLowerCase().includes(needle));
+      return items.length ? [{ ...r, items }] : [];
+    });
+  })();
+
+  const TH = "text-left text-[0.625rem] uppercase tracking-wider font-semibold px-3 py-2 whitespace-nowrap";
+  const chip = (d) => {
+    const done = d.status === "completed";
+    const isMovie = d.work_type === "Movie Cue Sheet";
+    const tip = [isMovie ? "Movie" : d.episode_range ? `Episodes ${d.episode_range}` : "All episodes", d.client,
+      d.week_target ? `Target ${d.week_target}/week` : null, `${d.completed} approved`, STATUS_STYLE[d.status]?.label].filter(Boolean).join(" · ");
+    return (
+      <button key={d.id} title={`${tip}\nClick to edit`} onClick={(e) => { e.stopPropagation(); onEdit(d); }}
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[0.6875rem] font-medium border hover:opacity-80 max-w-full"
+        style={done
+          ? { background: "transparent", borderColor: alpha(C.mint1, "44"), color: C.muted, textDecoration: "line-through" }
+          : { background: alpha(C.mint4, "88"), borderColor: alpha(C.mint1, "66"), color: C.dark }}>
+        {isMovie && <Film className="w-3 h-3 shrink-0" />}
+        <span className="truncate">{d.serial_name}</span>
+        {!isMovie && d.episode_range && <span className="shrink-0" style={{ color: C.sub }}>{d.episode_range.replace(/^ep\.?\s*/i, "")}</span>}
+      </button>
+    );
+  };
+
+  return (
+    <section className="rounded-xl border" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+      <header className="px-4 pt-3.5 pb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="text-base leading-tight" style={{ fontFamily: FONTS.serif, color: C.dark }}>Editors and their serials</h4>
+          <div className="text-[0.6875rem] mt-0.5" style={{ color: C.sub }}>
+            Every serial and movie allotted to each editor; finished ones are struck through. Click a serial to edit it, or an editor to change status or delete.
+          </div>
+        </div>
+        <div className="relative w-64 max-w-full">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: C.sub }} />
+          <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search editor, serial or client…"
+            className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border focus:outline-none"
+            style={{ borderColor: alpha(C.mint1, "44"), background: C.white, color: C.dark }} />
+          {q && (
+            <button onClick={() => setQ("")} className="absolute right-2 top-1/2 -translate-y-1/2" title="Clear">
+              <X className="w-3 h-3" style={{ color: C.sub }} />
+            </button>
+          )}
+        </div>
+      </header>
+
+      {loading ? (
+        <div className="px-4 py-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className="px-4 py-8 text-center text-sm" style={{ color: C.sub }}>
+          {q ? `No editor, serial or client matches "${q}".` : "No editors yet."}
+        </div>
+      ) : (
+        <div className="overflow-auto max-h-[560px] border-t" style={{ borderColor: alpha(C.mint1, "44") }}>
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 z-10" style={{ background: C.white }}>
+              <tr className="border-b" style={{ borderColor: alpha(C.mint1, "44"), color: C.sub }}>
+                <th className={`${TH} pl-4 w-48`}>Editor</th>
+                <th className={TH}>Serials / movies allotted</th>
+                <th className={`${TH} text-right`} title="Allotments not completed yet">Active</th>
+                <th className={`${TH} text-right`} title="Weekly target of active allotments">Target / week</th>
+                <th className={`${TH} text-right pr-4`} title="Approved episodes inside the allotted ranges">Approved</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const active = r.items.filter((d) => d.status !== "completed");
+                const isOpen = open === r.id && r.items.length > 0;
+                const Chevron = isOpen ? ChevronDown : ChevronRight;
+                const num = (v) => ({ color: v ? C.dark : C.muted, fontVariantNumeric: "tabular-nums" });
+                return [
+                  <tr key={r.id} onClick={() => setOpen(isOpen ? null : r.id)}
+                    className={`border-b align-top transition ${r.items.length ? "cursor-pointer hover:bg-black/[0.03]" : ""}`}
+                    style={{ borderColor: alpha(C.mint4, "99") }}>
+                    <td className="pl-4 pr-3 py-2.5">
+                      <div className="flex items-center gap-1.5 font-semibold" style={{ color: C.dark }}>
+                        <Chevron className="w-3.5 h-3.5 shrink-0" style={{ color: r.items.length ? C.muted : "transparent" }} />
+                        <span className="truncate">{r.name}</span>
+                      </div>
+                      {r.inactive && <div className="pl-5 text-[0.625rem]" style={{ color: C.sub }}>No longer active</div>}
+                      {!r.inactive && active.length > 0 && (
+                        <button onClick={(e) => { e.stopPropagation(); setNotify(r.id); }}
+                          className="ml-5 mt-1 inline-flex items-center gap-1 text-[0.625rem] font-semibold hover:underline" style={{ color: C.sub }}>
+                          <Mail className="w-3 h-3" /> Notify
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {r.items.length === 0
+                        ? <span style={{ color: C.muted }}>Nothing allotted</span>
+                        : <div className="flex flex-wrap gap-1">{r.items.map(chip)}</div>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold" style={num(active.length)}>{active.length}</td>
+                    <td className="px-3 py-2.5 text-right" style={num(1)}>{active.reduce((a, d) => a + (d.week_target || 0), 0) || "—"}</td>
+                    <td className="pl-3 pr-4 py-2.5 text-right" style={num(1)}>{r.items.reduce((a, d) => a + (d.completed || 0), 0)}</td>
+                  </tr>,
+                  isOpen && (
+                    <tr key={`${r.id}-detail`}>
+                      <td colSpan={5} className="p-0 border-b" style={{ borderColor: alpha(C.mint4, "99"), background: alpha(C.mint4, "55") }}>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr style={{ color: C.sub }}>
+                              <th className={`${TH} pl-10`}>Serial / movie</th>
+                              <th className={TH}>Client</th>
+                              <th className={TH}>Episodes</th>
+                              <th className={`${TH} text-right`}>Target</th>
+                              <th className={`${TH} text-right`}>Done</th>
+                              <th className={`${TH} text-right`}>Balance</th>
+                              <th className={TH}>Status</th>
+                              <th className={`${TH} text-right pr-4`}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {r.items.map((d) => (
+                              <tr key={d.id} className="border-t" style={{ borderColor: alpha(C.mint1, "33") }}>
+                                <td className="pl-10 pr-3 py-2">
+                                  <div className="font-medium" style={{ color: C.dark }}>{d.serial_name}</div>
+                                  {d.channel && <div className="text-[0.625rem]" style={{ color: C.sub }}>{d.channel}</div>}
+                                </td>
+                                <td className="px-3 py-2" style={{ color: C.sub }}>{d.client || "—"}</td>
+                                <td className="px-3 py-2" style={{ color: C.sub }}>{d.work_type === "Movie Cue Sheet" ? "Movie" : d.episode_range || "All"}</td>
+                                <td className="px-3 py-2 text-right font-medium" style={{ color: C.dark }}>{d.week_target ?? "—"}</td>
+                                <td className="px-3 py-2 text-right font-medium" style={{ color: C.ok }}>{d.completed}</td>
+                                <td className="px-3 py-2 text-right font-medium" style={{ color: d.balance > 0 ? C.warn : C.ok }}>{d.balance}</td>
+                                <td className="px-3 py-1.5">
+                                  <Select value={d.status} onChange={(e) => onStatus(d.id, e.target.value)}
+                                    className="text-xs px-2.5 py-1 rounded-lg focus:outline-none"
+                                    style={{ background: STATUS_STYLE[d.status]?.bg, color: STATUS_STYLE[d.status]?.color, border: `1px solid ${alpha(STATUS_STYLE[d.status]?.color, "33")}`, fontWeight: 600 }}>
+                                    {STATUSES.map((s) => <option key={s} value={s}>{STATUS_STYLE[s].label}</option>)}
+                                  </Select>
+                                </td>
+                                <td className="pl-3 pr-4 py-1.5 text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <button onClick={() => onEdit(d)} className="p-1.5 rounded-lg hover:bg-black/5" title="Edit">
+                                      <Edit2 className="w-3.5 h-3.5" style={{ color: C.sub }} />
+                                    </button>
+                                    <button onClick={() => onDelete(d.id)} className="p-1.5 rounded-lg hover:bg-red-50" title="Delete">
+                                      <Trash2 className="w-3.5 h-3.5" style={{ color: C.danger }} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  ),
+                ];
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {notify && <NotifyEditorModal editorId={notify} onClose={() => setNotify(null)} />}
+    </section>
+  );
+}
+
 // ─── Main WDDashboard ─────────────────────────────────────────────────────────
 const allocationBody = (d) => [d.work_type, d.episode_range && `Episodes ${d.episode_range}`, d.week_target && `Target ${d.week_target}`]
   .filter(Boolean).join(" · ");
 
 export default function WDDashboard() {
   const { pushToast, fetchNotifications } = useApp();
-  const [tab, setTab]               = useState("delegations");
+  const [tab, setTab]               = useState("dashboard");
   const [delegations, setDelegations] = useState([]);
   const [editors, setEditors]         = useState([]);
   const [showForm, setShowForm]       = useState(false);
   const [editTarget, setEditTarget]   = useState(null);
   const [selectedEditor, setSelectedEditor] = useState(null);
   const [loading, setLoading]         = useState(true);
-  const [searchQ, setSearchQ]         = useState("");
-  const [delTab, setDelTab]           = useState("serials");
   const [projectSubTab, setProjectSubTab] = useState("serial");
+  const [reloadKey, setReloadKey]     = useState(0);   // refreshes the dashboard numbers after a change
 
   useEffect(() => {
     Promise.all([api.listDelegations(), api.listEditors()])
@@ -1279,6 +1215,8 @@ export default function WDDashboard() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const changed = () => setReloadKey((k) => k + 1);
 
   // The server also stores this as a notification, so refresh silently (no duplicate popup).
   const announceAllocation = (d) => {
@@ -1289,165 +1227,62 @@ export default function WDDashboard() {
     const d = await api.createDelegation(payload);
     setDelegations((prev) => [d, ...prev]);
     announceAllocation(d);
+    changed();
   };
   const handleUpdate = async (payload) => {
     const reassigned = payload.assigned_to && payload.assigned_to !== editTarget.assigned_to;
     const d = await api.updateDelegation(editTarget.id, payload);
     setDelegations((prev) => prev.map((x) => (x.id === d.id ? d : x)));
     if (reassigned) announceAllocation(d);
+    changed();
   };
   const handleDelete = async (id) => {
     const ok = await showConfirm("Delete this delegation?", { variant: "danger", confirmLabel: "Delete" });
     if (!ok) return;
     await api.deleteDelegation(id);
     setDelegations((prev) => prev.filter((x) => x.id !== id));
+    changed();
   };
   const handleStatusChange = async (id, status) => {
     const d = await api.updateDelegation(id, { status });
     setDelegations((prev) => prev.map((x) => (x.id === d.id ? d : x)));
+    changed();
   };
 
-  const filteredDelegations = (() => {
-    const q = searchQ.trim().toLowerCase();
-    if (!q) return delegations;
-    return delegations.filter((d) =>
-      (d.serial_name || "").toLowerCase().includes(q) ||
-      (d.assigned_to_name || "").toLowerCase().includes(q)
-    );
-  })();
-
   const tabs = [
-    { key: "delegations",  label: "Work Delegations" },
+    { key: "dashboard",    label: "Dashboard" },
     { key: "serials",      label: "Projects" },
-    { key: "calendar",     label: "Activity" },
     { key: "activity",     label: "Editor Activity" },
     { key: "clients",      label: "Clients" },
     { key: "submissions",  label: "Submissions" },
   ];
 
   return (
-    <DashboardShell title="Work Delegation" subtitle="Assign and track editor workload" tabs={tabs} activeTab={tab} onTab={setTab}>
-      {tab === "delegations" && (() => {
-        const serialFiltered = filteredDelegations.filter((d) => d.work_type !== "Movie Cue Sheet");
-        const movieFiltered  = filteredDelegations.filter((d) => d.work_type === "Movie Cue Sheet");
-        const tabFiltered    = delTab === "movies" ? movieFiltered : serialFiltered;
-        const isMovie        = delTab === "movies";
-        const colSpan        = isMovie ? 8 : 9;
-        const thStyle        = { borderColor: C.mint4, color: C.sub, background: alpha(C.mint4, "33") };
-        const TH             = "text-left px-4 py-3 text-[0.625rem] uppercase tracking-wider";
-        return (
-          <div>
-            {/* Top bar: tabs + search + new */}
-            <div className="flex items-center gap-3 mb-4 flex-wrap">
-              <div className="flex gap-1 p-1 rounded-xl" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
-                {[
-                  { key: "serials", label: "Serials", count: delegations.filter((d) => d.work_type !== "Movie Cue Sheet").length },
-                  { key: "movies",  label: "Movies",  count: delegations.filter((d) => d.work_type === "Movie Cue Sheet").length  },
-                ].map(({ key, label, count }) => (
-                  <button key={key} onClick={() => setDelTab(key)}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                    style={{ background: delTab === key ? C.dark : "transparent", color: delTab === key ? C.mint4 : C.mid }}>
-                    {label} <span className="text-[0.625rem] opacity-70">({count})</span>
-                  </button>
-                ))}
-              </div>
-              <div className="relative max-w-xs flex-1">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: C.sub }} />
-                <input
-                  type="text" value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
-                  placeholder={`Search ${isMovie ? "movie" : "serial"} or editor…`}
-                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border focus:outline-none"
-                  style={{ borderColor: alpha(C.mint1, "44"), background: C.white, color: C.dark }}
-                />
-                {searchQ && (
-                  <button onClick={() => setSearchQ("")} className="absolute right-2 top-1/2 -translate-y-1/2">
-                    <X className="w-3 h-3" style={{ color: C.sub }} />
-                  </button>
-                )}
-              </div>
-              <span className="text-xs" style={{ color: C.sub }}>
-                {tabFiltered.length}{searchQ ? ` of ${(isMovie ? movieFiltered : serialFiltered).length}` : ""} {isMovie ? "movie" : "serial"}{tabFiltered.length !== 1 ? "s" : ""}
-              </span>
-              <button onClick={() => { setEditTarget(null); setShowForm(true); }}
-                className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90"
-                style={{ background: C.dark, color: C.mint4 }}>
-                <Plus className="w-4 h-4" />New Delegation
-              </button>
-            </div>
+    <DashboardShell title="Work Delegation" subtitle="Assign and track editor workload" tabs={tabs} activeTab={tab} onTab={setTab}
+      actions={(
+        <button onClick={() => { setEditTarget(null); setShowForm(true); }}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90"
+          style={{ background: C.dark, color: C.mint4 }}>
+          <Plus className="w-4 h-4" />New Delegation
+        </button>
+      )}>
+      {showForm && (
+        <DelegationForm
+          editors={editors} initial={editTarget}
+          onSave={editTarget ? handleUpdate : handleCreate}
+          onClose={() => { setShowForm(false); setEditTarget(null); }}
+        />
+      )}
 
-            {showForm && (
-              <DelegationForm
-                editors={editors} initial={editTarget}
-                onSave={editTarget ? handleUpdate : handleCreate}
-                onClose={() => { setShowForm(false); setEditTarget(null); }}
-              />
-            )}
-
-            <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
-              {loading ? (
-                <div className="px-4 py-8 text-center text-sm" style={{ color: C.sub }}>Loading…</div>
-              ) : tabFiltered.length === 0 ? (
-                <div className="px-4 py-10 text-center text-sm" style={{ color: C.sub }}>
-                  {searchQ ? `No results for "${searchQ}"` : `No ${isMovie ? "movie" : "serial"} delegations yet. Create one to assign work to editors.`}
-                </div>
-              ) : (
-                <MiniPager entries={tabFiltered} pageSize={20}>
-                  {(paged) => (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b" style={thStyle}>
-                          <th className={TH}>{isMovie ? "Movie" : "Serial"}</th>
-                          <th className={TH}>Assigned To</th>
-                          <th className={TH}>Client</th>
-                          {!isMovie && <th className={TH}>Ep Range</th>}
-                          <th className="text-center px-4 py-3 text-[0.625rem] uppercase tracking-wider">Target</th>
-                          <th className="text-center px-4 py-3 text-[0.625rem] uppercase tracking-wider">Done</th>
-                          <th className="text-center px-4 py-3 text-[0.625rem] uppercase tracking-wider">Balance</th>
-                          <th className={TH}>Status</th>
-                          <th className="text-right px-4 py-3 text-[0.625rem] uppercase tracking-wider">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paged.map((d) => (
-                          <tr key={d.id} className="border-b last:border-0 hover:bg-green-50/30 transition" style={{ borderColor: alpha(C.mint4, "55") }}>
-                            <td className="px-4 py-3">
-                              <div className="font-medium" style={{ color: C.dark }}>{d.serial_name}</div>
-                              {d.channel && <div className="text-[0.625rem]" style={{ color: C.sub }}>{d.channel}</div>}
-                            </td>
-                            <td className="px-4 py-3 text-sm" style={{ color: C.dark }}>{d.assigned_to_name || "—"}</td>
-                            <td className="px-4 py-3 text-xs" style={{ color: C.sub }}>{d.client || "—"}</td>
-                            {!isMovie && <td className="px-4 py-3 text-xs" style={{ color: C.sub }}>{d.episode_range || "—"}</td>}
-                            <td className="px-4 py-3 text-center text-sm font-medium" style={{ color: C.dark }}>{d.week_target ?? "—"}</td>
-                            <td className="px-4 py-3 text-center text-sm font-medium" style={{ color: C.ok }}>{d.completed}</td>
-                            <td className="px-4 py-3 text-center text-sm font-medium" style={{ color: d.balance > 0 ? C.warn : C.ok }}>{d.balance}</td>
-                            <td className="px-4 py-3">
-                              <Select value={d.status} onChange={(e) => handleStatusChange(d.id, e.target.value)}
-                                className="text-xs px-2.5 py-1 rounded-lg focus:outline-none"
-                                style={{ background: STATUS_STYLE[d.status]?.bg, color: STATUS_STYLE[d.status]?.color, border: `1px solid ${alpha(STATUS_STYLE[d.status]?.color, "33")}`, fontWeight: 600 }}>
-                                {STATUSES.map((s) => <option key={s} value={s}>{STATUS_STYLE[s].label}</option>)}
-                              </Select>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <button onClick={() => { setEditTarget(d); setShowForm(true); }} className="p-1.5 rounded-lg hover:bg-gray-100" title="Edit">
-                                  <Edit2 className="w-3.5 h-3.5" style={{ color: C.sub }} />
-                                </button>
-                                <button onClick={() => handleDelete(d.id)} className="p-1.5 rounded-lg hover:bg-red-50" title="Delete">
-                                  <Trash2 className="w-3.5 h-3.5" style={{ color: C.danger }} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </MiniPager>
-              )}
-            </div>
-          </div>
-        );
-      })()}
+      {tab === "dashboard" && (
+        <div className="space-y-4">
+          <WDInsights reloadKey={reloadKey} onProjects={(type) => { setProjectSubTab(type); setTab("serials"); }} />
+          <EditorWork editors={editors} delegations={delegations} loading={loading}
+            onEdit={(d) => { setEditTarget(d); setShowForm(true); }}
+            onDelete={handleDelete} onStatus={handleStatusChange} />
+          <QuarterCalendar reloadKey={reloadKey} />
+        </div>
+      )}
 
       {tab === "serials" && (() => {
         // derive project ID sets from delegation work_type — this is the source of truth
@@ -1455,7 +1290,7 @@ export default function WDDashboard() {
         const serialProjIds = new Set(delegations.filter((d) => d.work_type !== "Movie Cue Sheet" && d.project_id).map((d) => d.project_id));
         return (
           <div>
-            <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
+            <div className="flex flex-wrap gap-1 mb-5 p-1 rounded-xl w-fit max-w-full" style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
               {[{ key: "serial", label: "Serials" }, { key: "movie", label: "Movies" }].map(({ key, label }) => (
                 <button key={key} onClick={() => setProjectSubTab(key)}
                   className="px-5 py-1.5 rounded-lg text-xs font-semibold transition-all"
@@ -1473,8 +1308,6 @@ export default function WDDashboard() {
           </div>
         );
       })()}
-
-      {tab === "calendar" && <CalendarActivity delegations={delegations} />}
 
       {tab === "activity" && (
         <ActivityPanel editors={editors} selected={selectedEditor} onSelect={setSelectedEditor} />

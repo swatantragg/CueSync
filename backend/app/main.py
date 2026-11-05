@@ -18,6 +18,12 @@ import app.models.work_delegation       # noqa: F401
 import app.models.notification           # noqa: F401
 import app.models.society_submission     # noqa: F401
 import app.models.work_file              # noqa: F401
+import app.models.client                 # noqa: F401
+import app.models.society                # noqa: F401
+import app.models.detected_mail          # noqa: F401
+import app.models.user_mailbox           # noqa: F401
+import app.models.editor_notice          # noqa: F401
+import app.models.report_send            # noqa: F401
 from app.services.library_sync import (
     cleanup_contributor_duplicates,
     cleanup_cue_contributor_duplicates,
@@ -74,6 +80,38 @@ MIGRATIONS = [
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS accepted_by_iprs_at TIMESTAMPTZ",
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS last_followup_at TIMESTAMPTZ",
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS followup_count INTEGER DEFAULT 0 NOT NULL",
+    # Client list: delegations and submissions point at a client instead of free text
+    "ALTER TABLE work_delegations ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL",
+    "CREATE INDEX IF NOT EXISTS ix_work_delegations_client_id ON work_delegations(client_id)",
+    "CREATE INDEX IF NOT EXISTS ix_society_submissions_client_id ON society_submissions(client_id)",
+    # Send to Society: the email sent from the client's Gmail
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS society_id INTEGER REFERENCES societies(id) ON DELETE SET NULL",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS society_name VARCHAR(100)",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS sent_via VARCHAR(20)",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_from VARCHAR(255)",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_to TEXT",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_cc TEXT",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_bcc TEXT",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_subject TEXT",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_body TEXT",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_attachments TEXT",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS gmail_message_id VARCHAR(100)",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS gmail_thread_id VARCHAR(100)",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_sent_at TIMESTAMPTZ",
+    "CREATE INDEX IF NOT EXISTS ix_society_submissions_society_id ON society_submissions(society_id)",
+    # Reply / bounce tracking (services/mail_sync)
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_status VARCHAR(20)",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_watch_from TIMESTAMPTZ",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS mail_checked_at TIMESTAMPTZ",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS reply_at TIMESTAMPTZ",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS reply_from VARCHAR(255)",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS reply_subject TEXT",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS reply_snippet TEXT",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS reply_message_id VARCHAR(100)",
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS bounce_reason TEXT",
+    "UPDATE society_submissions SET mail_status = 'sent', mail_watch_from = mail_sent_at WHERE sent_via = 'gmail' AND mail_status IS NULL",
+    "ALTER TABLE client_mailboxes ADD COLUMN IF NOT EXISTS last_sent_scan_at TIMESTAMPTZ",
 ]
 
 # Users columns. Run in autocommit (not inside MIGRATIONS' shared transaction) because every
@@ -83,6 +121,7 @@ USER_MIGRATIONS = [
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_users_single_super_admin ON users(is_super_admin) WHERE is_super_admin",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE NOT NULL",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_version VARCHAR(20)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_report_enabled BOOLEAN DEFAULT TRUE NOT NULL",
     "CREATE INDEX IF NOT EXISTS ix_audit_logs_action ON audit_logs(action)",
 ]
 
@@ -100,6 +139,7 @@ async def _send_followup_notifications() -> None:
     from app.models.project import Project
     from app.models.society_submission import SocietySubmission
     from app.models.user import User
+    from app.services.society_mail import not_dead  # bounced emails wait for a resend, not the society
 
     THREE_WEEKS = timedelta(weeks=3)
     ONE_WEEK    = timedelta(weeks=1)
@@ -115,7 +155,7 @@ async def _send_followup_notifications() -> None:
                     return
 
                 subs = (await db.execute(
-                    select(SocietySubmission).where(SocietySubmission.accepted_by_iprs == False)
+                    select(SocietySubmission).where(SocietySubmission.accepted_by_iprs == False, not_dead)
                 )).scalars().all()
 
                 for sub in subs:
@@ -168,10 +208,58 @@ async def _send_followup_notifications() -> None:
         print(f"[followup-task] error: {exc}")
 
 
+async def _check_client_mailboxes() -> None:
+    """Daily check that every connected client Gmail still works; flags the ones to reconnect."""
+    from app.services.clients import check_due_mailboxes
+
+    try:
+        async with AsyncSession(engine) as db:
+            async with db.begin():
+                checked = await check_due_mailboxes(db)
+        if checked:
+            print(f"[mailbox-check] checked {checked} client mailbox(es)")
+    except Exception as exc:
+        print(f"[mailbox-check] error: {exc}")
+
+
+async def _sync_society_mail() -> None:
+    """Read connected client Gmails for society replies, bounces and emails sent outside CueSync."""
+    from app.services.mail_sync import sync_all
+
+    try:
+        async with AsyncSession(engine) as db:
+            async with db.begin():
+                result = await sync_all(db)
+        if result and (result["replies"] or result["bounces"] or result["detected"] or result["errors"]):
+            print(f"[mail-sync] {result}")
+    except Exception as exc:
+        print(f"[mail-sync] error: {exc}")
+
+
+async def _mail_sync_loop() -> None:
+    await asyncio.sleep(90)
+    while True:
+        await _sync_society_mail()
+        await asyncio.sleep(max(1, settings.MAIL_SYNC_MINUTES) * 60)
+
+
+async def _weekly_report_loop() -> None:
+    from app.services.weekly_reports import run_if_due
+
+    await asyncio.sleep(120)
+    while True:
+        try:
+            await run_if_due(engine)
+        except Exception as exc:
+            print(f"[weekly-reports] error: {exc!r}")
+        await asyncio.sleep(300)
+
+
 async def _followup_loop() -> None:
     await asyncio.sleep(60)  # small initial delay to let DB settle
     while True:
         await _send_followup_notifications()
+        await _check_client_mailboxes()
         await asyncio.sleep(3600)  # check every hour
 
 
@@ -265,16 +353,20 @@ async def lifespan(app: FastAPI):
         print(f"[startup] DB unavailable — API will run without DB. Error: {e}")
 
     followup_task = asyncio.create_task(_followup_loop())
+    mail_sync_task = asyncio.create_task(_mail_sync_loop())
+    report_task = asyncio.create_task(_weekly_report_loop())
     try:
         yield
     finally:
         followup_task.cancel()
+        mail_sync_task.cancel()
+        report_task.cancel()
         await engine.dispose()
 
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="3.1.2",
+    version="4.1.2",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
     # Disable automatic debug info exposure in OpenAPI errors

@@ -115,8 +115,8 @@ export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterP
   return (
     <div>
       {showPrivModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
-          <div className="cs-dark rounded-2xl p-6 w-full max-w-sm shadow-2xl" style={{ background: C.dark }}>
+        <div className="cs-backdrop fixed inset-0 z-50 flex items-center justify-center">
+          <div className="cs-dark cs-glass rounded-2xl p-6 w-full max-w-sm">
             <div className="flex items-center gap-2.5 mb-4">
               <ShieldOff className="w-5 h-5" style={{ color: "#ef4444" }} />
               <span className="font-semibold" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>Insufficient Privilege</span>

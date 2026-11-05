@@ -64,10 +64,10 @@ function CopyEpisodesModal({ episodes, currentEpId, onCopy, onClose }) {
   const allChecked = allIds.length > 0 && allIds.every((id) => checked.has(id));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose}>
+    <div className="cs-backdrop fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
       <div
-        className="cs-dark cs-pop rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-        style={{ background: C.dark, border: `1px solid ${C.mid}`, width: "min(26rem, 100%)", maxHeight: "min(40rem, calc(100vh - 2rem))" }}
+        className="cs-dark cs-glass rounded-2xl flex flex-col overflow-hidden"
+        style={{ width: "min(520px, 100%)", maxHeight: "min(800px, calc(100vh - 40px))" }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -198,7 +198,7 @@ function CopyToast({ episodes, onDismiss }) {
   return (
     <div
       className="cs-dark fixed bottom-8 right-6 z-50 rounded-2xl shadow-2xl px-5 py-4 flex items-start gap-3"
-      style={{ background: C.dark, border: `1px solid ${alpha(C.mint1, "55")}`, maxWidth: "20rem" }}
+      style={{ background: C.dark, border: `1px solid ${alpha(C.mint1, "55")}`, maxWidth: 400 }}
     >
       <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" style={{ color: C.mint1 }} />
       <div>
@@ -220,8 +220,8 @@ function EpNavRow({ id, className, style, prevEp, nextEp, epIdx, sortedEps, curr
       <button
         disabled={!prevEp}
         onClick={onPrev}
-        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-25 hover:opacity-75 transition-opacity"
-        style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "55")}`, color: C.dark, minWidth: 130 }}
+        className="flex items-center gap-2 flex-1 sm:flex-none min-w-0 sm:min-w-[130px] px-3 sm:px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-25 hover:opacity-75 transition-opacity"
+        style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "55")}`, color: C.dark }}
       >
         <ChevronLeft className="w-4 h-4 shrink-0" />
         <span className="truncate">
@@ -230,7 +230,7 @@ function EpNavRow({ id, className, style, prevEp, nextEp, epIdx, sortedEps, curr
       </button>
 
       {/* Spacer */}
-      <div className="flex-1" />
+      <div className="hidden sm:block flex-1" />
 
       {/* Counter (jump picker) + Next — grouped on the right */}
       <div className="relative shrink-0">
@@ -256,8 +256,8 @@ function EpNavRow({ id, className, style, prevEp, nextEp, epIdx, sortedEps, curr
       <button
         disabled={!nextEp}
         onClick={onNext}
-        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-25 hover:opacity-75 transition-opacity justify-end"
-        style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "55")}`, color: C.dark, minWidth: 130 }}
+        className="flex items-center gap-2 flex-1 sm:flex-none min-w-0 sm:min-w-[130px] px-3 sm:px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-25 hover:opacity-75 transition-opacity justify-end"
+        style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "55")}`, color: C.dark }}
       >
         <span className="truncate">
           {nextEp ? `Ep ${String(nextEp.number).padStart(2, "0")}` : "—"}
@@ -929,8 +929,8 @@ export default function EpisodePage() {
       <Header />
 
       {showApproveConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
-          <div className="cs-dark rounded-2xl w-full max-w-md shadow-2xl overflow-hidden" style={{ background: C.dark }}>
+        <div className="cs-backdrop fixed inset-0 z-50 flex items-center justify-center">
+          <div className="cs-dark cs-glass rounded-2xl w-full max-w-md overflow-hidden">
             <div className="px-6 py-4 border-b" style={{ borderColor: C.mid }}>
               <h3 className="font-semibold text-lg" style={{ fontFamily: FONTS.serif, color: C.mint4 }}>
                 Unsaved Changes
@@ -972,12 +972,12 @@ export default function EpisodePage() {
           <span className="text-xs font-medium">{saving ? "Saving…" : "Loading data…"}</span>
         </div>
       )}
-      <main className="max-w-7xl mx-auto px-6 py-10">
+      <main className="cs-page py-6 sm:py-10">
         <button onClick={async () => { await flushAll().catch(() => {}); setActiveEpisodeId(null); setScreen("serial"); }} className="flex items-center gap-1.5 text-xs mb-5 px-3 py-1.5 rounded-lg hover:opacity-80" style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "55")}`, color: C.dark }}>
           <ArrowLeft className="w-3.5 h-3.5" /> {proj.type === "movie" ? "Back to Cue Sheet" : "Back to Episodes"}
         </button>
-        <div className="flex items-start justify-between mb-6">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+          <div className="min-w-0">
             <div className="text-xs uppercase tracking-widest mb-2" style={{ color: C.sub }}>
               {proj.type === "movie" ? `${proj.title} · MOVIE` : `${proj.title} · Episode ${String(ep.number).padStart(2, "0")}`}
             </div>
@@ -1058,7 +1058,7 @@ export default function EpisodePage() {
         </div>
         <div className="rounded-2xl border p-6 mb-3" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           {(() => { const cd = ep.cueDetails || {}; return (
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Fld label={proj.type === "movie" ? "Movie Title" : "Serial Title"} tag="auto"><Inp value={cd.serialTitle} onChange={(v) => editEpCue("serialTitle", v)} /></Fld>
             {proj.type !== "movie" && <Fld label="Channel" tag="auto"><Inp value={cd.channel} onChange={(v) => editEpCue("channel", v)} /></Fld>}
             {proj.type !== "movie" && <Fld label="Serial Type" tag="auto"><Inp value={cd.serialType} onChange={(v) => editEpCue("serialType", v)} /></Fld>}
@@ -1091,7 +1091,7 @@ export default function EpisodePage() {
 
         <SectionTitle title={proj.type === "movie" ? "Movie Details" : "Episode Details"} />
         <div className="rounded-2xl border p-6 mb-6" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {proj.type !== "movie" && <Fld label="Episode #" tag="auto"><Inp value={ep.number} onChange={(v) => editEp("number", Number(v) || ep.number)} /></Fld>}
             <Fld label={proj.type === "movie" ? "Movie Title" : "Episode Title"} tag="auto"><Inp value={ep.title} onChange={(v) => editEp("title", v)} /></Fld>
             <Fld label={proj.type === "movie" ? "Release Date" : "Air Date"} tag="auto"><Inp value={ep.airDate} onChange={(v) => editEp("airDate", v)} /></Fld>

@@ -14,3 +14,7 @@ run.sh
 README.md
 Dockerfile
 .dockerignore
+tests/
+pytest.ini
+requirements-dev.txt
+.coverage

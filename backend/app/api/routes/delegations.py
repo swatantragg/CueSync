@@ -1,4 +1,3 @@
-import re
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,18 +14,19 @@ from app.models.project import Project
 from app.models.user import User, UserRole
 from app.models.work_delegation import WorkDelegation
 from app.services.audit import ADMIN_ONLY_ACTIONS
-from app.services.delegations import purge_delegations
+from app.services.clients import resolve_client
+from app.services.delegations import episode_spans, purge_delegations
 
 router = APIRouter()
 
 WD_ROLES = (UserRole.ADMIN, UserRole.WORK_DELEGATOR)
-ALL_PRIVILEGED = (UserRole.ADMIN, UserRole.WORK_DELEGATOR, UserRole.REVIEWER)
 
 
 class DelegationCreate(BaseModel):
     serial_name: str
     work_type: str = "TV Cue Sheet"
-    client: str | None = None
+    client_id: int | None = None
+    client: str | None = None  # legacy: must match a client in the client list
     channel: str | None = None
     episode_range: str | None = None
     week_target: int | None = None
@@ -40,6 +40,7 @@ class DelegationCreate(BaseModel):
 class DelegationUpdate(BaseModel):
     serial_name: str | None = None
     work_type: str | None = None
+    client_id: int | None = None  # sending client_id (or client) replaces the client; null clears it
     client: str | None = None
     channel: str | None = None
     episode_range: str | None = None
@@ -53,18 +54,6 @@ class DelegationUpdate(BaseModel):
 
 # A delegation whose serial was deleted keeps a NULL project_id (FK is SET NULL) — treat it as gone.
 _LIVE = WorkDelegation.project_id.isnot(None)
-
-_SPAN_RE = re.compile(r"(\d+)\s*(?:-|–|—|to)\s*(\d+)", re.IGNORECASE)
-
-
-def episode_spans(episode_range: str | None) -> list[tuple[int, int]]:
-    """'1-30, 35' → [(1, 30), (35, 35)]. Empty/None → [] meaning the whole serial."""
-    if not episode_range:
-        return []
-    spans = [(min(int(a), int(b)), max(int(a), int(b))) for a, b in _SPAN_RE.findall(episode_range)]
-    spans += [(int(n), int(n)) for n in re.findall(r"\d+", _SPAN_RE.sub(" ", episode_range))]
-    return spans
-
 
 async def _approved_counts(db: AsyncSession, rows: list[WorkDelegation]) -> dict[int, int]:
     """Delegation id → approved episodes of its serial that fall inside its episode range."""
@@ -92,6 +81,7 @@ def _row(d: WorkDelegation, assignee: User | None = None, creator: User | None =
         "serial_name": d.serial_name,
         "work_type": d.work_type,
         "client": d.client,
+        "client_id": d.client_id,
         "channel": d.channel,
         "episode_range": d.episode_range,
         "week_target": d.week_target,
@@ -155,10 +145,12 @@ async def create_delegation(
             await db.flush()
             project_id = new_proj.id
 
+    client_id, client = await resolve_client(db, payload.client_id, payload.client)
     d = WorkDelegation(
         serial_name=payload.serial_name,
         work_type=payload.work_type,
-        client=payload.client,
+        client_id=client_id,
+        client=client,
         channel=payload.channel,
         episode_range=payload.episode_range,
         week_target=payload.week_target,
@@ -282,110 +274,6 @@ async def activity_calendar(year: int = Query(..., ge=2020, le=2100), db: AsyncS
             m["editors"][uname]["approved"] += 1
 
     return {"year": year, "months": months}
-
-
-@router.get("/activity/reviewer-calendar", dependencies=[Depends(require_roles(*ALL_PRIVILEGED))])
-async def reviewer_calendar(year: int = Query(..., ge=2020, le=2100), db: AsyncSession = Depends(get_db)):
-    """Calendar data for reviewer dashboard — same audit-log aggregation as WD calendar."""
-    from datetime import datetime, timezone
-    from app.models.audit import AuditLog
-    from app.models.society_submission import SocietySubmission
-
-    start = datetime(year, 1, 1, tzinfo=timezone.utc)
-    end   = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
-
-    rows = (await db.execute(
-        select(AuditLog).where(
-            AuditLog.action.in_(["submit", "approve"]),
-            AuditLog.entity == "episode",
-            AuditLog.created_at >= start,
-            AuditLog.created_at < end,
-        ).order_by(AuditLog.created_at)
-    )).scalars().all()
-
-    # Society submissions for that year (submitted_at)
-    soc_rows = (await db.execute(
-        select(SocietySubmission).where(
-            SocietySubmission.submitted_at >= start,
-            SocietySubmission.submitted_at < end,
-        )
-    )).scalars().all()
-
-    user_ids = {r.user_id for r in rows if r.user_id}
-    users: dict[int, User] = {}
-    if user_ids:
-        users = {u.id: u for u in (await db.execute(
-            select(User).where(User.id.in_(user_ids))
-        )).scalars().all()}
-
-    months: dict[int, dict] = {}
-    for r in rows:
-        if not r.created_at:
-            continue
-        month = r.created_at.month
-        week  = str((r.created_at.day - 1) // 7 + 1)
-        if month not in months:
-            months[month] = {"submitted": 0, "approved": 0, "society": 0, "weeks": {}}
-        m = months[month]
-        if r.action == "submit":   m["submitted"] += 1
-        else:                      m["approved"]  += 1
-        if week not in m["weeks"]:
-            m["weeks"][week] = {"submitted": 0, "approved": 0}
-        w = m["weeks"][week]
-        if r.action == "submit": w["submitted"] += 1
-        else:                    w["approved"]  += 1
-
-    # Accepted-by-IPRS submissions for that year (accepted_by_iprs_at)
-    accepted_rows = (await db.execute(
-        select(SocietySubmission).where(
-            SocietySubmission.accepted_by_iprs == True,
-            SocietySubmission.accepted_by_iprs_at >= start,
-            SocietySubmission.accepted_by_iprs_at < end,
-        )
-    )).scalars().all()
-
-    for s in soc_rows:
-        if s.submitted_at:
-            mo = s.submitted_at.month
-            if mo not in months:
-                months[mo] = {"submitted": 0, "approved": 0, "society": 0, "society_accepted": 0, "weeks": {}}
-            months[mo]["society"]          = months[mo].get("society", 0) + 1
-            months[mo].setdefault("society_accepted", 0)
-
-    for s in accepted_rows:
-        if s.accepted_by_iprs_at:
-            mo = s.accepted_by_iprs_at.month
-            if mo not in months:
-                months[mo] = {"submitted": 0, "approved": 0, "society": 0, "society_accepted": 0, "weeks": {}}
-            months[mo]["society_accepted"] = months[mo].get("society_accepted", 0) + 1
-
-    # Total target from delegations (sum of all week_targets)
-    total_target = sum(
-        (d.week_target or 0)
-        for d in (await db.execute(select(WorkDelegation))).scalars().all()
-    )
-
-    # Per-month target: delegations created in that month
-    from collections import defaultdict
-    month_target: dict[int, int] = defaultdict(int)
-    week_target:  dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    for d in (await db.execute(select(WorkDelegation).where(
-        WorkDelegation.created_at >= start,
-        WorkDelegation.created_at < end,
-    ))).scalars().all():
-        if d.created_at and d.week_target:
-            mo  = d.created_at.month
-            wk  = str((d.created_at.day - 1) // 7 + 1)
-            month_target[mo]    += d.week_target
-            week_target[mo][wk] += d.week_target
-
-    return {
-        "year":         year,
-        "months":       months,
-        "total_target": total_target,
-        "month_target": dict(month_target),
-        "week_target":  {str(mo): dict(wks) for mo, wks in week_target.items()},
-    }
 
 
 @router.get("/activity/editor/{user_id}")
@@ -548,11 +436,14 @@ async def update_delegation(
         await db.refresh(d)
         return (await _enrich(db, [d]))[0]
 
-    for field in ("serial_name", "work_type", "client", "channel", "episode_range",
+    for field in ("serial_name", "work_type", "channel", "episode_range",
                   "week_target", "completed", "status", "notes", "project_id"):
         val = getattr(payload, field)
         if val is not None:
             setattr(d, field, val)
+    # Re-sending the current client is a no-op, so edits still work after that client is deactivated.
+    if {"client_id", "client"} & payload.model_fields_set and not (payload.client_id and payload.client_id == d.client_id):
+        d.client_id, d.client = await resolve_client(db, payload.client_id, payload.client)
 
     if payload.assigned_to is not None and payload.assigned_to != d.assigned_to:
         d.assigned_to = payload.assigned_to

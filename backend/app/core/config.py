@@ -30,6 +30,28 @@ class Settings(BaseSettings):
     # Maximum request body size in MB (excludes file uploads handled by Nginx)
     MAX_BODY_SIZE_MB: int = 10
 
+    # Client Gmail connections (Google OAuth). The callback lives on the API host; FRONTEND_URL is
+    # where people open CueSync — the callback page reports back to it and links to it.
+    FRONTEND_URL: str = "http://localhost:5173"
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/mail/oauth/callback"
+    # Fernet key that encrypts stored Gmail refresh tokens. Changing it disconnects every mailbox.
+    MAIL_TOKEN_KEY: str | None = None
+    # How often connected client Gmails are read for society replies, bounces and hand-sent emails.
+    MAIL_SYNC_MINUTES: int = 10
+
+    # Weekly email reports through Brevo (services/weekly_reports.py). Off until REPORT_ENABLED is true.
+    # The sender must be verified in Brevo; a gmail.com address can't be authenticated there, so use one on your domain.
+    BREVO_API_KEY: str | None = None
+    BREVO_SENDER_EMAIL: str | None = None
+    BREVO_SENDER_NAME: str = "CueSync Reports"
+    BREVO_REPLY_TO: str | None = None    # where replies go, e.g. the admin's own mailbox
+    REPORT_ENABLED: bool = False
+    REPORT_DAY: str = "monday"           # monday … sunday
+    REPORT_TIME: str = "09:00"           # 24-hour HH:MM in REPORT_TIMEZONE
+    REPORT_TIMEZONE: str = "Asia/Kolkata"
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def parse_debug(cls, value):

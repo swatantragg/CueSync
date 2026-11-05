@@ -303,12 +303,12 @@ export default function CueCard({
   return (
     <div className="rounded-2xl border overflow-visible" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-5 py-3" style={{ background: alpha(C.mint4, "88") }}>
-        <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-5 py-3" style={{ background: alpha(C.mint4, "88") }}>
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
           <span className="font-mono text-xs px-2.5 py-1 rounded-lg font-medium" style={{ background: C.dark, color: C.mint1 }}>
             SONG {String(idx + 1).padStart(2, "0")}
           </span>
-          <span className="text-sm font-medium truncate max-w-xs" style={{ fontFamily: FONTS.serif }}>{cue.songTitle || "Untitled"}</span>
+          <span className="text-sm font-medium truncate max-w-full sm:max-w-xs" style={{ fontFamily: FONTS.serif }}>{cue.songTitle || "Untitled"}</span>
           <span className="px-1.5 py-0.5 rounded text-[0.625rem]" style={{ background: C.mint3, fontFamily: FONTS.mono }}>
             IPRS:{iprsCode(cue.usageType)} · PRS:{prsCode(cue.usageType)} · ASCAP:{ascapCode(cue.usageType)}
           </span>
@@ -322,7 +322,7 @@ export default function CueCard({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {onDuplicate && !isAdmin && (
             <button
               onClick={() => onDuplicate(cue.id)}
@@ -356,7 +356,7 @@ export default function CueCard({
 
       {/* ── Song fields ── */}
       <div className="px-5 py-5">
-        <div className="grid grid-cols-6 gap-3 mb-5">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-5">
           <Fld label="Song Title" tag="hybrid" span={3}>
             <div className="relative">
               <Inp
@@ -437,9 +437,9 @@ export default function CueCard({
         </div>
 
         {/* ── Contributors ── */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h4 className="text-xs uppercase tracking-widest font-semibold" style={{ color: C.sub }}>Contributors</h4>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs px-2 py-1 rounded-lg" style={{ color: ok ? C.ok : C.danger, background: ok ? T.greenBg2 : T.peachBg }}>
               Total: {sum}% {ok ? "✓" : "(need 100%)"}
             </span>
@@ -455,7 +455,8 @@ export default function CueCard({
           </div>
         </div>
 
-        <div className="rounded-xl border overflow-visible" style={{ borderColor: alpha(C.mint1, "44") }}>
+        {/* Scrolls sideways on phones only: the name suggestions need to overflow the card on larger screens. */}
+        <div className="rounded-xl border overflow-x-auto md:overflow-visible" style={{ borderColor: alpha(C.mint1, "44") }}>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-[0.625rem] uppercase tracking-wider" style={{ background: alpha(C.mint4, "55"), color: C.sub }}>

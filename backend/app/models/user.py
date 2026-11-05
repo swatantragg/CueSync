@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Integer, String, false
+from sqlalchemy import Boolean, DateTime, Enum, Integer, String, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base, utcnow
@@ -30,6 +30,8 @@ class User(Base):
     # Hidden flag on top of role=admin. Exactly one account (settings.SUPER_ADMIN_EMAIL) holds it;
     # other admins see this user as a plain admin.
     is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    # Whether the weekly email report goes to this person. Only the super admin changes it (routes/reports.py).
+    weekly_report_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
     # Set when an admin creates the account (or resets its password); cleared once the user picks their own.
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     # Last app version whose "what's new" popup this user dismissed.

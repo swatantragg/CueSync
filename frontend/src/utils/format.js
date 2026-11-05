@@ -34,4 +34,12 @@ export const ACTION_LABEL = {
   submit: "Submitted for review", approve: "Approved", reject: "Rejected", suggest: "Suggested changes",
   review_open: "Opened for review", login: "Signed in", logout: "Signed out", password_change: "Changed password",
   society_submit: "Logged society submission", submit_to_iprs: "Submitted to IPRS", accept_iprs: "IPRS accepted",
+  client_add: "Added a client", client_edit: "Edited a client", client_remove: "Removed a client",
+  client_link: "Linked old client names", mailbox_connect: "Connected client Gmail",
+  mailbox_disconnect: "Disconnected client Gmail", mailbox_lost: "Client Gmail needs reconnecting",
+  society_add: "Added a society", society_edit: "Edited a society", society_remove: "Removed a society",
+  society_mail_sent: "Emailed cue sheets to society", society_reply: "Society replied", society_bounce: "Society email bounced",
+  mail_detected: "Found email sent outside CueSync", detected_confirm: "Confirmed email sent outside CueSync",
+  detected_dismiss: "Dismissed email", reply_keep_waiting: "Kept waiting after reply",
+  editor_notice: "Emailed an editor", user_mailbox_connect: "Connected own Gmail", user_mailbox_disconnect: "Disconnected own Gmail",
 };

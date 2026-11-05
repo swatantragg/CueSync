@@ -2,15 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle2, XCircle, MessageSquare, Download, Search, X,
   Layers, ChevronDown, FileDown, ChevronLeft, ChevronRight, Film,
-  CalendarDays, Send, AlertCircle, Eye, Lock, Archive,
+  Send, AlertCircle, Eye, Lock, Archive, Mail,
 } from "lucide-react";
 import { C, FONTS, alpha, T } from "../../styles/palette";
 import Select from "../../components/Select";
 import DashboardShell from "./DashboardShell";
 import { api } from "../../utils/api";
+import { fmtDateTime } from "../../utils/format";
 import { showAlert, showConfirm } from "../../components/Dialog";
 import { useApp } from "../../context/AppContext";
 import { WorkFileChip, downloadWorkFile } from "../../components/WorkFileUpload";
+import ClientsPanel from "../../components/ClientsPanel";
+import SocietiesPanel from "../../components/SocietiesPanel";
+import SocietyMailModal from "../../components/SocietyMailModal";
+import SocietyDashboard from "../../components/SocietyDashboard";
+import ReviewerCalendar from "./ReviewerCalendar";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const PER_PAGE = 15;
@@ -213,10 +219,8 @@ function ReviewModal({ episode, onClose, onAction }) {
     : `Review — ${episode.project_title} Ep ${episode.episode_number}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.55)" }}>
-      <div className="cs-dark rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden"
-        style={{ background: C.dark }}>
+    <div className="cs-backdrop fixed inset-0 z-50 flex items-center justify-center">
+      <div className="cs-dark cs-glass rounded-2xl w-full max-w-lg overflow-hidden">
         <div className="px-6 py-4 border-b flex items-center justify-between"
           style={{ borderColor: C.mid }}>
           <div>
@@ -400,7 +404,7 @@ function BulkDownloadBar({ serial }) {
           className="w-16 px-2 py-1.5 rounded-lg text-xs focus:outline-none text-center"
           style={{ background: C.white, color: C.dark, border: `1px solid ${alpha(C.mint1, "44")}` }} />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {societies.map(({ key, label }) => (
           <button key={key} onClick={() => go(key)} disabled={busy !== null}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
@@ -475,7 +479,7 @@ function SerialDetail({ serial, onBack, onReview }) {
         </h2>
       </div>
 
-      <div className="flex gap-4 mb-5">
+      <div className="flex flex-wrap gap-4 mb-5">
         <div className="px-4 py-3 rounded-xl border flex-1"
           style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
           <p className="text-[0.625rem] uppercase tracking-wider mb-0.5" style={{ color: C.sub }}>Channel</p>
@@ -504,7 +508,7 @@ function SerialDetail({ serial, onBack, onReview }) {
         <BulkDownloadBar serial={serial} />
       </div>
 
-      <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit"
+      <div className="flex flex-wrap gap-1 mb-4 p-1 rounded-xl w-fit max-w-full"
         style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {[
           { key: "all",      label: `All Episodes (${allEps.length})` },
@@ -688,7 +692,7 @@ function MovieDetail({ movie, onBack, onReview }) {
         </h2>
       </div>
 
-      <div className="flex gap-4 mb-5">
+      <div className="flex flex-wrap gap-4 mb-5">
         <div className="px-4 py-3 rounded-xl border"
           style={{ background: T.greenBg, borderColor: T.greenBorder }}>
           <p className="text-[0.625rem] uppercase tracking-wider mb-0.5" style={{ color: T.green }}>Approved</p>
@@ -701,7 +705,7 @@ function MovieDetail({ movie, onBack, onReview }) {
         </div>
       </div>
 
-      <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit"
+      <div className="flex flex-wrap gap-1 mb-4 p-1 rounded-xl w-fit max-w-full"
         style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {[
           { key: "approved", label: `Approved (${approvedEps.length})` },
@@ -1049,7 +1053,7 @@ function ProjectsTab({ onReviewEp }) {
   return (
     <div>
       {/* Sub-tabs */}
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit"
+      <div className="flex flex-wrap gap-1 mb-5 p-1 rounded-xl w-fit max-w-full"
         style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
         {[
           { key: "serials", label: "Serials", Icon: Layers },
@@ -1073,14 +1077,29 @@ function ProjectsTab({ onReviewEp }) {
 
 // ── Society status badge ──────────────────────────────────────────────────────
 function IprsBadge({ item }) {
+  if (item.mail_status === "bounced") return (
+    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-semibold" style={{ background: T.redBg, color: T.red }} title={item.bounce_reason || ""}>
+      ✕ Bounced — resend from Dashboard
+    </span>
+  );
+  if (item.mail_status === "resent") return (
+    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-semibold" style={{ background: T.grayBg, color: T.grayMid }}>
+      Bounced · sent again
+    </span>
+  );
   if (item.accepted_by_iprs) return (
     <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-semibold" style={{ background: T.greenBg, color: T.green }}>
       ✓ Society Accepted
     </span>
   );
+  if (item.mail_status === "replied") return (
+    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-semibold" style={{ background: T.purpleBg, color: T.purple }} title={item.reply_snippet || ""}>
+      ↩ {item.society_name || "Society"} replied
+    </span>
+  );
   if (item.submitted_to_iprs) return (
     <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-semibold" style={{ background: T.blueBg, color: T.blue }}>
-      ↑ Sent to Society
+      {item.sent_via === "gmail" ? `✉ Emailed to ${item.society_name || "Society"}` : "↑ Sent to Society"}
     </span>
   );
   return (
@@ -1122,7 +1141,7 @@ function IprsActions({ item, onUpdate }) {
     finally { setBusy(false); }
   };
 
-  if (item.accepted_by_iprs) return null;
+  if (item.accepted_by_iprs || ["bounced", "resent"].includes(item.mail_status)) return null;
 
   return (
     <div className="flex items-center gap-1.5">
@@ -1140,6 +1159,21 @@ function IprsActions({ item, onUpdate }) {
           <CheckCircle2 className="w-3 h-3 shrink-0" />{busy ? "…" : "Accepted by Society"}
         </button>
       )}
+    </div>
+  );
+}
+
+// How the entry was made: a Send to Society email (details on hover) or typed in by hand.
+function SentVia({ item }) {
+  if (item.sent_via !== "gmail") return <div className="text-[0.625rem] mt-0.5" style={{ color: C.sub }}>Logged by hand</div>;
+  const details = [
+    `From: ${item.mail_from}`, `To: ${item.mail_to}`,
+    item.mail_cc && `CC: ${item.mail_cc}`, item.mail_bcc && `BCC: ${item.mail_bcc}`,
+    `Subject: ${item.mail_subject}`, item.mail_attachments && `Files: ${item.mail_attachments}`,
+  ].filter(Boolean).join("\n");
+  return (
+    <div className="flex items-center gap-1 text-[0.625rem] mt-0.5 cursor-help" style={{ color: T.blue }} title={details}>
+      <Mail className="w-3 h-3" /> Emailed from {item.mail_from}
     </div>
   );
 }
@@ -1189,6 +1223,7 @@ function SerialSubmissionGroup({ group, onItemUpdate }) {
                 style={{ borderColor: alpha(C.mint4, "44"), color: C.sub, background: alpha(C.mint4, "11") }}>
                 <th className="text-left px-4 py-2">Episodes</th>
                 <th className="text-left px-4 py-2">Client</th>
+                <th className="text-left px-4 py-2">Society</th>
                 <th className="text-left px-4 py-2">Submitted By</th>
                 <th className="text-left px-4 py-2">Date</th>
                 <th className="text-left px-4 py-2">IPRS Status</th>
@@ -1202,7 +1237,8 @@ function SerialSubmissionGroup({ group, onItemUpdate }) {
                   <td className="px-4 py-2.5 font-medium" style={{ color: C.dark }}>
                     Ep {item.episode_from}–{item.episode_to}
                   </td>
-                  <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{item.client || "—"}</td>
+                  <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{item.client || "—"}<SentVia item={item} /></td>
+                  <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{item.society_name || "—"}</td>
                   <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{item.submitted_by_name || "—"}</td>
                   <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>
                     {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString() : "—"}
@@ -1265,6 +1301,7 @@ function MovieSubmissionGroup({ group, onItemUpdate }) {
               <tr className="text-[0.625rem] uppercase tracking-wider border-b"
                 style={{ borderColor: alpha(C.mint4, "44"), color: C.sub, background: alpha(C.mint4, "11") }}>
                 <th className="text-left px-4 py-2">Client</th>
+                <th className="text-left px-4 py-2">Society</th>
                 <th className="text-left px-4 py-2">Submitted By</th>
                 <th className="text-left px-4 py-2">Date</th>
                 <th className="text-left px-4 py-2">IPRS Status</th>
@@ -1275,7 +1312,8 @@ function MovieSubmissionGroup({ group, onItemUpdate }) {
               {paged.map((item) => (
                 <tr key={item.id} className="border-b last:border-0" style={{ borderColor: alpha(C.mint4, "33"),
                   background: !item.submitted_to_iprs ? T.yellowBg : item.accepted_by_iprs ? T.greenBg3 : alpha(T.blueBg, "11") }}>
-                  <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{item.client || "—"}</td>
+                  <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{item.client || "—"}<SentVia item={item} /></td>
+                  <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{item.society_name || "—"}</td>
                   <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{item.submitted_by_name || "—"}</td>
                   <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>
                     {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString() : "—"}
@@ -1304,207 +1342,6 @@ function MovieSubmissionGroup({ group, onItemUpdate }) {
 }
 
 // ── Month names ───────────────────────────────────────────────────────────────
-const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const MONTH_FULL  = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
-// ── Reviewer Calendar tab ─────────────────────────────────────────────────────
-function ReviewerCalendarTab() {
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: Math.max(1, currentYear - 2026 + 1) }, (_, i) => 2026 + i);
-  const [selectedYear, setSelectedYear]   = useState(currentYear >= 2026 ? currentYear : 2026);
-  const [calData, setCalData]             = useState(null);
-  const [loading, setLoading]             = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(null);
-
-  useEffect(() => {
-    setLoading(true); setSelectedMonth(null);
-    api.reviewerCalendar(selectedYear)
-      .then(setCalData).catch(() => setCalData(null))
-      .finally(() => setLoading(false));
-  }, [selectedYear]);
-
-  // per-month metrics
-  const mTotal = (m) => {
-    const d      = calData?.months?.[String(m)]      ?? {};
-    const target = (calData?.month_target?.[String(m)]) || 0;
-    const sub    = d.submitted || 0;
-    const rev    = d.approved  || 0;
-    const pend   = Math.max(0, sub - rev);
-    return { target, sub, rev, pend };
-  };
-
-  const qTotal = (months) =>
-    months.reduce(
-      (acc, m) => { const t = mTotal(m); return { target: acc.target + t.target, sub: acc.sub + t.sub, rev: acc.rev + t.rev, pend: acc.pend + t.pend }; },
-      { target: 0, sub: 0, rev: 0, pend: 0 }
-    );
-
-  const quarters   = [[1,2,3,4],[5,6,7,8],[9,10,11,12]];
-  const selData    = selectedMonth ? (calData?.months?.[String(selectedMonth)] ?? {}) : null;
-  const selTarget  = selectedMonth ? ((calData?.month_target?.[String(selectedMonth)]) || 0) : 0;
-  const selSub     = selData?.submitted || 0;
-  const selRev     = selData?.approved  || 0;
-  const selPend    = Math.max(0, selSub - selRev);
-  const weekTgts   = selectedMonth ? (calData?.week_target?.[String(selectedMonth)] ?? {}) : {};
-
-  return (
-    <div className="flex gap-5">
-      {/* Year sidebar */}
-      <div className="w-16 shrink-0">
-        <div className="text-[0.625rem] uppercase tracking-wider font-semibold mb-2 text-center" style={{ color: C.sub }}>Year</div>
-        <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
-          {years.map((y) => (
-            <button key={y} onClick={() => setSelectedYear(y)}
-              className="w-full py-2.5 text-sm font-semibold border-b last:border-0 transition"
-              style={{ borderColor: alpha(C.mint4, "55"), background: selectedYear === y ? C.dark : "transparent", color: selectedYear === y ? C.mint4 : C.dark }}>
-              {y}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex-1 min-w-0">
-        {loading ? (
-          <div className="p-10 text-center text-sm" style={{ color: C.sub }}>Loading…</div>
-        ) : (
-          <div className="space-y-3">
-            {quarters.map((qMonths, qi) => {
-              const qt = qTotal(qMonths);
-              return (
-                <div key={qi} className="flex gap-2 items-stretch">
-                  {qMonths.map((m) => {
-                    const mt          = mTotal(m);
-                    const isSel       = selectedMonth === m;
-                    const isCurrent   = selectedYear === new Date().getFullYear() && m === new Date().getMonth() + 1;
-                    const hasActivity = mt.sub > 0 || mt.rev > 0;
-                    return (
-                      <button key={m} onClick={() => setSelectedMonth(isSel ? null : m)}
-                        className={`${isSel ? "cs-dark " : ""}flex-1 rounded-xl border p-3 text-left transition-all hover:shadow-md`}
-                        style={{
-                          background:  isSel ? C.dark : isCurrent ? alpha(C.mint4, "cc") : C.white,
-                          borderColor: isSel ? C.mint1 : isCurrent ? C.mint1 : hasActivity ? alpha(C.mint1, "88") : alpha(C.mint1, "33"),
-                          borderWidth: isCurrent && !isSel ? 2 : 1,
-                        }}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-[0.625rem] font-bold uppercase tracking-widest" style={{ color: isSel ? C.mint1 : C.sub }}>
-                            {MONTH_SHORT[m - 1]}
-                          </div>
-                          {isCurrent && !isSel && (
-                            <span className="text-[0.5rem] font-bold uppercase px-1.5 py-0.5 rounded-full" style={{ background: C.mint1, color: C.dark }}>Now</span>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                          {[
-                            { val: mt.target, label: "Target",   color: isSel ? "#fde68a" : T.orange },
-                            { val: mt.sub,    label: "Submitted", color: isSel ? C.mint4   : C.dark    },
-                            { val: mt.rev,    label: "Reviewed",  color: isSel ? "#86efac" : C.ok      },
-                            { val: mt.pend,   label: "Pending",   color: isSel ? "#fca5a5" : C.danger  },
-                          ].map(({ val, label, color }) => (
-                            <div key={label}>
-                              <div className="text-sm font-bold leading-none" style={{ color }}>{val}</div>
-                              <div className="text-[0.5rem] mt-0.5 uppercase tracking-wide" style={{ color: alpha(color, "99") }}>{label}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                  {/* Quarter total */}
-                  <div className="w-24 shrink-0 rounded-xl border p-3 flex flex-col justify-center"
-                    style={{ background: alpha(C.mint4, "33"), borderColor: alpha(C.mint4, "55") }}>
-                    <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-2 text-center" style={{ color: C.sub }}>Q{qi + 1}</div>
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-center">
-                      {[
-                        { val: qt.target, color: T.orange, lbl: "Tgt" },
-                        { val: qt.sub,    color: C.dark,    lbl: "Sub" },
-                        { val: qt.rev,    color: C.ok,      lbl: "Rev" },
-                        { val: qt.pend,   color: C.danger,  lbl: "Pend" },
-                      ].map(({ val, color, lbl }) => (
-                        <div key={lbl}>
-                          <div className="text-sm font-bold" style={{ color }}>{val}</div>
-                          <div className="text-[0.5rem] uppercase" style={{ color: alpha(color, "77") }}>{lbl}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Month detail */}
-        {selectedMonth && selData !== null && (
-          <div className="mt-5 rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
-            {/* Header — 4 totals */}
-            <div className="px-5 py-3 border-b flex items-center gap-6 flex-wrap"
-              style={{ borderColor: C.mint4, background: alpha(C.mint4, "33") }}>
-              <div className="font-semibold text-sm" style={{ fontFamily: FONTS.serif, color: C.dark }}>
-                {MONTH_FULL[selectedMonth - 1]} {selectedYear}
-              </div>
-              <div className="flex gap-5 ml-auto">
-                {[
-                  { label: "Target",             val: selTarget, color: T.orange },
-                  { label: "Submitted",           val: selSub,    color: C.dark    },
-                  { label: "Reviewed",            val: selRev,    color: C.ok      },
-                  { label: "Pending to Review",   val: selPend,   color: C.danger  },
-                ].map(({ label, val, color }) => (
-                  <div key={label} className="text-center">
-                    <div className="text-lg font-bold leading-none" style={{ color }}>{val}</div>
-                    <div className="text-[0.625rem] mt-0.5 uppercase tracking-wide" style={{ color: alpha(color, "88") }}>{label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Weekly breakdown table */}
-            <div className="p-4">
-              <div className="text-[0.625rem] font-bold uppercase tracking-widest mb-3" style={{ color: C.sub }}>Weekly Breakdown</div>
-              {Object.entries(selData.weeks || {}).length === 0 ? (
-                <div className="text-xs py-4 text-center" style={{ color: C.sub }}>No weekly data</div>
-              ) : (
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b" style={{ borderColor: alpha(C.mint4, "88") }}>
-                      {[
-                        { h: "Week",                            style: {} },
-                        { h: "Target",                          style: { color: T.orange } },
-                        { h: "Submitted",                       style: { color: C.dark    } },
-                        { h: "Reviewed",                        style: { color: C.ok      } },
-                        { h: "Pending to Review",                    style: { color: C.danger  } },
-                      ].map(({ h, style }) => (
-                        <th key={h} className="text-left pb-2 pr-5 font-semibold uppercase tracking-wide"
-                          style={{ color: C.sub, ...style }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(selData.weeks || {}).sort(([a],[b]) => +a - +b).map(([wk, wd]) => {
-                      const wSub  = wd.submitted || 0;
-                      const wRev  = wd.approved  || 0;
-                      const wPend = Math.max(0, wSub - wRev);
-                      const wTgt  = weekTgts[wk] || 0;
-                      return (
-                        <tr key={wk} className="border-b last:border-0" style={{ borderColor: alpha(C.mint4, "44") }}>
-                          <td className="py-2.5 pr-5 font-semibold" style={{ color: C.dark }}>Week {wk}</td>
-                          <td className="py-2.5 pr-5 font-bold" style={{ color: T.orange }}>{wTgt || "—"}</td>
-                          <td className="py-2.5 pr-5 font-bold" style={{ color: C.dark }}>{wSub}</td>
-                          <td className="py-2.5 pr-5 font-bold" style={{ color: C.ok }}>{wRev}</td>
-                          <td className="py-2.5 font-bold" style={{ color: wPend > 0 ? C.danger : C.ok }}>{wPend}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ── Reviewer Activity tab (submission stats) ───────────────────────────────────
 function ReviewerActivityTab() {
@@ -1562,38 +1399,58 @@ function ReviewerActivityTab() {
 
 // ── Submitted Cue tab ─────────────────────────────────────────────────────────
 function SubmittedCueTab() {
+  const { pushToast } = useApp();
   const [serials, setSerials]         = useState([]);
   const [movies, setMovies]           = useState([]);
   const [clients, setClients]         = useState([]);
+  const [societies, setSocieties]     = useState([]);
+  const [mailRequest, setMailRequest] = useState(null);   // open Send to Society preview
+  const [approved, setApproved]       = useState(null);   // approved episodes of the picked serial/movie
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading]         = useState(true);
-  const [submitting, setSubmitting]   = useState(false);
-  const [clientSug, setClientSug]     = useState(false);
   const [logTab, setLogTab]           = useState("serial"); // "serial" | "movie"
   const [form, setForm] = useState({
     content_type: "serial", // "serial" | "movie"
-    project_id: "", episode_from: "", episode_to: "", client: "", notes: "",
+    project_id: "", episode_from: "", episode_to: "", client_id: "", society_id: "", notes: "",
   });
 
   const load = () => {
     Promise.all([
       api.reviewerSerials(),
       api.reviewerMovies(),
-      api.suggestClients(),
+      api.listClients(),
+      api.listSocieties(),
       api.listSubmissions(),
-    ]).then(([s, m, c, subs]) => {
+    ]).then(([s, m, c, soc, subs]) => {
       setSerials(s);
       setMovies(m);
-      setClients(c);
+      setClients(c.filter((x) => x.is_active));
+      setSocieties(soc.filter((x) => x.is_active));
       setSubmissions(subs);
     }).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
 
-  const filteredClients = clients.filter((c) =>
-    c.toLowerCase().includes((form.client || "").toLowerCase())
-  );
+  // Only approved episodes can be emailed: the pickers list just those (and mark ones already sent).
+  useEffect(() => {
+    if (!form.project_id) { setApproved(null); return; }
+    let live = true;
+    api.approvedEpisodes(form.project_id, form.society_id || null)
+      .then((r) => { if (live) setApproved(r); })
+      .catch(() => { if (live) setApproved({ episodes: [] }); });
+    return () => { live = false; };
+  }, [form.project_id, form.society_id, mailRequest]);
+
+  const approvedEps = approved?.episodes || [];
+  const fromIdx = approvedEps.findIndex((e) => String(e.number) === String(form.episode_from));
+  // "To" only offers the unbroken run of approved episodes after "From", so a range can't include an unapproved one.
+  const toOptions = [];
+  for (let i = fromIdx; fromIdx >= 0 && i < approvedEps.length; i++) {
+    if (i > fromIdx && approvedEps[i].number !== approvedEps[i - 1].number + 1) break;
+    toOptions.push(approvedEps[i]);
+  }
+  const epLabel = (e) => `Ep ${e.number}${e.sent ? " · already sent" : ""}`;
 
   const projectOptions = form.content_type === "serial" ? serials : movies;
 
@@ -1606,23 +1463,29 @@ function SubmittedCueTab() {
       from = parseInt(form.episode_from, 10);
       to   = parseInt(form.episode_to,   10);
       if (!from || !to || from > to) {
-        await showAlert("Enter a valid episode range (From ≤ To).", { variant: "warn" }); return;
+        await showAlert("Pick the approved episodes to send (From and To).", { variant: "warn" }); return;
       }
     }
-    setSubmitting(true);
-    try {
-      await api.createSubmission({
-        project_id: parseInt(form.project_id),
-        episode_from: from,
-        episode_to: to,
-        client: form.client.trim() || null,
-        notes: form.notes.trim() || null,
-      });
-      setForm({ content_type: form.content_type, project_id: "", episode_from: "", episode_to: "", client: "", notes: "" });
-      load();
-    } catch (ex) {
-      await showAlert(ex.message, { title: "Failed", variant: "error" });
-    } finally { setSubmitting(false); }
+    if (!form.client_id) {
+      await showAlert("Pick the client whose Gmail sends the email.", { variant: "warn" }); return;
+    }
+    if (!form.society_id) {
+      await showAlert("Pick the society to send to.", { variant: "warn" }); return;
+    }
+    setMailRequest({
+      project_id: parseInt(form.project_id),
+      episode_from: from,
+      episode_to: to,
+      client_id: parseInt(form.client_id),
+      society_id: parseInt(form.society_id),
+      notes: form.notes.trim() || null,
+    });
+  };
+
+  const onMailSent = (row) => {
+    pushToast({ kind: "success", title: `Emailed to ${row.society_name}`, body: `${row.project_title} · Ep ${row.episode_from}–${row.episode_to} from ${row.mail_from}` });
+    setForm({ content_type: form.content_type, project_id: "", episode_from: "", episode_to: "", client_id: form.client_id, society_id: "", notes: "" });
+    load();
   };
 
   // Split submissions by type
@@ -1649,10 +1512,13 @@ function SubmittedCueTab() {
     <div className="space-y-6">
       {/* Form */}
       <div className="rounded-xl border p-5" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
-        <h4 className="text-sm font-semibold mb-4" style={{ fontFamily: FONTS.serif, color: C.dark }}>
+        <h4 className="text-sm font-semibold" style={{ fontFamily: FONTS.serif, color: C.dark }}>
           Submit to Society
         </h4>
-        <div className="grid grid-cols-2 gap-3 mb-3">
+        <p className="text-xs mb-4 mt-0.5" style={{ color: C.sub }}>
+          Emails the cue sheets from the client's Gmail to the society. You see and can edit the email before it is sent.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           {/* Content type */}
           <div>
             <label className="block text-[0.625rem] uppercase tracking-wider mb-1" style={{ color: C.sub }}>
@@ -1672,7 +1538,7 @@ function SubmittedCueTab() {
               {form.content_type === "serial" ? "Serial" : "Movie"}
             </label>
             <Select value={form.project_id}
-              onChange={(e) => setForm((f) => ({ ...f, project_id: e.target.value }))}
+              onChange={(e) => setForm((f) => ({ ...f, project_id: e.target.value, episode_from: "", episode_to: "" }))}
               className="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
               style={{ borderColor: alpha(C.mint1, "44"), color: C.dark, background: C.white }}>
               <option value="">Select {form.content_type}…</option>
@@ -1683,55 +1549,65 @@ function SubmittedCueTab() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          {/* Episode range only for serials */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          {/* Episode range only for serials — approved episodes only */}
           {form.content_type === "serial" && (
             <>
               <div>
                 <label className="block text-[0.625rem] uppercase tracking-wider mb-1" style={{ color: C.sub }}>
                   Episode From
                 </label>
-                <input type="number" min={1} value={form.episode_from}
-                  onChange={(e) => setForm((f) => ({ ...f, episode_from: e.target.value }))}
-                  placeholder="1"
+                <Select value={form.episode_from} disabled={!form.project_id || !approvedEps.length}
+                  onChange={(e) => setForm((f) => ({ ...f, episode_from: e.target.value, episode_to: e.target.value }))}
                   className="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
-                  style={{ borderColor: alpha(C.mint1, "44"), color: C.dark }} />
+                  style={{ borderColor: alpha(C.mint1, "44"), color: C.dark, background: C.white }}>
+                  <option value="">{!form.project_id ? "Pick a serial first" : approved && !approvedEps.length ? "No approved episodes yet" : "From…"}</option>
+                  {approvedEps.map((e) => <option key={e.number} value={e.number}>{epLabel(e)}</option>)}
+                </Select>
               </div>
               <div>
                 <label className="block text-[0.625rem] uppercase tracking-wider mb-1" style={{ color: C.sub }}>
                   Episode To
                 </label>
-                <input type="number" min={1} value={form.episode_to}
+                <Select value={form.episode_to} disabled={!toOptions.length}
                   onChange={(e) => setForm((f) => ({ ...f, episode_to: e.target.value }))}
-                  placeholder="10"
                   className="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
-                  style={{ borderColor: alpha(C.mint1, "44"), color: C.dark }} />
+                  style={{ borderColor: alpha(C.mint1, "44"), color: C.dark, background: C.white }}>
+                  <option value="">To…</option>
+                  {toOptions.map((e) => <option key={e.number} value={e.number}>{epLabel(e)}</option>)}
+                </Select>
               </div>
             </>
           )}
-          {/* Client autocomplete */}
-          <div className={`relative ${form.content_type === "movie" ? "col-span-2" : ""}`}>
+          {/* Client — its connected Gmail sends the email (Clients tab) */}
+          <div>
             <label className="block text-[0.625rem] uppercase tracking-wider mb-1" style={{ color: C.sub }}>
-              Client
+              Client (sends from)
             </label>
-            <input value={form.client}
-              onChange={(e) => { setForm((f) => ({ ...f, client: e.target.value })); setClientSug(true); }}
-              onFocus={() => setClientSug(true)}
-              onBlur={() => setTimeout(() => setClientSug(false), 150)}
-              placeholder="Client name…"
+            <Select value={form.client_id}
+              onChange={(e) => setForm((f) => ({ ...f, client_id: e.target.value }))}
               className="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
-              style={{ borderColor: alpha(C.mint1, "44"), color: C.dark }} />
-            {clientSug && filteredClients.length > 0 && (
-              <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-xl shadow-xl overflow-hidden max-h-40 overflow-y-auto"
-                style={{ background: C.white, border: `1px solid ${alpha(C.mint1, "44")}` }}>
-                {filteredClients.map((c) => (
-                  <button key={c}
-                    onMouseDown={() => { setForm((f) => ({ ...f, client: c })); setClientSug(false); }}
-                    className="block w-full text-left px-4 py-2 text-xs hover:bg-green-50"
-                    style={{ color: C.dark }}>{c}</button>
-                ))}
-              </div>
-            )}
+              style={{ borderColor: alpha(C.mint1, "44"), color: C.dark, background: C.white }}>
+              <option value="">Select client…</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}{c.mailbox?.status === "connected" ? ` — ${c.mailbox.email}` : c.mailbox ? " — Gmail needs reconnecting" : " — Gmail not connected"}
+                </option>
+              ))}
+            </Select>
+          </div>
+          {/* Society — where the email goes (Societies tab) */}
+          <div>
+            <label className="block text-[0.625rem] uppercase tracking-wider mb-1" style={{ color: C.sub }}>
+              Society (sends to)
+            </label>
+            <Select value={form.society_id}
+              onChange={(e) => setForm((f) => ({ ...f, society_id: e.target.value }))}
+              className="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+              style={{ borderColor: alpha(C.mint1, "44"), color: C.dark, background: C.white }}>
+              <option value="">{societies.length ? "Select society…" : "No societies yet — add one under Societies"}</option>
+              {societies.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.to_emails.join(", ")}</option>)}
+            </Select>
           </div>
           {/* Notes */}
           <div className={form.content_type === "movie" ? "" : ""}>
@@ -1745,12 +1621,24 @@ function SubmittedCueTab() {
               style={{ borderColor: alpha(C.mint1, "44"), color: C.dark }} />
           </div>
         </div>
-        <button onClick={submit} disabled={submitting}
-          className="px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+        {form.project_id && approved && !approvedEps.length && (
+          <p className="text-xs mb-3" style={{ color: T.orange }}>
+            This {form.content_type} has no approved episodes yet. Approve it in Projects before sending.
+          </p>
+        )}
+        {form.content_type === "serial" && fromIdx >= 0 && toOptions.length < approvedEps.length - fromIdx && (
+          <p className="text-xs mb-3" style={{ color: C.sub }}>
+            The range stops at Ep {toOptions[toOptions.length - 1].number}: the next episode isn't approved yet.
+          </p>
+        )}
+        <button onClick={submit}
+          className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium"
           style={{ background: C.dark, color: C.mint4 }}>
-          {submitting ? "Submitting…" : "Submit"}
+          <Mail className="w-4 h-4" /> Preview Email
         </button>
       </div>
+
+      {mailRequest && <SocietyMailModal request={mailRequest} onClose={() => setMailRequest(null)} onSent={onMailSent} />}
 
       {/* Submission log */}
       <div>
@@ -1759,7 +1647,7 @@ function SubmittedCueTab() {
         </h4>
 
         {/* Log type tabs */}
-        <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit"
+        <div className="flex flex-wrap gap-1 mb-4 p-1 rounded-xl w-fit max-w-full"
           style={{ background: C.mint4, border: `1px solid ${alpha(C.mint1, "66")}` }}>
           {[
             { key: "serial", label: "Serials", Icon: Layers },
@@ -1803,20 +1691,85 @@ function SubmittedCueTab() {
   );
 }
 
+// ── Dashboard: episodes waiting for review ─────────────────────────────────────
+const PENDING_SHOWN = 8;
+const SLOW_DAYS = 3;
+const REVIEW_TH = "text-left text-[0.625rem] uppercase tracking-wider font-semibold px-4 py-2.5";
+
+function PendingReviews({ episodes, onReview }) {
+  const openEp = useOpenEpisode();
+  const [all, setAll] = useState(false);
+  const rows = [...episodes].sort((a, b) => (a.submitted_at || "").localeCompare(b.submitted_at || ""));
+  const shown = all ? rows : rows.slice(0, PENDING_SHOWN);
+  const waited = (iso) => (iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null);
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h4 className="text-sm font-semibold" style={{ fontFamily: FONTS.serif, color: C.dark }}>
+          Pending review {rows.length > 0 && <span className="ml-1 text-[0.625rem] px-2 py-0.5 rounded-full font-bold" style={{ background: T.blue, color: C.white }}>{rows.length}</span>}
+        </h4>
+        <p className="text-[0.6875rem] mt-0.5" style={{ color: C.sub }}>Episodes editors submitted, oldest first. Open the cue sheet, then Review to approve, reject or ask for changes.</p>
+      </div>
+      {rows.length === 0 ? (
+        <div className="text-sm rounded-xl border px-4 py-6 text-center" style={{ color: C.sub, borderColor: alpha(C.mint1, "44"), background: C.white }}>
+          Nothing to review. Episodes editors submit show up here.
+        </div>
+      ) : (
+        <div className="rounded-2xl border overflow-hidden" style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ background: alpha(C.mint4, "33"), color: C.sub }}>
+                <th className={REVIEW_TH}>Serial / movie</th><th className={REVIEW_TH}>Episode</th><th className={REVIEW_TH}>Submitted by</th>
+                <th className={REVIEW_TH}>Submitted</th><th className={REVIEW_TH}>Waiting</th><th className={REVIEW_TH}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((ep) => {
+                const days = waited(ep.submitted_at);
+                const isMovie = ep.project_type === "MOVIE";
+                return (
+                  <tr key={ep.id} className="border-t" style={{ borderColor: alpha(C.mint4, "88") }}>
+                    <td className="px-4 py-2.5 font-medium" style={{ color: C.dark }}>{ep.project_title || "—"}</td>
+                    <td className="px-4 py-2.5 text-xs" style={{ color: C.dark }}>{isMovie ? "Movie" : `Ep ${ep.episode_number}`}</td>
+                    <td className="px-4 py-2.5 text-xs" style={{ color: C.dark }}>{ep.submitted_by || "—"}</td>
+                    <td className="px-4 py-2.5 text-xs" style={{ color: C.sub }}>{ep.submitted_at ? fmtDateTime(ep.submitted_at) : "—"}</td>
+                    <td className="px-4 py-2.5 text-xs font-semibold" style={{ color: days >= SLOW_DAYS ? T.orange : C.sub }}>
+                      {days == null ? "—" : days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"}`}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <div className="flex justify-end gap-1.5">
+                        <OpenButton onClick={() => openEp(ep, ep.project_id, ep.project_title)} />
+                        <ReviewButton opened={ep.opened !== false} onClick={() => onReview(ep)} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {rows.length > PENDING_SHOWN && (
+            <button onClick={() => setAll((v) => !v)} className="w-full px-4 py-2 text-xs font-semibold border-t hover:bg-black/[0.03]"
+              style={{ borderColor: alpha(C.mint4, "88"), color: C.sub }}>
+              {all ? "Show fewer" : `Show all ${rows.length}`}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ── Main dashboard ─────────────────────────────────────────────────────────────
 export default function ReviewerDashboard() {
   const openEp = useOpenEpisode();
-  const [tab, setTab]             = useState("queue");
-  const [submitted, setSubmitted] = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [tab, setTab]             = useState("dashboard");
+  const [submitted, setSubmitted] = useState([]);   // episodes waiting for review (Projects badge)
+  const [attention, setAttention] = useState(0);    // Dashboard items needing action
   const [reviewEp, setReviewEp]   = useState(null);
-  const [searchQ, setSearchQ]     = useState("");
-  const [queuePage, setQueuePage] = useState(1);
 
   useEffect(() => {
-    api.submittedEpisodes()
-      .then(setSubmitted).catch(() => {})
-      .finally(() => setLoading(false));
+    api.submittedEpisodes().then(setSubmitted).catch(() => {});
   }, []);
 
   const handleAction = async (eid, type, note) => {
@@ -1826,27 +1779,19 @@ export default function ReviewerDashboard() {
     setSubmitted((prev) => prev.filter((e) => e.id !== eid));
   };
 
-  const filtered = submitted.filter((e) => {
-    const q = searchQ.trim().toLowerCase();
-    return !q || (e.project_title || "").toLowerCase().includes(q) ||
-      String(e.episode_number).includes(q) || (e.title || "").toLowerCase().includes(q);
-  });
-
-  const queueTotalPages  = Math.ceil(filtered.length / PER_PAGE);
-  const visibleQueue     = filtered.slice((queuePage - 1) * PER_PAGE, queuePage * PER_PAGE);
-
   const tabs = [
-    { key: "queue",          label: "Review Queue", badge: submitted.length },
-    { key: "projects",       label: "Projects" },
+    { key: "dashboard",      label: "Dashboard", badge: attention },
+    { key: "projects",       label: "Projects", badge: submitted.length },
     { key: "submitted_cue",  label: "Submitted Cue" },
-    { key: "calendar",       label: "Activity Calendar" },
+    { key: "clients",        label: "Clients" },
+    { key: "societies",      label: "Societies" },
     { key: "activity",       label: "Activity Stats" },
   ];
 
   return (
     <DashboardShell
       title="Reviewer"
-      subtitle="Review submitted cue sheets, approve or request changes"
+      subtitle="Review submitted episodes and track cue sheets emailed to the societies"
       tabs={tabs}
       activeTab={tab}
       onTab={setTab}>
@@ -1855,80 +1800,12 @@ export default function ReviewerDashboard() {
         <ReviewModal episode={reviewEp} onClose={() => setReviewEp(null)} onAction={handleAction} />
       )}
 
-      {/* ── Review Queue ── */}
-      {tab === "queue" && (
-        <div>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="relative flex-1 max-w-xs">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
-                style={{ color: C.sub }} />
-              <input type="text" value={searchQ}
-                onChange={(e) => { setSearchQ(e.target.value); setQueuePage(1); }}
-                placeholder="Search by serial, episode…"
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border focus:outline-none"
-                style={{ borderColor: alpha(C.mint1, "44"), background: C.white, color: C.dark }} />
-              {searchQ && (
-                <button onClick={() => { setSearchQ(""); setQueuePage(1); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2">
-                  <X className="w-3 h-3" style={{ color: C.sub }} />
-                </button>
-              )}
-            </div>
-            <span className="text-sm" style={{ color: C.sub }}>
-              {filtered.length} episode{filtered.length !== 1 ? "s" : ""} pending review
-            </span>
-            <span className="ml-auto inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg" style={{ background: C.mint4, color: C.sub }}>
-              <Lock className="w-3 h-3" /> Open a cue sheet to unlock its Review button
-            </span>
-          </div>
-
-          <div className="rounded-2xl border overflow-hidden"
-            style={{ background: C.white, borderColor: alpha(C.mint1, "44") }}>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-[0.625rem] uppercase tracking-wider"
-                  style={{ borderColor: C.mint4, color: C.sub, background: alpha(C.mint4, "33") }}>
-                  <th className="text-left px-5 py-3">Project</th>
-                  <th className="text-left px-5 py-3">Episode</th>
-                  <th className="text-left px-5 py-3">Title</th>
-                  <th className="text-left px-5 py-3">Air Date</th>
-                  <th className="text-right px-5 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && (
-                  <tr><td colSpan={5} className="px-5 py-8 text-center text-sm"
-                    style={{ color: C.sub }}>Loading…</td></tr>
-                )}
-                {!loading && filtered.length === 0 && (
-                  <tr><td colSpan={5} className="px-5 py-8 text-center text-sm"
-                    style={{ color: C.sub }}>
-                    {submitted.length === 0 ? "No episodes awaiting review." : `No results for "${searchQ}".`}
-                  </td></tr>
-                )}
-                {visibleQueue.map((ep) => (
-                  <tr key={ep.id} className="border-b last:border-0 hover:bg-green-50/30"
-                    style={{ borderColor: alpha(C.mint4, "55") }}>
-                    <td className="px-5 py-3 font-medium" style={{ color: C.dark }}>
-                      {ep.project_title || "—"}
-                    </td>
-                    <td className="px-5 py-3 font-mono font-medium" style={{ color: C.dark }}>
-                      {String(ep.episode_number).padStart(2, "0")}
-                    </td>
-                    <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>{ep.title || "—"}</td>
-                    <td className="px-5 py-3 text-xs" style={{ color: C.sub }}>{ep.air_date || "—"}</td>
-                    <td className="px-5 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <OpenButton onClick={() => openEp(ep, ep.project_id, ep.project_title)} />
-                        <ReviewButton opened={ep.opened !== false} onClick={() => setReviewEp(ep)} />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <Paginator page={queuePage} total={queueTotalPages} onChange={setQueuePage} />
+      {/* ── Dashboard: emails to the societies and their responses ── */}
+      {tab === "dashboard" && (
+        <div className="space-y-6">
+          <SocietyDashboard onAttention={setAttention}
+            pendingReviews={<PendingReviews episodes={submitted} onReview={setReviewEp} />} />
+          <ReviewerCalendar reloadKey={submitted.length} />
         </div>
       )}
 
@@ -1940,8 +1817,11 @@ export default function ReviewerDashboard() {
       {/* ── Submitted Cue ── */}
       {tab === "submitted_cue" && <SubmittedCueTab />}
 
-      {/* ── Activity Calendar ── */}
-      {tab === "calendar" && <ReviewerCalendarTab />}
+      {/* ── Clients + Gmail connections ── */}
+      {tab === "clients" && <ClientsPanel />}
+
+      {/* ── Societies (where Send to Society emails go) ── */}
+      {tab === "societies" && <SocietiesPanel />}
 
       {/* ── Activity Stats ── */}
       {tab === "activity" && <ReviewerActivityTab />}
