@@ -46,6 +46,7 @@ class MailDraftIn(BaseModel):
     episode_to: int
     client_id: int | None = None
     society_id: int | None = None
+    converted: bool = False  # send the sheets saved under Projects → Conversion
 
 
 class MailSendIn(MailDraftIn):
@@ -93,6 +94,7 @@ async def _row(db: AsyncSession, s: SocietySubmission) -> dict:
         "society_id":            s.society_id,
         "society_name":          s.society_name,
         "sent_via":              s.sent_via,
+        "from_conversion":       bool(s.from_conversion),
         "mail_from":             s.mail_from,
         "mail_to":               s.mail_to,
         "mail_cc":               s.mail_cc,
@@ -128,13 +130,15 @@ async def _notify_iprs_users(db: AsyncSession, title: str, body: str, sub_id: in
 @router.post("/mail/preview", dependencies=[Depends(require_roles(*_IPRS_ROLES))])
 async def preview_society_mail(payload: MailDraftIn, db: AsyncSession = Depends(get_db)):
     """The email Send to Society would send, filled from the society's template, plus anything blocking it."""
-    d = await make_draft(db, payload.project_id, payload.episode_from, payload.episode_to, payload.client_id, payload.society_id)
+    d = await make_draft(db, payload.project_id, payload.episode_from, payload.episode_to, payload.client_id,
+                         payload.society_id, payload.converted)
     defaults = set((d.society.attachments or "").split(",")) if d.society else set()
     return {
         "ready": not d.problems,
         "problems": d.problems,
         "project_title": d.project.title,
         "episodes": d.episodes,
+        "converted": d.converted,
         "client": {"id": d.client.id, "name": d.client.name} if d.client else None,
         "society": {"id": d.society.id, "name": d.society.name} if d.society else None,
         "from": {"name": d.client.name, "email": d.mailbox.email, "status": d.mailbox.status} if d.mailbox else None,
@@ -158,9 +162,10 @@ async def send_society_mail(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Email the cue sheets from the client's Gmail. The Submitted Cue entry is created only after
+    """Email the cue sheets from the client's Gmail. The Submit Cue entry is created only after
     Gmail accepts the message, so every entry made here has a real email behind it."""
-    d = await make_draft(db, payload.project_id, payload.episode_from, payload.episode_to, payload.client_id, payload.society_id)
+    d = await make_draft(db, payload.project_id, payload.episode_from, payload.episode_to, payload.client_id,
+                         payload.society_id, payload.converted)
     if d.problems:
         raise HTTPException(400, " ".join(d.problems))
     to = clean_emails(payload.to, "To")
@@ -216,7 +221,7 @@ async def send_society_mail(
         mail_to=join_emails(to), mail_cc=join_emails(cc) or None, mail_bcc=join_emails(bcc) or None,
         mail_subject=subject, mail_body=body, mail_attachments=", ".join(name for name, _ in files),
         gmail_message_id=sent.get("id"), gmail_thread_id=sent.get("threadId"), mail_sent_at=now,
-        mail_status="sent", mail_watch_from=now,
+        mail_status="sent", mail_watch_from=now, from_conversion=d.converted,
     )
     db.add(sub)
     await db.flush()
@@ -230,7 +235,8 @@ async def send_society_mail(
     )
     mb.last_checked_at, mb.last_error = now, None
     await log_activity(db, current.id, "society_mail_sent", "project", d.project.id,
-                       f"Emailed {d.episodes} to {society.name} ({join_emails(to)}) from {mb.email}. Subject: {subject}")
+                       f"Emailed {d.episodes}{' (converted cue sheets)' if d.converted else ''} to {society.name} "
+                       f"({join_emails(to)}) from {mb.email}. Subject: {subject}")
     await _notify_iprs_users(
         db, title=f"Sent to {society.name} — {d.project.title}",
         body=f"{d.episodes} emailed from {client.name} ({mb.email}) to {join_emails(to)} by {current.full_name}.",

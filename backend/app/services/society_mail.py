@@ -15,6 +15,7 @@ from app.models.society import Society
 from app.models.society_submission import SocietySubmission
 from app.models.user import User
 from app.services.bulk_exports import bulk_name, bulk_range, society_bulk, work_files_in_range
+from app.services.conversions import converted_bulk, conversions_in_range
 from app.services.exporters._common import XLSX_MEDIA_TYPE, safe_filename
 from app.services.work_files import build_work_file_bulk
 
@@ -99,6 +100,7 @@ class Draft:
     problems: list[str] = field(default_factory=list)
     already_sent: list[dict] = field(default_factory=list)
     work_files: int = 0
+    converted: bool = False  # the sheets come from Projects → Conversion, not from approved episodes
 
     @property
     def values(self) -> dict:
@@ -115,8 +117,10 @@ class Draft:
 
 
 async def make_draft(db: AsyncSession, project_id: int, from_ep: int, to_ep: int,
-                     client_id: int | None, society_id: int | None) -> Draft:
-    """Everything the email needs, plus the reasons it can't be sent yet (`problems`)."""
+                     client_id: int | None, society_id: int | None, converted: bool = False) -> Draft:
+    """Everything the email needs, plus the reasons it can't be sent yet (`problems`).
+
+    `converted`: send the sheets saved under Projects → Conversion instead of approved episodes."""
     proj = await db.get(Project, project_id)
     if not proj:
         raise HTTPException(404, "Serial or movie not found")
@@ -127,18 +131,27 @@ async def make_draft(db: AsyncSession, project_id: int, from_ep: int, to_ep: int
     mailbox = (await db.execute(
         select(ClientMailbox).where(ClientMailbox.client_id == client.id)
     )).scalar_one_or_none() if client else None
-    d = Draft(proj, from_ep, to_ep, client, mailbox, society, episodes_label(proj, from_ep, to_ep))
+    d = Draft(proj, from_ep, to_ep, client, mailbox, society, episodes_label(proj, from_ep, to_ep), converted=converted)
 
-    status = dict((await db.execute(
-        select(Episode.episode_number, Episode.status).where(
-            Episode.project_id == proj.id, Episode.episode_number.between(from_ep, to_ep))
-    )).all())
-    missing = [n for n in range(from_ep, to_ep + 1) if n not in status]
-    unapproved = sorted(n for n, s in status.items() if s != "approved")
-    if missing:
-        d.problems.append(f"No cue sheet yet for {_numbers(missing)}.")
-    if unapproved:
-        d.problems.append(f"Not approved yet: {_numbers(unapproved)}. Only approved episodes can be sent.")
+    if converted:
+        have = {c.episode_number for c in await conversions_in_range(db, proj.id, from_ep, to_ep)}
+        missing = [n for n in range(from_ep, to_ep + 1) if n not in have]
+        if missing:
+            d.problems.append(
+                "No converted cue sheet saved for this movie." if proj.type == ProjectType.MOVIE
+                else f"No converted cue sheet saved for {_numbers(missing)}."
+            )
+    else:
+        status = dict((await db.execute(
+            select(Episode.episode_number, Episode.status).where(
+                Episode.project_id == proj.id, Episode.episode_number.between(from_ep, to_ep))
+        )).all())
+        missing = [n for n in range(from_ep, to_ep + 1) if n not in status]
+        unapproved = sorted(n for n, s in status.items() if s != "approved")
+        if missing:
+            d.problems.append(f"No cue sheet yet for {_numbers(missing)}.")
+        if unapproved:
+            d.problems.append(f"Not approved yet: {_numbers(unapproved)}. Only approved episodes can be sent.")
 
     if not client:
         d.problems.append("Pick the client whose Gmail sends this email.")
@@ -156,7 +169,8 @@ async def make_draft(db: AsyncSession, project_id: int, from_ep: int, to_ep: int
     elif not split_emails(society.to_emails):
         d.problems.append(f"{society.name} has no email address. Add one under Societies.")
 
-    d.work_files = len(await work_files_in_range(db, proj.id, from_ep, to_ep))
+    # Work files belong to the editor workflow; a converted sheet has none.
+    d.work_files = 0 if converted else len(await work_files_in_range(db, proj.id, from_ep, to_ep))
 
     if society:
         earlier = (await db.execute(
@@ -185,6 +199,11 @@ async def make_draft(db: AsyncSession, project_id: int, from_ep: int, to_ep: int
 async def build_files(db: AsyncSession, d: Draft, kinds: list[str]) -> list[tuple[str, bytes]]:
     files: list[tuple[str, bytes]] = []
     sheets = [k for k in kinds if k != "workfile"]
+    if d.converted:
+        if "workfile" in kinds:
+            raise HTTPException(400, "Converted cue sheets have no work file. Untick Work file.")
+        convs = await conversions_in_range(db, d.project.id, d.from_ep, d.to_ep)
+        return [(d.filename(k), converted_bulk(k, d.project, convs)) for k in sheets]
     if sheets:
         proj, eps, total = await bulk_range(db, d.project.id, d.from_ep, d.to_ep)
         files += [(d.filename(k), society_bulk(k, proj, eps, total)) for k in sheets]
@@ -206,7 +225,7 @@ def build_message(d: Draft, to: list[str], cc: list[str], bcc: list[str], subjec
     if bcc:
         msg["Bcc"] = join_emails(bcc)  # Gmail delivers to these and drops the header
     msg["Subject"] = subject
-    # Lets a later reply/Sent-folder check match this email to its Submitted Cue entry.
+    # Lets a later reply/Sent-folder check match this email to its Submit Cue entry.
     msg["X-CueSync-Ref"] = f"project-{d.project.id};ep-{d.from_ep}-{d.to_ep};society-{d.society.id}"
     msg.set_content(body)
     maintype, subtype = XLSX_MEDIA_TYPE.split("/", 1)

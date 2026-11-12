@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle2, XCircle, MessageSquare, Download, Search, X,
   Layers, ChevronDown, FileDown, ChevronLeft, ChevronRight, Film,
-  Send, AlertCircle, Eye, Lock, Archive, Mail,
+  Send, AlertCircle, Eye, Lock, Archive, Mail, Repeat,
 } from "lucide-react";
 import { C, FONTS, alpha, T } from "../../styles/palette";
 import Select from "../../components/Select";
@@ -17,6 +17,7 @@ import SocietiesPanel from "../../components/SocietiesPanel";
 import SocietyMailModal from "../../components/SocietyMailModal";
 import SocietyDashboard from "../../components/SocietyDashboard";
 import ReviewerCalendar from "./ReviewerCalendar";
+import ConversionTab, { ConvertedSheets } from "../../components/ConversionPanel";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const PER_PAGE = 15;
@@ -514,6 +515,7 @@ function SerialDetail({ serial, onBack, onReview }) {
           { key: "all",      label: `All Episodes (${allEps.length})` },
           { key: "approved", label: `Approved (${approvedEps.length})` },
           { key: "society",  label: "Submitted to Society" },
+          { key: "converted", label: `Converted${serial.converted_count ? ` (${serial.converted_count})` : ""}` },
         ].map((t) => (
           <button key={t.key} onClick={() => setSubTab(t.key)}
             className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
@@ -525,7 +527,9 @@ function SerialDetail({ serial, onBack, onReview }) {
         ))}
       </div>
 
-      {subTab !== "society" && loading ? (
+      {subTab === "converted" ? (
+        <ConvertedSheets projectId={serial.project_id} projectTitle={serial.project_title} projectType="SERIAL" />
+      ) : subTab !== "society" && loading ? (
         <div className="py-10 text-center text-sm" style={{ color: C.sub }}>Loading episodes…</div>
       ) : (
         <>
@@ -710,6 +714,7 @@ function MovieDetail({ movie, onBack, onReview }) {
         {[
           { key: "approved", label: `Approved (${approvedEps.length})` },
           { key: "society",  label: "Submitted to Society" },
+          { key: "converted", label: "Converted" },
         ].map((t) => (
           <button key={t.key} onClick={() => setSubTab(t.key)}
             className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
@@ -721,7 +726,9 @@ function MovieDetail({ movie, onBack, onReview }) {
         ))}
       </div>
 
-      {loading ? (
+      {subTab === "converted" ? (
+        <ConvertedSheets projectId={movie.project_id} projectTitle={movie.project_title} projectType="MOVIE" />
+      ) : loading ? (
         <div className="py-10 text-center text-sm" style={{ color: C.sub }}>Loading…</div>
       ) : (
         <>
@@ -794,6 +801,18 @@ function MovieDetail({ movie, onBack, onReview }) {
   );
 }
 
+// Marks a serial / movie that has cue sheets saved under Projects → Conversion.
+function ConvertedChip({ count, movie }) {
+  if (!count) return null;
+  return (
+    <span className="px-2 py-0.5 rounded-full text-[0.625rem] font-semibold whitespace-nowrap"
+      title="Cue sheets converted from an uploaded IPRS, PRS or ASCAP file. Open the Converted tab to download or email them."
+      style={{ background: T.blueBg, color: T.blue }}>
+      {movie ? "Converted" : `${count} converted`}
+    </span>
+  );
+}
+
 // ── Projects list (Serials sub-tab) ────────────────────────────────────────────
 function SerialsSubTab({ onOpenSerial }) {
   const [serials, setSerials] = useState([]);
@@ -841,7 +860,7 @@ function SerialsSubTab({ onOpenSerial }) {
 
       {!loading && filtered.length === 0 && (
         <div className="py-10 text-center text-sm" style={{ color: C.sub }}>
-          No serials with submitted or approved episodes.
+          No serials with submitted, approved or converted episodes.
         </div>
       )}
 
@@ -871,6 +890,7 @@ function SerialsSubTab({ onOpenSerial }) {
                       <span className="font-semibold text-sm" style={{ color: C.dark }}>
                         {serial.project_title}
                       </span>
+                      <ConvertedChip count={serial.converted_count} />
                     </div>
                   </td>
                   <td className="px-5 py-3 text-center text-sm" style={{ color: C.sub }}>
@@ -962,7 +982,7 @@ function MoviesSubTab({ onOpenMovie }) {
 
       {!loading && filtered.length === 0 && (
         <div className="py-10 text-center text-sm" style={{ color: C.sub }}>
-          No movies with submitted or approved cue sheets.
+          No movies with submitted, approved or converted cue sheets.
         </div>
       )}
 
@@ -991,6 +1011,7 @@ function MoviesSubTab({ onOpenMovie }) {
                       <span className="font-semibold text-sm" style={{ color: C.dark }}>
                         {movie.project_title}
                       </span>
+                      <ConvertedChip count={movie.converted_count} movie />
                     </div>
                   </td>
                   <td className="px-5 py-3 text-center">
@@ -1032,7 +1053,7 @@ function MoviesSubTab({ onOpenMovie }) {
   );
 }
 
-// ── Projects tab (Serials + Movies) ───────────────────────────────────────────
+// ── Projects tab (Serials + Movies + Conversion) ──────────────────────────────
 function ProjectsTab({ onReviewEp }) {
   const [view, setView]         = useState("list");
   const [projTab, setProjTab]   = useState("serials");
@@ -1058,6 +1079,7 @@ function ProjectsTab({ onReviewEp }) {
         {[
           { key: "serials", label: "Serials", Icon: Layers },
           { key: "movies",  label: "Movies",  Icon: Film   },
+          { key: "conversion", label: "Conversion", Icon: Repeat },
         ].map(({ key, label, Icon }) => (
           <button key={key} onClick={() => setProjTab(key)}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
@@ -1071,6 +1093,7 @@ function ProjectsTab({ onReviewEp }) {
 
       {projTab === "serials" && <SerialsSubTab onOpenSerial={openSerial} />}
       {projTab === "movies"  && <MoviesSubTab  onOpenMovie={openMovie}   />}
+      {projTab === "conversion" && <ConversionTab />}
     </div>
   );
 }
@@ -1173,7 +1196,7 @@ function SentVia({ item }) {
   ].filter(Boolean).join("\n");
   return (
     <div className="flex items-center gap-1 text-[0.625rem] mt-0.5 cursor-help" style={{ color: T.blue }} title={details}>
-      <Mail className="w-3 h-3" /> Emailed from {item.mail_from}
+      <Mail className="w-3 h-3" /> Emailed from {item.mail_from}{item.from_conversion ? " · converted sheets" : ""}
     </div>
   );
 }
@@ -1381,7 +1404,7 @@ function ReviewerActivityTab() {
         <div className="rounded-xl border px-4 py-3 flex items-start gap-3" style={{ background: T.orangeBg, borderColor: T.amberBorder }}>
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: T.orange }} />
           <div className="text-sm" style={{ color: T.orangeDeep }}>
-            <strong>{stats.pending_iprs_submit} submission{stats.pending_iprs_submit !== 1 ? "s" : ""}</strong> {stats.pending_iprs_submit === 1 ? "has" : "have"} not been submitted to IPRS yet. Go to <em>Submitted Cue</em> tab to mark them.
+            <strong>{stats.pending_iprs_submit} submission{stats.pending_iprs_submit !== 1 ? "s" : ""}</strong> {stats.pending_iprs_submit === 1 ? "has" : "have"} not been submitted to IPRS yet. Go to <em>Submit Cue</em> tab to mark them.
           </div>
         </div>
       )}
@@ -1397,7 +1420,7 @@ function ReviewerActivityTab() {
   );
 }
 
-// ── Submitted Cue tab ─────────────────────────────────────────────────────────
+// ── Submit Cue tab ─────────────────────────────────────────────────────────
 function SubmittedCueTab() {
   const { pushToast } = useApp();
   const [serials, setSerials]         = useState([]);
@@ -1782,7 +1805,7 @@ export default function ReviewerDashboard() {
   const tabs = [
     { key: "dashboard",      label: "Dashboard", badge: attention },
     { key: "projects",       label: "Projects", badge: submitted.length },
-    { key: "submitted_cue",  label: "Submitted Cue" },
+    { key: "submitted_cue",  label: "Submit Cue" },
     { key: "clients",        label: "Clients" },
     { key: "societies",      label: "Societies" },
     { key: "activity",       label: "Activity Stats" },
@@ -1814,7 +1837,7 @@ export default function ReviewerDashboard() {
         <ProjectsTab onReviewEp={setReviewEp} />
       )}
 
-      {/* ── Submitted Cue ── */}
+      {/* ── Submit Cue ── */}
       {tab === "submitted_cue" && <SubmittedCueTab />}
 
       {/* ── Clients + Gmail connections ── */}
