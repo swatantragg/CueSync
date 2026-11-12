@@ -1,4 +1,4 @@
-export const APP_VERSION = "4.1.2";
+export const APP_VERSION = "4.2.0";
 
 // `roles`: who sees the entry in the What's New popup. Admins see every entry, so they can track each release.
 const ADMIN = [], WD = ["work_delegator"], REVIEWER = ["reviewer"], EDITOR = ["editor"];
@@ -6,6 +6,21 @@ const STAFF = ["work_delegator", "reviewer"];
 const ALL = ["work_delegator", "reviewer", "editor", "viewer"];
 
 export const CHANGELOG = [
+  {
+    version: "4.2.0", roles: REVIEWER,
+    title: "Conversion: one format in, all three out",
+    body: "Projects has a new Conversion tab. Pick Serial or Movie, choose the title from the list or add a new one, pick the client, and upload a finished cue sheet in IPRS, PRS or ASCAP format. CueSync works out which format it is, shows the episodes it found, and gives you the IPRS, PRS and ASCAP sheets.",
+  },
+  {
+    version: "4.2.0", roles: REVIEWER,
+    title: "Converted sheets are kept",
+    body: "Every conversion is saved under its serial or movie. Download any episode range again in one format or all three as a ZIP, from Conversion or from the new Converted tab of the serial or movie. Uploading an episode again replaces its earlier conversion.",
+  },
+  {
+    version: "4.2.0", roles: REVIEWER,
+    title: "Email converted sheets to a society",
+    body: "Send converted sheets from the client's Gmail to a society the same way as Submit Cue: you see and edit the email first, and it is recorded in Submit Cue with replies and bounces tracked.",
+  },
   {
     version: "4.1.2", roles: ALL,
     title: "Fits every screen",
@@ -139,12 +154,12 @@ export const CHANGELOG = [
   {
     version: "4.0.2", roles: REVIEWER,
     title: "Approved episodes only",
-    body: "In Submitted Cue the episode pickers list only approved episodes, mark the ones already sent to the chosen society, and stop a range at the first episode that isn't approved.",
+    body: "In Submit Cue the episode pickers list only approved episodes, mark the ones already sent to the chosen society, and stop a range at the first episode that isn't approved.",
   },
   {
     version: "4.0.1", roles: REVIEWER,
     title: "Send to Society by email",
-    body: "Submitted Cue → Preview Email sends the cue sheets from the client's connected Gmail to the society. Before sending you see the whole email — From, To, CC, BCC, subject, message and the attached IPRS / PRS / ASCAP / work file — and can change any of it.",
+    body: "Submit Cue → Preview Email sends the cue sheets from the client's connected Gmail to the society. Before sending you see the whole email — From, To, CC, BCC, subject, message and the attached IPRS / PRS / ASCAP / work file — and can change any of it.",
   },
   {
     version: "4.0.1", roles: REVIEWER,
@@ -154,7 +169,7 @@ export const CHANGELOG = [
   {
     version: "4.0.1", roles: REVIEWER,
     title: "Every entry has a real email",
-    body: "A Submitted Cue entry is created only after Gmail confirms the email was sent, and shows who sent it, from which mailbox and to whom. Episodes that are not approved, or were already sent to that society, can't be sent by mistake.",
+    body: "A Submit Cue entry is created only after Gmail confirms the email was sent, and shows who sent it, from which mailbox and to whom. Episodes that are not approved, or were already sent to that society, can't be sent by mistake.",
   },
   {
     version: "4.0.0", roles: STAFF,

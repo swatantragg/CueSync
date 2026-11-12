@@ -277,6 +277,35 @@ export const api = {
     return { workFiles: Number(res.headers.get("X-Work-Files") || 0), episodes: Number(res.headers.get("X-Episodes") || 0) };
   },
 
+  // ── Conversion: one of IPRS / PRS / ASCAP in, all three out ─────────────────
+  listConversions: () => request("/api/conversions/"),
+  projectConversions: (pid, societyId) => request(`/api/conversions/project/${pid}${societyId ? `?society_id=${societyId}` : ""}`),
+  createConversionProject: (payload) => request("/api/conversions/projects", { method: "POST", body: payload }),
+  previewConversion: (pid, file) => {
+    const fd = new FormData();
+    fd.append("project_id", pid);
+    fd.append("file", file);
+    return request("/api/conversions/preview", { method: "POST", form: fd });
+  },
+  // episodeNumbers: the sheets to save; titleConfirmed: the file is titled differently but belongs here.
+  saveConversion: (pid, clientId, file, episodeNumbers, titleConfirmed) => {
+    const fd = new FormData();
+    fd.append("project_id", pid);
+    fd.append("client_id", clientId);
+    fd.append("file", file);
+    fd.append("episode_numbers", JSON.stringify(episodeNumbers));
+    fd.append("title_confirmed", titleConfirmed ? "true" : "false");
+    return request("/api/conversions/", { method: "POST", form: fd });
+  },
+  deleteConversion: (id) => request(`/api/conversions/${id}`, { method: "DELETE" }),
+  // society: iprs | prs | ascap | all (ZIP). Resolves to how many converted episodes the file holds.
+  downloadConversion: async (pid, society, fromEp, toEp, filename) => {
+    const q = new URLSearchParams({ society });
+    if (fromEp && toEp) { q.set("from_ep", fromEp); q.set("to_ep", toEp); }
+    const res = await downloadFile(`/api/conversions/project/${pid}/download?${q}`, filename);
+    return Number(res.headers.get("X-Episodes") || 0);
+  },
+
   // ── Work files (Source 1 format, one per episode) ───────────────────────────
   listWorkFiles: (pid) => request(`/api/work-files/project/${pid}`),
   previewWorkFiles: (pid, files) => {

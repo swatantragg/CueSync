@@ -8,7 +8,7 @@ from app.core.database import Base, utcnow
 
 class DetectedMail(Base):
     """A cue sheet email found in a client's Sent folder that was not sent through CueSync.
-    A Reviewer confirms it (→ Submitted Cue entry) or dismisses it."""
+    A Reviewer confirms it (→ Submit Cue entry) or dismisses it."""
     __tablename__ = "detected_mails"
 
     id: Mapped[int]                  = mapped_column(Integer, primary_key=True)

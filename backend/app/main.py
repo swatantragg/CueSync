@@ -24,6 +24,7 @@ import app.models.detected_mail          # noqa: F401
 import app.models.user_mailbox           # noqa: F401
 import app.models.editor_notice          # noqa: F401
 import app.models.report_send            # noqa: F401
+import app.models.conversion             # noqa: F401
 from app.services.library_sync import (
     cleanup_contributor_duplicates,
     cleanup_cue_contributor_duplicates,
@@ -112,6 +113,8 @@ MIGRATIONS = [
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS bounce_reason TEXT",
     "UPDATE society_submissions SET mail_status = 'sent', mail_watch_from = mail_sent_at WHERE sent_via = 'gmail' AND mail_status IS NULL",
     "ALTER TABLE client_mailboxes ADD COLUMN IF NOT EXISTS last_sent_scan_at TIMESTAMPTZ",
+    # Conversion: the email carried sheets converted from an uploaded file, not approved episodes
+    "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS from_conversion BOOLEAN DEFAULT FALSE NOT NULL",
 ]
 
 # Users columns. Run in autocommit (not inside MIGRATIONS' shared transaction) because every

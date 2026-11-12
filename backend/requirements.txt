@@ -23,6 +23,7 @@ python-multipart>=0.0.19
 # Excel (Pillow lets openpyxl keep embedded images, e.g. the work-file logo)
 openpyxl>=3.1.5
 pillow>=11.0
+xlrd>=2.0.1  # Conversion reads old .xls cue sheets
 
 # Utils
 python-dotenv>=1.0

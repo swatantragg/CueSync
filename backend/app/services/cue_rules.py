@@ -97,7 +97,7 @@ def usage_code(usage_type, song_title: str | None = None) -> str:
     title = (song_title or "").strip().lower()
     haystack = f"{raw} {title}"
 
-    if raw in {"bi", "bv", "fi", "fv", "oi", "ci"}:
+    if raw in {"bi", "bv", "fi", "fv", "oi", "ci", "ov", "cv"}:  # ov / cv only come from converted IPRS sheets
         return raw.upper()
     if raw in {"background", "instrumental", "other"}:
         return "BI"

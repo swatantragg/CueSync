@@ -41,5 +41,6 @@ export const ACTION_LABEL = {
   society_mail_sent: "Emailed cue sheets to society", society_reply: "Society replied", society_bounce: "Society email bounced",
   mail_detected: "Found email sent outside CueSync", detected_confirm: "Confirmed email sent outside CueSync",
   detected_dismiss: "Dismissed email", reply_keep_waiting: "Kept waiting after reply",
+  conversion: "Converted cue sheets", conversion_project: "Added a title for Conversion", conversion_remove: "Removed a converted cue sheet",
   editor_notice: "Emailed an editor", user_mailbox_connect: "Connected own Gmail", user_mailbox_disconnect: "Disconnected own Gmail",
 };

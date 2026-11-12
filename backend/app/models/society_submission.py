@@ -43,6 +43,8 @@ class SocietySubmission(Base):
     gmail_message_id: Mapped[str | None] = mapped_column(String(100))
     gmail_thread_id: Mapped[str | None]  = mapped_column(String(100))
     mail_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The attachments were built from Conversion rows (Projects → Conversion), not from approved episodes.
+    from_conversion: Mapped[bool]        = mapped_column(Boolean, default=False, nullable=False, server_default="false")
 
     # What happened after sending, read from the client's Gmail thread by services/mail_sync.
     # mail_status: sent (awaiting the society) / replied / bounced / resent (a bounced email that was sent again)

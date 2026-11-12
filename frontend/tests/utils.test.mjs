@@ -17,6 +17,10 @@ test("audit actions added for Notify Editor have labels", () => {
   }
 });
 
+test("audit actions added for Conversion have labels", () => {
+  for (const a of ["conversion", "conversion_project", "conversion_remove"]) assert.ok(ACTION_LABEL[a], a);
+});
+
 test("dates tolerate empty and bad values", () => {
   assert.equal(fmtDateTime(null), "");
   assert.equal(fmtDateTime("not a date"), "not a date");

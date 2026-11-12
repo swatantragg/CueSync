@@ -12,11 +12,12 @@ from app.models.detected_mail import DetectedMail
 from app.models.user_mailbox import UserMailbox
 from app.models.editor_notice import EditorNotice
 from app.models.report_send import ReportSend
+from app.models.conversion import Conversion
 
 __all__ = [
     "User", "UserRole", "Project", "ProjectType", "Episode",
     "CueEntry", "Contributor", "UsageType",
     "SongLibrary", "ContributorLibrary", "AuditLog",
     "SocietySubmission", "WorkFile", "Client", "ClientMailbox", "Society", "DetectedMail",
-    "UserMailbox", "EditorNotice", "ReportSend",
+    "UserMailbox", "EditorNotice", "ReportSend", "Conversion",
 ]

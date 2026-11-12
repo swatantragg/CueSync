@@ -100,18 +100,27 @@ async def submitted_episodes(
     } for ep in rows]
 
 
+async def _converted_counts(db: AsyncSession) -> dict[int, int]:
+    """project id → cue sheets saved under Projects → Conversion."""
+    from app.models.conversion import Conversion
+    return dict((await db.execute(
+        select(Conversion.project_id, func.count()).group_by(Conversion.project_id)
+    )).all())
+
+
 @router.get("/reviewer-serials")
 async def reviewer_serials(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """All SERIAL projects that have at least one submitted or approved episode, with counts."""
+    """All SERIAL projects that have a submitted or approved episode or a converted cue sheet, with counts."""
     if current.role not in _REVIEWER_ROLES:
         raise HTTPException(403)
     from app.models.project import ProjectType
     projects = (await db.execute(
         select(Project).where(Project.type == ProjectType.SERIAL).order_by(Project.title)
     )).scalars().all()
+    converted_counts = await _converted_counts(db)
     result = []
     for proj in projects:
         eps = (await db.execute(
@@ -119,7 +128,8 @@ async def reviewer_serials(
         )).scalars().all()
         submitted = sum(1 for e in eps if e.status == "submitted")
         approved  = sum(1 for e in eps if e.status == "approved")
-        if submitted == 0 and approved == 0:
+        converted = converted_counts.get(proj.id, 0)
+        if submitted == 0 and approved == 0 and converted == 0:
             continue
         result.append({
             "project_id":      proj.id,
@@ -128,6 +138,7 @@ async def reviewer_serials(
             "total_episodes":  len(eps),
             "submitted_count": submitted,
             "approved_count":  approved,
+            "converted_count": converted,
         })
     return result
 
@@ -137,13 +148,14 @@ async def reviewer_movies(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """All MOVIE projects that have at least one submitted or approved episode, with counts."""
+    """All MOVIE projects that have a submitted or approved episode or a converted cue sheet, with counts."""
     if current.role not in _REVIEWER_ROLES:
         raise HTTPException(403)
     from app.models.project import ProjectType
     projects = (await db.execute(
         select(Project).where(Project.type == ProjectType.MOVIE).order_by(Project.title)
     )).scalars().all()
+    converted_counts = await _converted_counts(db)
     result = []
     for proj in projects:
         eps = (await db.execute(
@@ -151,7 +163,8 @@ async def reviewer_movies(
         )).scalars().all()
         submitted = sum(1 for e in eps if e.status == "submitted")
         approved  = sum(1 for e in eps if e.status == "approved")
-        if submitted == 0 and approved == 0:
+        converted = converted_counts.get(proj.id, 0)
+        if submitted == 0 and approved == 0 and converted == 0:
             continue
         result.append({
             "project_id":      proj.id,
@@ -160,6 +173,7 @@ async def reviewer_movies(
             "total_episodes":  len(eps),
             "submitted_count": submitted,
             "approved_count":  approved,
+            "converted_count": converted,
         })
     return result
 

@@ -33,7 +33,8 @@ test("each role sees only its own changes", () => {
 });
 
 test("admin sees everything in the release", () => {
-  assert.equal(whatsNewFor("admin", "4.1.1").length, CHANGELOG.filter((c) => c.version === "4.1.2").length);
+  assert.equal(whatsNewFor("admin", "4.1.2").length, CHANGELOG.filter((c) => c.version === APP_VERSION).length);
+  assert.equal(whatsNewFor("admin", "4.1.1").length, CHANGELOG.filter((c) => ["4.1.2", "4.2.0"].includes(c.version)).length);
 });
 
 test("a change for one role leaves other roles without a popup", () => {
@@ -43,6 +44,11 @@ test("a change for one role leaves other roles without a popup", () => {
     assert.deepEqual(whatsNewFor("reviewer", APP_VERSION), []);
     assert.deepEqual(titles("admin", APP_VERSION), ["Only editors"]);
   } finally { CHANGELOG.shift(); }
+});
+
+test("4.2.0 tells reviewers about Conversion and nobody else", () => {
+  assert.ok(titles("reviewer", "4.1.2").some((t) => t.startsWith("Conversion")));
+  for (const role of ["editor", "work_delegator", "viewer"]) assert.deepEqual(whatsNewFor(role, "4.1.2"), []);
 });
 
 test("first sign-in shows this release only, skipped releases catch up", () => {

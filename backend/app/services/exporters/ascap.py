@@ -42,7 +42,7 @@ _COL_WIDTHS = {
 # Exact separator from reference: 100 spaces between multiple composers.
 _SEP = " " * 100
 
-_ASCAP_USE = {"BI": "BI", "BV": "BV", "FI": "VI", "FV": "VV", "OI": "MT", "CI": "ET"}
+_ASCAP_USE = {"BI": "BI", "BV": "BV", "FI": "VI", "FV": "VV", "OI": "MT", "CI": "ET", "OV": "MT", "CV": "ET"}
 
 _USE_CODES = [
     "                *Use Codes: MT = Main Title      VI = Visual Instrumental    BV = Background Vocal",

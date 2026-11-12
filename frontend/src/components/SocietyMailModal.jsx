@@ -9,7 +9,8 @@ import { showAlert } from "./Dialog";
 /**
  * Send to Society: preview of the email from the client's Gmail to the society. Everything is
  * editable; nothing is recorded until Gmail confirms the email was sent.
- * `request` = { project_id, episode_from, episode_to, client_id, society_id }.
+ * `request` = { project_id, episode_from, episode_to, client_id, society_id, converted? }.
+ * `converted`: attach the sheets saved under Projects → Conversion instead of approved episodes.
  */
 export default function SocietyMailModal({ request, onClose, onSent }) {
   const [draft, setDraft]     = useState(null);
@@ -34,7 +35,10 @@ export default function SocietyMailModal({ request, onClose, onSent }) {
   const toggle = (key, on) => set({ attachments: on ? [...mail.attachments, key] : mail.attachments.filter((k) => k !== key) });
 
   const download = async (a) => {
-    try { await api.downloadBulkExport(request.project_id, a.key, request.episode_from, request.episode_to, a.filename); }
+    try {
+      if (request.converted) await api.downloadConversion(request.project_id, a.key, request.episode_from, request.episode_to, a.filename);
+      else await api.downloadBulkExport(request.project_id, a.key, request.episode_from, request.episode_to, a.filename);
+    }
     catch (ex) { await showAlert(ex.message, { title: "Download failed", variant: "error" }); }
   };
 
@@ -116,14 +120,16 @@ export default function SocietyMailModal({ request, onClose, onSent }) {
                 <textarea value={mail.body} onChange={(e) => set({ body: e.target.value })} rows={8} className={`${inp} resize-y`} style={inpStyle} />
               </div>
               <div>
-                <label className={label} style={{ color: C.muted }}>Attachments (made by CueSync for {draft.episodes})</label>
+                <label className={label} style={{ color: C.muted }}>
+                  Attachments ({draft.converted ? "converted by CueSync from the uploaded sheet" : "made by CueSync"} for {draft.episodes})
+                </label>
                 <div className="rounded-lg divide-y" style={{ border: `1px solid ${alpha(C.mint1, "33")}`, borderColor: alpha(C.mint1, "33") }}>
                   {draft.attachments.map((a) => (
                     <div key={a.key} className="flex items-center gap-3 px-3 py-2 text-sm" style={{ borderColor: alpha(C.mint1, "22"), opacity: a.available ? 1 : 0.5 }}>
                       <input type="checkbox" disabled={!a.available} checked={mail.attachments.includes(a.key)} onChange={(e) => toggle(a.key, e.target.checked)} />
                       <Paperclip className="w-3.5 h-3.5 shrink-0" style={{ color: C.muted }} />
                       <span style={{ color: C.mint4 }}>{a.filename}</span>
-                      <span className="text-xs" style={{ color: C.muted }}>{a.available ? a.label : `${a.label} — none uploaded`}</span>
+                      <span className="text-xs" style={{ color: C.muted }}>{a.available ? a.label : `${a.label} — ${draft.converted ? "not part of a conversion" : "none uploaded"}`}</span>
                       {a.available && (
                         <button type="button" onClick={() => download(a)} title="Download to check it"
                           className="ml-auto inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md hover:opacity-80" style={{ background: C.mid, color: C.mint4 }}>
@@ -151,7 +157,7 @@ export default function SocietyMailModal({ request, onClose, onSent }) {
 
         <div className="px-6 py-4 border-t flex items-center gap-3" style={{ borderColor: C.mid }}>
           <span className="text-xs" style={{ color: C.muted }}>
-            {draft && !blocked && (missing || (needsResend ? "Tick “Send again anyway” to send this range again." : "Recorded in Submitted Cue only after Gmail sends it."))}
+            {draft && !blocked && (missing || (needsResend ? "Tick “Send again anyway” to send this range again." : "Recorded in Submit Cue only after Gmail sends it."))}
           </span>
           <button type="button" onClick={onClose} className="ml-auto px-4 py-2 rounded-lg text-sm" style={{ color: C.muted }}>
             {blocked || error ? "Close" : "Cancel"}
