@@ -6,6 +6,7 @@ import { C, FONTS, alpha, T } from "../../styles/palette";
 import { api } from "../../utils/api";
 import { fmtDateTime } from "../../utils/format";
 import { WorkList } from "../../components/NotifyEditorModal";
+import FingerprintTasks from "../../components/FingerprintTasks";
 import { useApp } from "../../context/AppContext";
 import { Card, Empty, Kpi, LINE, NUM, PERIODS, TH, Toggle, niceTicks, plural } from "./AdminInsights";
 
@@ -346,6 +347,7 @@ export default function EditorInsights({ onOpenSerial }) {
     <div className="space-y-4">
       <RatingBanner rating={data.rating} label={data.periods.week.label} />
       <Notices notices={data.notices} onRead={markRead} />
+      <FingerprintTasks />
 
       <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
         <Kpi Icon={Layers} tone={C.sub} label="Allotted" value={t.allotted} sub={data.weekly_target ? `target ${data.weekly_target}/week` : "episodes"} />

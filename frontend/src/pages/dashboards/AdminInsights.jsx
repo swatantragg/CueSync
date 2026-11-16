@@ -5,6 +5,7 @@ import {
 import { C, FONTS, alpha, T } from "../../styles/palette";
 import Select from "../../components/Select";
 import NotifyEditorModal from "../../components/NotifyEditorModal";
+import NewWorkSummary from "../../components/NewWorkSummary";
 import { useApp } from "../../context/AppContext";
 import { api } from "../../utils/api";
 import { fmtDateTime, timeAgo } from "../../utils/format";
@@ -838,6 +839,8 @@ export default function AdminInsights({ navigate }) {
         <Kpi Icon={Mail} tone={k.bounced ? C.danger : C.sub} label="Emails to act on" value={k.society_replies + k.bounced}
           sub={`${plural(k.society_replies, "society reply", "society replies")} · ${k.bounced} bounced`} />
       </div>
+
+      <NewWorkSummary reloadKey={data.generated_at} onOpen={(focus) => navigate("newwork", { workFocus: focus })} />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <EditorsChart data={data} />

@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     REPORT_TIME: str = "09:00"           # 24-hour HH:MM in REPORT_TIMEZONE
     REPORT_TIMEZONE: str = "Asia/Kolkata"
 
+    # New Work tracking (services/new_works.py). An email from FINGERPRINT_SENDER arriving on FINGERPRINT_MAILBOX
+    # (connected once by an Admin, read-only) unlocks "Fingerprinting Completed" for the work it names.
+    FINGERPRINT_MAILBOX: str = "musicpublishing@joshuainc.in"
+    FINGERPRINT_SENDER: str = "vericast-help@bmat.com"
+    FINGERPRINT_SENDER_NAME: str = "BMAT Vericast Team"
+    NEW_WORK_REMINDER_DAYS: int = 5      # a pending step is chased again every this many days
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def parse_debug(cls, value):

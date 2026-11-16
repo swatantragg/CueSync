@@ -45,7 +45,8 @@ for r in app.routes:
 def url(path: str) -> str:
     return path.replace("{", "").replace("}", "").replace("user_id", "1").replace("project_id", "1").replace("episode_id", "1") \
         .replace("episode_number", "1").replace("target_1", "1").replace("editor_id", "1").replace("notice_id", "1").replace("sub_id", "1") \
-        .replace("eid", "1").replace("cid", "1").replace("pid", "1").replace("did", "1").replace("nid", "1").replace("sid", "1")
+        .replace("eid", "1").replace("cid", "1").replace("pid", "1").replace("did", "1").replace("nid", "1").replace("sid", "1") \
+        .replace("wid", "1")
 
 
 def test_route_inventory_is_not_empty():
@@ -101,6 +102,15 @@ SENSITIVE = {
     ("POST", "/api/editor-notices/send"): {"admin", "work_delegator"},
     ("GET", "/api/editor-notices/preview/{editor_id}"): {"admin", "work_delegator"},
     ("POST", "/api/delegations/"): {"admin", "work_delegator"},
+    ("GET", "/api/new-works/"): {"admin", "work_delegator"},
+    ("POST", "/api/new-works/"): {"admin", "work_delegator"},
+    ("GET", "/api/new-works/activity"): {"admin", "work_delegator"},
+    ("POST", "/api/new-works/{wid}/skip"): {"admin", "work_delegator"},
+    ("POST", "/api/new-works/{wid}/fingerprint/assign"): {"admin", "work_delegator"},
+    ("POST", "/api/new-works/{wid}/cue/allot"): {"admin", "work_delegator"},
+    ("POST", "/api/new-works/mail/connect"): {"admin"},
+    ("DELETE", "/api/new-works/mail"): {"admin"},
+    ("DELETE", "/api/new-works/{wid}"): {"admin"},
     ("GET", "/api/insights/editor-dashboard"): {"editor"},
 }
 

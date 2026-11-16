@@ -12,6 +12,7 @@ from app.core.database import get_db, utcnow
 from app.core.deps import require_roles
 from app.models.client import ClientMailbox
 from app.models.editor_notice import EditorNotice
+from app.models.new_work import SystemMailbox
 from app.models.notification import Notification
 from app.models.user import User, UserRole
 from app.models.user_mailbox import UserMailbox
@@ -74,7 +75,8 @@ async def disconnect_my_mailbox(db: AsyncSession = Depends(get_db), current: Use
     if not mb:
         raise HTTPException(404, "Your Gmail is not connected.")
     # Revoking is per Google account, so it would cut off a client connection on the same address.
-    clients = (await db.execute(select(ClientMailbox.email))).scalars().all()
+    clients = list((await db.execute(select(ClientMailbox.email))).scalars().all())
+    clients += (await db.execute(select(SystemMailbox.email))).scalars().all()
     if not any(gmail.same_address(e, mb.email) for e in clients) and not gmail.missing_config():
         try:
             await gmail.revoke(gmail.decrypt_token(mb.refresh_token_enc))

@@ -441,7 +441,8 @@ export default function EditorDashboard() {
   const [tab, setTab] = useState("dashboard");
 
   const feedbackUnread = notifications.filter((n) => !n.is_read && n.entity_type === "episode").length;
-  const emailsUnread = notifications.filter((n) => !n.is_read && n.entity_type === "editor_notice").length;
+  // Emails from the Work Delegator, plus fingerprinting assigned or chased: all of it sits on the Dashboard.
+  const emailsUnread = notifications.filter((n) => !n.is_read && ["editor_notice", "new_work", "new_work_reminder"].includes(n.entity_type)).length;
 
   const tabs = [
     { key: "dashboard", label: "Dashboard", badge: emailsUnread },

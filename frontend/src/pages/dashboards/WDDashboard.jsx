@@ -14,9 +14,14 @@ import { fmtDateTime, timeAgo } from "../../utils/format";
 import { showAlert, showConfirm } from "../../components/Dialog";
 import Timeline from "../../components/Timeline";
 import NotifyEditorModal from "../../components/NotifyEditorModal";
+import NewWorkModal from "../../components/NewWorkModal";
+import NewWorkPanel from "../../components/NewWorkPanel";
+import NewWorkSummary from "../../components/NewWorkSummary";
 import { useApp } from "../../context/AppContext";
 
 const WORK_TYPES = ["TV Cue Sheet", "Movie Cue Sheet", "Album", "Other"];
+// A new TV serial or movie starts on the New Work List (BGM → fingerprinting → cue sheet work), not here.
+const TRACKED_TYPES = ["TV Cue Sheet", "Movie Cue Sheet"];
 const STATUSES = ["pending", "in_progress", "completed"];
 const STATUS_STYLE = {
   pending:     { bg: T.orangeBg, color: T.orange, label: "Pending" },
@@ -38,7 +43,7 @@ function StatusBadge({ status }) {
 const KEEP_OLD_CLIENT = "__keep__";
 
 // ─── Delegation form ──────────────────────────────────────────────────────────
-function DelegationForm({ editors, onSave, onClose, initial = null }) {
+function DelegationForm({ editors, onSave, onClose, onNewWork, initial = null }) {
   const [form, setForm] = useState({
     serial_name:  initial?.serial_name  || "",
     work_type:    initial?.work_type    || "TV Cue Sheet",
@@ -61,6 +66,8 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
   useEffect(() => { api.listClients().then(setClients).catch(() => {}); }, []);
 
   const clientOptions = clients.filter((c) => c.is_active || c.id === initial?.client_id);
+  const needsNewWork = !initial && isNewSerial && !!form.serial_name.trim() && TRACKED_TYPES.includes(form.work_type);
+  const toNewWork = () => onNewWork({ title: form.serial_name.trim(), work_type: form.work_type === "Movie Cue Sheet" ? "movie" : "tv_show" });
 
   const searchProjects = async (q) => {
     if (!q.trim()) { setSuggestions([]); setShowSuggest(false); setIsNewSerial(false); return; }
@@ -74,6 +81,7 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (needsNewWork) { toNewWork(); return; }
     if (!form.serial_name.trim() || !form.assigned_to) {
       await showAlert("Serial name and assigned editor are required.", { variant: "warn" });
       return;
@@ -124,9 +132,15 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
                 ))}
               </div>
             )}
-            {isNewSerial && !showSuggest && form.serial_name.trim() && (
+            {needsNewWork && !showSuggest && (
+              <div className="mt-1.5 text-xs px-3 py-2 rounded-lg" style={{ background: T.orangeBg, color: T.orange }}>
+                <b>New serial or movie.</b> It starts under New Work, where BGM received and fingerprinting are tracked first;
+                the cue sheet work is allotted at its third step. New Delegation is for more work on a title that already exists.
+              </div>
+            )}
+            {isNewSerial && !needsNewWork && !showSuggest && form.serial_name.trim() && !initial && (
               <div className="mt-1.5 flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg w-fit" style={{ background: T.orangeBg, color: T.orange }}>
-                <Plus className="w-3 h-3" /> New serial — will be auto-created
+                <Plus className="w-3 h-3" /> New title — will be auto-created
               </div>
             )}
           </div>
@@ -202,7 +216,7 @@ function DelegationForm({ editors, onSave, onClose, initial = null }) {
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm" style={{ color: C.muted }}>Cancel</button>
             <button type="submit" disabled={saving} className="px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50" style={{ background: C.mint1, color: C.dark }}>
-              {saving ? "Saving…" : "Save"}
+              {saving ? "Saving…" : needsNewWork ? "Add under New Work" : "Save"}
             </button>
           </div>
         </form>
@@ -1208,6 +1222,10 @@ export default function WDDashboard() {
   const [loading, setLoading]         = useState(true);
   const [projectSubTab, setProjectSubTab] = useState("serial");
   const [reloadKey, setReloadKey]     = useState(0);   // refreshes the dashboard numbers after a change
+  const [workModal, setWorkModal]     = useState(null); // New Work pop-up: { id } opens a work, { initial } adds one
+  const [workFocus, setWorkFocus]     = useState(null); // filter a dashboard tile asked the New Work tab for
+  const [workKey, setWorkKey]         = useState(0);    // refreshes everything New Work after a change
+  const [workDue, setWorkDue]         = useState(0);    // reminders due, for the tab badge
 
   useEffect(() => {
     Promise.all([api.listDelegations(), api.listEditors()])
@@ -1217,6 +1235,17 @@ export default function WDDashboard() {
   }, []);
 
   const changed = () => setReloadKey((k) => k + 1);
+
+  useEffect(() => { api.newWorkSummary().then((d) => setWorkDue(d.summary.reminders)).catch(() => {}); }, [workKey]);
+  // Allotting cue sheet work from a new work makes (or changes) a delegation, so the delegation lists follow.
+  const workChanged = (kind) => {
+    setWorkKey((k) => k + 1);
+    if (kind !== "allot") return;
+    api.listDelegations().then(setDelegations).catch(() => {});
+    fetchNotifications({ silent: true });
+    changed();
+  };
+  const openWorks = (focus) => { setWorkFocus({ ...focus }); setTab("newwork"); };
 
   // The server also stores this as a notification, so refresh silently (no duplicate popup).
   const announceAllocation = (d) => {
@@ -1235,6 +1264,7 @@ export default function WDDashboard() {
     setDelegations((prev) => prev.map((x) => (x.id === d.id ? d : x)));
     if (reassigned) announceAllocation(d);
     changed();
+    setWorkKey((k) => k + 1);
   };
   const handleDelete = async (id) => {
     const ok = await showConfirm("Delete this delegation?", { variant: "danger", confirmLabel: "Delete" });
@@ -1242,15 +1272,18 @@ export default function WDDashboard() {
     await api.deleteDelegation(id);
     setDelegations((prev) => prev.filter((x) => x.id !== id));
     changed();
+    setWorkKey((k) => k + 1);
   };
   const handleStatusChange = async (id, status) => {
     const d = await api.updateDelegation(id, { status });
     setDelegations((prev) => prev.map((x) => (x.id === d.id ? d : x)));
     changed();
+    setWorkKey((k) => k + 1);
   };
 
   const tabs = [
     { key: "dashboard",    label: "Dashboard" },
+    { key: "newwork",      label: "New Work", badge: workDue },
     { key: "serials",      label: "Projects" },
     { key: "activity",     label: "Editor Activity" },
     { key: "clients",      label: "Clients" },
@@ -1260,28 +1293,44 @@ export default function WDDashboard() {
   return (
     <DashboardShell title="Work Delegation" subtitle="Assign and track editor workload" tabs={tabs} activeTab={tab} onTab={setTab}
       actions={(
-        <button onClick={() => { setEditTarget(null); setShowForm(true); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90"
-          style={{ background: C.dark, color: C.mint4 }}>
-          <Plus className="w-4 h-4" />New Delegation
-        </button>
+        <>
+          <button onClick={() => setWorkModal({})} title="A new movie or TV show: BGM received, fingerprinting, then cue sheet work"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90"
+            style={{ background: C.dark, color: C.mint4 }}>
+            <Plus className="w-4 h-4" />New Work
+          </button>
+          <button onClick={() => { setEditTarget(null); setShowForm(true); }} title="More work on a serial or movie that already exists"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border hover:opacity-90"
+            style={{ background: C.white, color: C.dark, borderColor: alpha(C.mint1, "88") }}>
+            <Plus className="w-4 h-4" />New Delegation
+          </button>
+        </>
       )}>
       {showForm && (
         <DelegationForm
           editors={editors} initial={editTarget}
           onSave={editTarget ? handleUpdate : handleCreate}
           onClose={() => { setShowForm(false); setEditTarget(null); }}
+          onNewWork={(initial) => { setShowForm(false); setEditTarget(null); setWorkModal({ initial }); }}
         />
+      )}
+      {workModal && (
+        <NewWorkModal workId={workModal.id} initial={workModal.initial} onClose={() => setWorkModal(null)} onChanged={workChanged} />
       )}
 
       {tab === "dashboard" && (
         <div className="space-y-4">
           <WDInsights reloadKey={reloadKey} onProjects={(type) => { setProjectSubTab(type); setTab("serials"); }} />
+          <NewWorkSummary reloadKey={workKey} onOpen={openWorks} />
           <EditorWork editors={editors} delegations={delegations} loading={loading}
             onEdit={(d) => { setEditTarget(d); setShowForm(true); }}
             onDelete={handleDelete} onStatus={handleStatusChange} />
           <QuarterCalendar reloadKey={reloadKey} />
         </div>
+      )}
+
+      {tab === "newwork" && (
+        <NewWorkPanel reloadKey={workKey} focus={workFocus} onOpen={(id) => setWorkModal({ id })} onAdd={() => setWorkModal({})} />
       )}
 
       {tab === "serials" && (() => {
@@ -1304,6 +1353,7 @@ export default function WDDashboard() {
               showCreateBtn
               filterProjectIds={projectSubTab === "movie" ? movieProjIds : serialProjIds}
               projectType={projectSubTab}
+              onCreate={() => setWorkModal({ initial: { work_type: projectSubTab === "movie" ? "movie" : "tv_show" } })}
             />
           </div>
         );

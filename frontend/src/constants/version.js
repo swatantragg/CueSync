@@ -1,4 +1,4 @@
-export const APP_VERSION = "4.2.0";
+export const APP_VERSION = "4.3.0";
 
 // `roles`: who sees the entry in the What's New popup. Admins see every entry, so they can track each release.
 const ADMIN = [], WD = ["work_delegator"], REVIEWER = ["reviewer"], EDITOR = ["editor"];
@@ -6,6 +6,41 @@ const STAFF = ["work_delegator", "reviewer"];
 const ALL = ["work_delegator", "reviewer", "editor", "viewer"];
 
 export const CHANGELOG = [
+  {
+    version: "4.3.0", roles: WD,
+    title: "New Work List",
+    body: "Add a new movie or TV show the moment you get its name, even before the BGM arrives. The New Work tab lists every one with its work type, date added, BGM received, fingerprinting, cue sheet work, current status, days pending and remarks, and filters by work type, assigned person, status and pending time.",
+  },
+  {
+    version: "4.3.0", roles: WD,
+    title: "A new serial or movie is now three steps",
+    body: "New Work opens the steps: 1 BGM received (tick the box, the date is saved), 2 Fingerprinting (pick the editor from the list), 3 Cue sheet work (the usual allotment). Each step stays locked until the one before it is completed. You can skip a step, but you must say why. New Delegation stays for more work on a title that already exists.",
+  },
+  {
+    version: "4.3.0", roles: WD,
+    title: "Fingerprinting waits for the BMAT email",
+    body: "The Fingerprinting Completed box is enabled when BMAT Vericast Team emails musicpublishing@joshuainc.in about that title. If no email came, type where the fingerprinting came from and the box is enabled; that is saved as a manual entry. An Admin connects the mailbox once under New Work → BMAT emails.",
+  },
+  {
+    version: "4.3.0", roles: WD,
+    title: "Reminders every 5 days",
+    body: "A step left waiting is chased every 5 days until it is done: BGM not received, fingerprinting pending, cue sheet work not allotted. Works still not allotted 15 and 30 days after they were added are flagged. Reminders are under New Work → Reminders and in the bell's new Reminders tab, and stop by themselves.",
+  },
+  {
+    version: "4.3.0", roles: WD,
+    title: "New work on your Dashboard and weekly report",
+    body: "Your Dashboard shows the New Work numbers above Editors and their serials: total added, awaiting BGM, BGM received, fingerprinting not assigned, in progress and completed, cue sheet allocation pending and in progress, completed works, and works pending over 15 and 30 days. The weekly report carries the same numbers and the works to follow up. Every step, manual or automatic, is in New Work → Tracking log.",
+  },
+  {
+    version: "4.3.0", roles: ADMIN,
+    title: "New Work for admins",
+    body: "The Admin Dashboard shows the same New Work numbers, there is a New Work tab with the list, reminders and tracking log, and the admin weekly report includes them. Connect musicpublishing@joshuainc.in under New Work → BMAT emails (read-only) so CueSync can see the BMAT Vericast emails.",
+  },
+  {
+    version: "4.3.0", roles: EDITOR,
+    title: "Fingerprinting assigned to you",
+    body: "Fingerprinting a Work Delegator assigns to you now appears on your Dashboard. Set it to In progress, and tick Fingerprinting Completed once the BMAT Vericast email has arrived. If no email came, type where the fingerprinting came from to enable the box.",
+  },
   {
     version: "4.2.0", roles: REVIEWER,
     title: "Conversion: one format in, all three out",

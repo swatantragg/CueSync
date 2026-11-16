@@ -43,4 +43,12 @@ export const ACTION_LABEL = {
   detected_dismiss: "Dismissed email", reply_keep_waiting: "Kept waiting after reply",
   conversion: "Converted cue sheets", conversion_project: "Added a title for Conversion", conversion_remove: "Removed a converted cue sheet",
   editor_notice: "Emailed an editor", user_mailbox_connect: "Connected own Gmail", user_mailbox_disconnect: "Disconnected own Gmail",
+  new_work_add: "Added to the New Work List", new_work_edit: "Edited a new work", new_work_remove: "Removed a new work",
+  new_work_bgm: "BGM received", new_work_skip: "Skipped a step", new_work_reopen: "Reopened a step",
+  new_work_fp_assign: "Assigned fingerprinting", new_work_fp_status: "Fingerprinting status changed",
+  new_work_fp_mail: "Fingerprinting email received", new_work_fp_mail_link: "Fingerprinting email linked by hand",
+  new_work_fp_done: "Fingerprinting completed", new_work_cue_assign: "Allotted cue sheet work",
+  new_work_cue_status: "Cue sheet status changed", new_work_cue_removed: "Cue sheet allotment removed",
+  new_work_reminder: "Reminder sent", fp_mailbox_connect: "Connected the fingerprinting mailbox",
+  fp_mailbox_disconnect: "Disconnected the fingerprinting mailbox", fp_mailbox_lost: "Fingerprinting mailbox needs reconnecting",
 };

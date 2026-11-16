@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.models.user_mailbox import UserMailbox
-from app.services import insights
+from app.services import insights, new_works
 
 
 @dataclass
@@ -46,8 +46,15 @@ async def make_draft(db: AsyncSession, sender: User, editor: User, period: str) 
         lines += [f"This needs your attention ({p.label}):"] + [f"- {r}" for r in rating["reasons"]] + [""]
     if t["overdue"]:
         lines += [f"{t['overdue']} episode{' is' if t['overdue'] == 1 else 's are'} past the due date. Please finish {'it' if t['overdue'] == 1 else 'them'} first.", ""]
+    fingerprinting = (await new_works.report_data(db))["fingerprint_by_editor"].get(editor.id, [])
     lines += ["Please complete the pending work listed below and submit it for review." if left
-              else "You have nothing pending right now.", "", "Regards,", sender.full_name]
+              else "You have nothing pending right now." if not fingerprinting else "You have no cue sheet work pending right now."]
+    if fingerprinting:
+        lines += ["", "Fingerprinting assigned to you is still open:"] + [
+            f"- {r['title']} ({r['work_type_label']}): assigned {new_works.ago(r['fingerprint']['assigned_days'] or 0)}, "
+            + ("in progress" if r["fingerprint"]["status"] == "in_progress" else "not started yet")
+            for r in fingerprinting]
+    lines += ["", "Regards,", sender.full_name]
     return Draft(editor, rating["reasons"], work, p.label, subject, "\n".join(lines))
 
 

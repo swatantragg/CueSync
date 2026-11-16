@@ -45,6 +45,11 @@ services:
       REPORT_DAY: ${REPORT_DAY:-monday}
       REPORT_TIME: ${REPORT_TIME:-09:00}
       REPORT_TIMEZONE: ${REPORT_TIMEZONE:-Asia/Kolkata}
+      # New Work: the BMAT Vericast email on this mailbox unlocks "Fingerprinting Completed" — see backend/.env.example
+      FINGERPRINT_MAILBOX: ${FINGERPRINT_MAILBOX:-musicpublishing@joshuainc.in}
+      FINGERPRINT_SENDER: ${FINGERPRINT_SENDER:-vericast-help@bmat.com}
+      FINGERPRINT_SENDER_NAME: ${FINGERPRINT_SENDER_NAME:-BMAT Vericast Team}
+      NEW_WORK_REMINDER_DAYS: ${NEW_WORK_REMINDER_DAYS:-5}
     depends_on:
       redis:
         condition: service_healthy

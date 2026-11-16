@@ -15,6 +15,11 @@ const DOT = {
   society_reply: T.purple2, society_bounce: T.red, mail_detected: T.orange, detected_confirm: T.green,
   detected_dismiss: T.grayMid, reply_keep_waiting: T.blue,
   editor_notice: T.orange, user_mailbox_connect: T.green, user_mailbox_disconnect: T.grayMid,
+  new_work_add: T.teal, new_work_edit: T.blue, new_work_remove: T.red, new_work_bgm: T.green, new_work_skip: T.grayMid,
+  new_work_reopen: T.orange, new_work_fp_assign: T.purple, new_work_fp_status: T.purple2, new_work_fp_mail: T.teal,
+  new_work_fp_mail_link: T.blue, new_work_fp_done: T.green, new_work_cue_assign: T.blue, new_work_cue_status: T.blue,
+  new_work_cue_removed: T.red, new_work_reminder: T.orange, fp_mailbox_connect: T.green, fp_mailbox_disconnect: T.grayMid,
+  fp_mailbox_lost: T.orange,
 };
 
 // Detail prefixes that only repeat the action title ("Rejected — note" → "note").

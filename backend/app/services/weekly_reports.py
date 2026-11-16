@@ -19,7 +19,7 @@ from app.models.detected_mail import DetectedMail
 from app.models.editor_notice import EditorNotice
 from app.models.report_send import ReportSend
 from app.models.user import User, UserRole
-from app.services import brevo, insights
+from app.services import brevo, insights, new_works
 from app.services.insights import _Data, _sent_at, _sub_episodes
 
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
@@ -142,6 +142,13 @@ class Doc:
                          f'<tr>{head}</tr>{body}</table>')
         self.lines += [" | ".join(f"{h}: {v}" for h, v in zip(headers, row)) for row in rows] + [""]
 
+    def heading(self, title: str, note: str | None = None) -> None:
+        self.body.append(f'<h3 style="font-size:15px;color:{DARK};margin:20px 0 4px;">{html.escape(title)}</h3>')
+        self.lines.append(title.upper())
+        if note:
+            self.body.append(f'<div style="font-size:12px;color:{SUB};margin-bottom:8px;">{html.escape(note)}</div>')
+            self.lines.append(note)
+
     def para(self, text: str) -> None:
         self.body.append(f'<p style="font-size:13px;color:{DARK};margin:12px 0;">{html.escape(text)}</p>')
         self.lines += [text, ""]
@@ -209,6 +216,7 @@ class Ctx:
             select(Client.name, ClientMailbox.email).join(ClientMailbox, ClientMailbox.client_id == Client.id)
             .where(ClientMailbox.status != "connected")
         )).all()
+        self.new_work = await new_works.report_data(db)
         return self
 
     def project_title(self, pid: int) -> str:
@@ -242,6 +250,51 @@ def _pending_table(doc: Doc, rows: list[dict]) -> None:
             doc.para(f"{r['title']}: {eps}")
 
 
+def _days(n: int | None) -> str:
+    return "—" if n is None else "today" if n == 0 else "1 day" if n == 1 else f"{n} days"
+
+
+def _new_work_section(doc: Doc, nw: dict) -> None:
+    """Work Delegator and Admin: the New Work numbers from their Dashboard, and the works still to be chased."""
+    s = nw["summary"]
+    if not s["total"]:
+        return
+
+    def more(n: int, text: str) -> str | None:
+        return f"{n} more {text}" if n else None
+
+    doc.heading("New work tracking", "New movies and TV shows, as they stand today: BGM received, fingerprinting, then cue sheet work.")
+    doc.kpis([
+        ("Total new works added", s["total"], f"{s['movies']} movies, {s['tv_shows']} TV shows"),
+        ("Awaiting BGM", s["awaiting_bgm"]),
+        ("BGM received", s["bgm_received"], more(s["bgm_skipped"], "skipped this step")),
+        ("Fingerprinting not assigned", s["fp_not_assigned"]),
+        ("Fingerprinting in progress", s["fp_in_progress"], more(s["fp_assigned"], "assigned, not started")),
+        ("Fingerprinting completed", s["fp_completed"], more(s["fp_skipped"], "skipped this step")),
+        ("Cue sheet allocation pending", s["cue_pending"]),
+        ("Cue sheet in progress", s["cue_in_progress"], more(s["cue_assigned"], "assigned, not started")),
+        ("Completed works", s["completed"], more(s["closed"], "closed without a cue sheet")),
+        ("Pending over 15 days", s["pending_15"], "since added, cue sheet work not allotted"),
+        ("Pending over 30 days", s["pending_30"], "since added, cue sheet work not allotted"),
+    ])
+    rows = nw["pending"]
+    doc.table(f"New works to follow up (longest pending {WAITING_LIST})" if len(rows) > WAITING_LIST else "New works to follow up",
+              ["Movie / TV show", "Type", "Status", "At this step", "Since added", "Fingerprinting by"],
+              [[r["title"], r["work_type_label"], r["stage_label"], _days(r["days_in_stage"]), _days(r["days_open"]),
+                r["fingerprint"]["assigned_to_name"] or "—"] for r in rows[:WAITING_LIST]],
+              empty="Every new work has its cue sheet work allotted.",
+              note=f"{len(rows)} in total. " * (len(rows) > WAITING_LIST)
+                   + f"A reminder goes out every {settings.NEW_WORK_REMINDER_DAYS} days while a step is waiting, and at 15 and 30 days since the work was added.")
+
+
+def _fingerprint_table(doc: Doc, rows: list[dict]) -> None:
+    """Editor: the fingerprinting assigned to them that is still open."""
+    doc.table("Fingerprinting assigned to you", ["Movie / TV show", "Type", "Status", "Assigned", f"{settings.FINGERPRINT_SENDER_NAME} email"],
+              [[r["title"], r["work_type_label"], r["fingerprint"]["status_label"], new_works.ago(r["fingerprint"]["assigned_days"] or 0),
+                "Received" if r["fingerprint"]["mail"] else "Not yet"] for r in rows],
+              note="Mark it completed on your Dashboard once the email has arrived, or say there where the fingerprinting came from.")
+
+
 # ── the four reports ───────────────────────────────────────────────────────────
 def editor_report(c: Ctx, u: User) -> Report:
     d = c.d
@@ -263,10 +316,13 @@ def editor_report(c: Ctx, u: User) -> Report:
     target = sum(r["week_target"] or 0 for r in rows)
     if target:
         doc.para(f"Your weekly target: {target} episode{'' if target == 1 else 's'} approved.")
-    if rating["key"] == "none" and not pending:
+    fingerprinting = c.new_work["fingerprint_by_editor"].get(u.id, [])
+    if rating["key"] == "none" and not pending and not fingerprinting:
         doc.para("No work is allotted to you right now.")
-    else:
+    elif rating["key"] != "none" or pending:
         _pending_table(doc, pending)
+    if fingerprinting:
+        _fingerprint_table(doc, fingerprinting)
     notes = [(r["title"], n) for r in pending for n in r["notes"]]
     if notes:
         doc.table("Reviewer notes to act on", ["Serial", "Episode", "Note"], [[t, f"Ep {n['episode']}", n["note"]] for t, n in notes])
@@ -282,6 +338,7 @@ def wd_report(c: Ctx, u: User) -> Report:
     if not mine:
         doc = Doc(f"Your allotted work, {u.full_name.split()[0]}", c.week.label)
         doc.para("You have no work allotted to editors right now, so there is nothing to track this week.")
+        _new_work_section(doc, c.new_work)
         return doc.render("Your CueSync week: no work allotted")
     approved_week = {(d.ep_by_id[e][0], d.ep_by_id[e][1]) for e in c.approved_in(c.week) if e in d.ep_by_id}
 
@@ -345,6 +402,7 @@ def wd_report(c: Ctx, u: User) -> Report:
     if needs:
         doc.table("Needs attention", ["Editor", "Why"], [[r["name"], "; ".join(r["flags"])] for r in needs],
                   note="Use Notify on your Dashboard to email them the list of pending work.")
+    _new_work_section(doc, c.new_work)
     return doc.render(f"Your CueSync week: {totals['received']} received · {totals['sent']} submitted · {totals['pending']} pending")
 
 
@@ -443,6 +501,7 @@ def admin_report(c: Ctx, u: User) -> Report:
               empty="No client work yet.")
     attention = [[r["name"], "Editor", "; ".join(r["flags"])] for r in c.weak_editors] + [[r["name"], "Reviewer", "; ".join(r["flags"])] for r in c.weak_reviewers]
     doc.table("Needs attention", ["Name", "Role", "Why"], attention, empty="Everyone is on track.")
+    _new_work_section(doc, c.new_work)
     if c.notices:
         doc.table("Emails to editors about pending work", ["To", "From", "Subject", "Date"],
                   [[d.name(n.editor_id), n.sent_by_name, n.subject, _when(n.sent_at)] for n in c.notices])

@@ -191,6 +191,30 @@ export const api = {
   markSubmittedToIprs: (id) => request(`/api/society-submissions/${id}/submit-to-iprs`, { method: "POST" }),
   markAcceptedByIprs: (id) => request(`/api/society-submissions/${id}/accept-iprs`, { method: "POST" }),
 
+  // ── New Work List: BGM received → fingerprinting → cue sheet work ───────────
+  listNewWorks: () => request("/api/new-works/"),
+  newWorkSummary: () => request("/api/new-works/summary"),
+  myFingerprinting: () => request("/api/new-works/mine"),
+  newWorkActivity: () => request("/api/new-works/activity"),
+  getNewWork: (id) => request(`/api/new-works/${id}`),
+  createNewWork: (payload) => request("/api/new-works/", { method: "POST", body: payload }),
+  updateNewWork: (id, payload) => request(`/api/new-works/${id}`, { method: "PUT", body: payload }),
+  deleteNewWork: (id) => request(`/api/new-works/${id}`, { method: "DELETE" }),
+  newWorkBgm: (id, received) => request(`/api/new-works/${id}/bgm`, { method: "POST", body: { received } }),
+  newWorkSkip: (id, step, reason) => request(`/api/new-works/${id}/skip`, { method: "POST", body: { step, reason } }),
+  newWorkReopen: (id, step) => request(`/api/new-works/${id}/reopen`, { method: "POST", body: { step } }),
+  newWorkAssignFingerprint: (id, assigned_to) => request(`/api/new-works/${id}/fingerprint/assign`, { method: "POST", body: { assigned_to } }),
+  newWorkFingerprintStatus: (id, status) => request(`/api/new-works/${id}/fingerprint/status`, { method: "POST", body: { status } }),
+  // sourceNote: where the fingerprinting came from, when the service's email never arrived.
+  newWorkFingerprintDone: (id, sourceNote) => request(`/api/new-works/${id}/fingerprint/complete`, { method: "POST", body: { source_note: sourceNote || null } }),
+  newWorkLinkMail: (id, mail_id) => request(`/api/new-works/${id}/fingerprint/mail`, { method: "POST", body: { mail_id } }),
+  newWorkAllot: (id, payload) => request(`/api/new-works/${id}/cue/allot`, { method: "POST", body: payload }),
+  newWorkCueStatus: (id, status) => request(`/api/new-works/${id}/cue/status`, { method: "POST", body: { status } }),
+  newWorkMail: () => request("/api/new-works/mail"),
+  connectNewWorkMail: () => request("/api/new-works/mail/connect", { method: "POST" }),
+  disconnectNewWorkMail: () => request("/api/new-works/mail", { method: "DELETE" }),
+  syncNewWorkMail: () => request("/api/new-works/mail/sync", { method: "POST" }),
+
   // ── Admin Dashboard ─────────────────────────────────────────────────────────
   adminInsights: () => request("/api/insights/dashboard"),
   editorInsights: () => request("/api/insights/editor-dashboard"),

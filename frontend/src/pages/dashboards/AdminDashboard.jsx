@@ -17,6 +17,8 @@ import { showAlert, showConfirm } from "../../components/Dialog";
 import Timeline from "../../components/Timeline";
 import ClientsPanel from "../../components/ClientsPanel";
 import SocietiesPanel from "../../components/SocietiesPanel";
+import NewWorkModal from "../../components/NewWorkModal";
+import NewWorkPanel from "../../components/NewWorkPanel";
 import { useApp } from "../../context/AppContext";
 
 const ROLES = ["admin", "work_delegator", "reviewer", "editor", "viewer"];
@@ -1980,10 +1982,17 @@ export default function AdminDashboard() {
   const [projectSubTab, setProjectSubTab] = useState("serial");
   const [activityTab, setActivityTab]     = useState("editors");
   const [usersRoleFilter, setUsersRoleFilter] = useState("all");
+  const [workModal, setWorkModal]         = useState(null);  // New Work pop-up: { id } opens a work, {} adds one
+  const [workFocus, setWorkFocus]         = useState(null);  // filter a Dashboard tile asked the New Work tab for
+  const [workKey, setWorkKey]             = useState(0);
+  const [workDue, setWorkDue]             = useState(0);     // reminders due, for the tab badge
+
+  useEffect(() => { api.newWorkSummary().then((d) => setWorkDue(d.summary.reminders)).catch(() => {}); }, [workKey]);
 
   // Central navigation — called from Dashboard click handlers
   const navigate = (targetTab, opts = {}) => {
     setTab(targetTab);
+    if (opts.workFocus)     setWorkFocus({ ...opts.workFocus });
     if (opts.projectSubTab) setProjectSubTab(opts.projectSubTab);
     if (opts.activityTab)   setActivityTab(opts.activityTab);
     if (opts.usersRoleFilter) setUsersRoleFilter(opts.usersRoleFilter);
@@ -1993,6 +2002,7 @@ export default function AdminDashboard() {
     { key: "dashboard",   label: "Dashboard"          },
     { key: "projects",    label: "Projects"           },
     { key: "delegations", label: "Delegations"        },
+    { key: "newwork",     label: "New Work", badge: workDue },
     { key: "clients",     label: "Clients"            },
     { key: "societies",   label: "Societies"          },
     { key: "activity",    label: "Activity"           },
@@ -2017,6 +2027,12 @@ export default function AdminDashboard() {
         </div>
       )}
       {tab === "delegations" && <DelegationsTab />}
+      {tab === "newwork"     && (
+        <NewWorkPanel reloadKey={workKey} focus={workFocus} onOpen={(id) => setWorkModal({ id })} onAdd={() => setWorkModal({})} />
+      )}
+      {workModal && (
+        <NewWorkModal workId={workModal.id} onClose={() => setWorkModal(null)} onChanged={() => setWorkKey((k) => k + 1)} />
+      )}
       {tab === "clients"     && <ClientsPanel canDelete />}
       {tab === "societies"   && <SocietiesPanel canDelete />}
       {tab === "activity"    && <ActivityTab initialTab={activityTab} />}

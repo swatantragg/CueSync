@@ -34,6 +34,8 @@ SCOPE_LABEL = {SCOPES[0]: "Send email on your behalf", SCOPES[1]: "View your ema
 # separately and may only send (no reading), since that's all Notify Editor needs.
 IDENTITY_SCOPES = ("openid", "email", "profile")
 SEND_SCOPE = SCOPES[0]
+# The mailbox the fingerprinting service writes to is only ever read (services/fingerprint_mail.py).
+READ_SCOPE = SCOPES[1]
 
 _STATE_TYPE = "gmail_connect"
 _STATE_TTL = timedelta(minutes=15)
@@ -43,6 +45,7 @@ _LOCAL_ORIGIN = re.compile(r"http://(?:localhost|127\.0\.0\.1)(?::\d+)?")
 # The other kinds of signed state that come back through the same Google callback.
 LOGIN_STATE = "google_login"
 USER_MAIL_STATE = "user_mail_connect"
+FINGERPRINT_STATE = "fingerprint_mail_connect"
 LOGIN_TICKET = "google_ticket"
 
 
@@ -159,6 +162,10 @@ def login_url(state: str) -> str:
 
 def user_mail_url(state: str, login_hint: str | None) -> str:
     return _auth_url(state, (*IDENTITY_SCOPES, SEND_SCOPE), login_hint)
+
+
+def read_only_url(state: str, login_hint: str | None) -> str:
+    return _auth_url(state, (READ_SCOPE,), login_hint)
 
 
 def same_address(a: str | None, b: str | None) -> bool:

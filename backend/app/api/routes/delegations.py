@@ -14,12 +14,15 @@ from app.models.project import Project
 from app.models.user import User, UserRole
 from app.models.work_delegation import WorkDelegation
 from app.services.audit import ADMIN_ONLY_ACTIONS
+from app.services import new_works
 from app.services.clients import resolve_client
 from app.services.delegations import episode_spans, purge_delegations
 
 router = APIRouter()
 
 WD_ROLES = (UserRole.ADMIN, UserRole.WORK_DELEGATOR)
+# A new movie or TV show is first tracked on the New Work List (BGM, fingerprinting), which allots it at its last step.
+TRACKED_TYPES = ("TV Cue Sheet", "Movie Cue Sheet")
 
 
 class DelegationCreate(BaseModel):
@@ -98,7 +101,7 @@ def _row(d: WorkDelegation, assignee: User | None = None, creator: User | None =
     }
 
 
-def _allocation_body(work_type: str | None, episode_range: str | None, week_target: int | None) -> str:
+def allocation_body(work_type: str | None, episode_range: str | None, week_target: int | None) -> str:
     parts = [work_type or "Work"]
     if episode_range:
         parts.append(f"Episodes {episode_range}")
@@ -116,12 +119,9 @@ async def _enrich(db: AsyncSession, rows: list[WorkDelegation]) -> list[dict]:
     return [_row(r, users.get(r.assigned_to), users.get(r.created_by), done.get(r.id, 0)) for r in rows]
 
 
-@router.post("/", dependencies=[Depends(require_roles(*WD_ROLES))])
-async def create_delegation(
-    payload: DelegationCreate,
-    db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
-):
+async def allot(db: AsyncSession, payload: DelegationCreate, current: User, new_title_ok: bool = False) -> WorkDelegation:
+    """Create the delegation, and the serial or movie when its name is new, and tell the editor. Not committed.
+    A new TV or movie title is refused unless it comes from the New Work List (`new_title_ok`)."""
     project_id = payload.project_id
     if not project_id and payload.serial_name:
         from app.models.project import ProjectType
@@ -134,6 +134,9 @@ async def create_delegation(
             desired_type = ProjectType.MOVIE if payload.work_type == "Movie Cue Sheet" else ProjectType.SERIAL
             if proj.type != desired_type:
                 proj.type = desired_type
+        elif payload.work_type in TRACKED_TYPES and not new_title_ok:
+            raise HTTPException(409, f'"{payload.serial_name.strip()}" is a new serial or movie. Add it under New Work, where '
+                                     "BGM and fingerprinting are tracked first; the cue sheet work is allotted at its last step.")
         else:
             new_proj = Project(
                 title=payload.serial_name.strip(),
@@ -176,11 +179,20 @@ async def create_delegation(
         db.add(Notification(
             user_id=current.id,
             title=f"{payload.serial_name} allocated to {assignee.full_name}",
-            body=_allocation_body(payload.work_type, payload.episode_range, payload.week_target),
+            body=allocation_body(payload.work_type, payload.episode_range, payload.week_target),
             entity_type="delegation",
             entity_id=d.id,
         ))
+    return d
 
+
+@router.post("/", dependencies=[Depends(require_roles(*WD_ROLES))])
+async def create_delegation(
+    payload: DelegationCreate,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    d = await allot(db, payload, current)
     await db.commit()
     await db.refresh(d)
     return (await _enrich(db, [d]))[0]
@@ -296,7 +308,7 @@ async def editor_activity(
 
     hidden = [] if current.role == UserRole.ADMIN else [AuditLog.action.not_in(ADMIN_ONLY_ACTIONS)]
     rows = (await db.execute(
-        select(AuditLog).where(AuditLog.user_id == user_id, *hidden)
+        select(AuditLog).where(AuditLog.user_id == user_id, AuditLog.entity != new_works.ENTITY, *hidden)  # New Work has its own log
         .order_by(AuditLog.created_at.desc()).limit(500)
     )).scalars().all()
 
@@ -423,6 +435,7 @@ async def update_delegation(
     d = await db.get(WorkDelegation, did)
     if not d:
         raise HTTPException(404)
+    was_status, was_editor = d.status, d.assigned_to
 
     if current.role not in WD_ROLES:
         # Editors can only update status + completed on their own tasks
@@ -432,6 +445,8 @@ async def update_delegation(
             d.status = payload.status
         if payload.completed is not None:
             d.completed = payload.completed
+        if d.status != was_status:
+            await new_works.delegation_changed(db, d, current, was_status, was_editor)
         await db.commit()
         await db.refresh(d)
         return (await _enrich(db, [d]))[0]
@@ -459,11 +474,13 @@ async def update_delegation(
             db.add(Notification(
                 user_id=current.id,
                 title=f"{d.serial_name} allocated to {new_assignee.full_name}",
-                body=_allocation_body(d.work_type, d.episode_range, d.week_target),
+                body=allocation_body(d.work_type, d.episode_range, d.week_target),
                 entity_type="delegation",
                 entity_id=d.id,
             ))
 
+    if d.status != was_status or d.assigned_to != was_editor:
+        await new_works.delegation_changed(db, d, current, was_status, was_editor)
     await db.commit()
     await db.refresh(d)
     return (await _enrich(db, [d]))[0]

@@ -10,10 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.auth import google_login_callback
 from app.api.routes.editor_notices import connect_user_mailbox
+from app.api.routes.new_works import connect_fingerprint_mailbox
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
 from app.models.client import Client, ClientMailbox
+from app.models.new_work import SystemMailbox
 from app.models.user import User, UserRole
 from app.models.user_mailbox import UserMailbox
 from app.services import gmail
@@ -123,6 +125,7 @@ async def _disconnect(db: AsyncSession, mb: ClientMailbox) -> None:
     (revoking is per account, so it would cut that client off too)."""
     others = list((await db.execute(select(ClientMailbox).where(ClientMailbox.id != mb.id))).scalars().all())
     others += (await db.execute(select(UserMailbox))).scalars().all()
+    others += (await db.execute(select(SystemMailbox))).scalars().all()
     if not any(gmail.same_address(o.email, mb.email) for o in others) and not gmail.missing_config():
         try:
             await gmail.revoke(gmail.decrypt_token(mb.refresh_token_enc))
@@ -324,6 +327,9 @@ async def oauth_callback(request: Request, state: str = "", code: str | None = N
     if signed.get("type") == gmail.USER_MAIL_STATE:
         ok, message = await connect_user_mailbox(signed, code, error, db)
         return _result_page(ok, message, origin=signed.get("org"), kind="cuesync-user-mailbox")
+    if signed.get("type") == gmail.FINGERPRINT_STATE:
+        ok, message = await connect_fingerprint_mailbox(signed, code, error, db)
+        return _result_page(ok, message, origin=signed.get("org"), kind="cuesync-fingerprint-mailbox")
 
     try:
         user_id, cid, origin = gmail.read_state(state)

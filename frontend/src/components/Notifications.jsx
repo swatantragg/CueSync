@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, XCircle, Info, MessageSquare, Briefcase, Mail } from "lucide-react";
+import { AlarmClock, CheckCircle2, XCircle, Info, MessageSquare, Briefcase, Mail } from "lucide-react";
 import { C, FONTS, alpha, T } from "../styles/palette";
 import { useApp } from "../context/AppContext";
 
@@ -15,6 +15,9 @@ function timeAgo(iso) {
 function categorize(n) {
   if (n.entity_type === "delegation") return "allotted";
   if (n.entity_type === "editor_notice") return "email";
+  // New Work: its own types come first, so a title like "Rejected Love" isn't read as a rejection.
+  if (n.entity_type === "new_work_reminder") return "reminder";
+  if (n.entity_type === "new_work") return (n.title || "").toLowerCase().startsWith("fingerprinting assigned") ? "allotted" : "other";
   const t = (n.title || "").toLowerCase();
   if (t.includes("approved") || t.includes("approval")) return "approved";
   if (t.includes("reject")) return "rejected";
@@ -29,6 +32,7 @@ const TABS = [
   { key: "approved",  label: "Approved"  },
   { key: "suggested", label: "Suggested" },
   { key: "email",     label: "Emails"    },
+  { key: "reminder",  label: "Reminders" },
 ];
 
 const CAT_STYLE = {
@@ -37,6 +41,7 @@ const CAT_STYLE = {
   approved:  { color: T.green, bg: T.greenBg, Icon: CheckCircle2  },
   suggested: { color: T.blue, bg: T.blueBg, Icon: MessageSquare },
   email:     { color: T.orangeDeep, bg: T.orangeBg, Icon: Mail },
+  reminder:  { color: T.purple, bg: T.purpleBg, Icon: AlarmClock },
   // Getters so a theme switch is picked up without a reload.
   other:     { get color() { return C.sub; }, get bg() { return C.mint4; }, Icon: Info },
 };
@@ -50,8 +55,10 @@ export default function Notifications({ onClose }) {
   const { notifications, markRead, markAllRead } = useApp();
   const [activeTab, setActiveTab] = useState("all");
 
-  // Emails from a Work Delegator only exist for editors, so everyone else keeps the original tabs.
-  const tabs = TABS.filter((t) => t.key !== "email" || notifications.some((n) => categorize(n) === "email"));
+  // Emails from a Work Delegator only exist for editors, and New Work reminders for whoever follows them up,
+  // so everyone else keeps the original tabs.
+  const OPTIONAL = ["email", "reminder"];
+  const tabs = TABS.filter((t) => !OPTIONAL.includes(t.key) || notifications.some((n) => categorize(n) === t.key));
   const filtered = activeTab === "all"
     ? notifications
     : notifications.filter((n) => categorize(n) === activeTab);

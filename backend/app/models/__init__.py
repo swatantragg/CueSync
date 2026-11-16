@@ -13,6 +13,7 @@ from app.models.user_mailbox import UserMailbox
 from app.models.editor_notice import EditorNotice
 from app.models.report_send import ReportSend
 from app.models.conversion import Conversion
+from app.models.new_work import FingerprintMail, NewWork, SystemMailbox
 
 __all__ = [
     "User", "UserRole", "Project", "ProjectType", "Episode",
@@ -20,4 +21,5 @@ __all__ = [
     "SongLibrary", "ContributorLibrary", "AuditLog",
     "SocietySubmission", "WorkFile", "Client", "ClientMailbox", "Society", "DetectedMail",
     "UserMailbox", "EditorNotice", "ReportSend", "Conversion",
+    "NewWork", "FingerprintMail", "SystemMailbox",
 ]

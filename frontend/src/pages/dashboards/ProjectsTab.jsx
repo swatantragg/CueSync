@@ -8,7 +8,8 @@ import { api } from "../../utils/api";
 
 const PAGE_SIZE = 10;
 
-export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterProjectIds, projectType }) {
+// onCreate: replaces the New Serial / New Movie pop-up (the Work Delegator starts new titles on the New Work List).
+export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterProjectIds, projectType, onCreate }) {
   const { projects, setProjects, isAdmin, setActiveProjectId, setScreen } = useApp();
   const [showNew, setShowNew] = useState(false);
   const [page, setPage] = useState(1);
@@ -166,7 +167,7 @@ export default function ProjectsTab({ hideHeader = false, showCreateBtn, filterP
                 <Trash2 className="w-3.5 h-3.5" />Delete {selected.size}
               </button>
             )}
-            {(showCreateBtn ?? !hideHeader) && <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-medium hover:opacity-90" style={{ background: C.dark, color: C.mint4 }}>
+            {(showCreateBtn ?? !hideHeader) && <button onClick={() => (onCreate ? onCreate() : setShowNew(true))} className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-medium hover:opacity-90" style={{ background: C.dark, color: C.mint4 }}>
               <Plus className="w-3.5 h-3.5" />{projectType === "movie" ? "New Movie" : "New Serial"}
             </button>}
             <span className="text-xs" style={{ color: C.sub }}>Page {pageSafe} of {totalPages}</span>

@@ -33,8 +33,8 @@ test("each role sees only its own changes", () => {
 });
 
 test("admin sees everything in the release", () => {
-  assert.equal(whatsNewFor("admin", "4.1.2").length, CHANGELOG.filter((c) => c.version === APP_VERSION).length);
-  assert.equal(whatsNewFor("admin", "4.1.1").length, CHANGELOG.filter((c) => ["4.1.2", "4.2.0"].includes(c.version)).length);
+  assert.equal(whatsNewFor("admin", "4.2.0").length, CHANGELOG.filter((c) => c.version === APP_VERSION).length);
+  assert.equal(whatsNewFor("admin", "4.1.1").length, CHANGELOG.filter((c) => ["4.1.2", "4.2.0", "4.3.0"].includes(c.version)).length);
 });
 
 test("a change for one role leaves other roles without a popup", () => {
@@ -48,7 +48,18 @@ test("a change for one role leaves other roles without a popup", () => {
 
 test("4.2.0 tells reviewers about Conversion and nobody else", () => {
   assert.ok(titles("reviewer", "4.1.2").some((t) => t.startsWith("Conversion")));
-  for (const role of ["editor", "work_delegator", "viewer"]) assert.deepEqual(whatsNewFor(role, "4.1.2"), []);
+  for (const role of ["editor", "work_delegator", "viewer"]) {
+    assert.deepEqual(whatsNewFor(role, "4.1.2").filter((c) => c.version === "4.2.0"), []);
+  }
+});
+
+test("4.3.0 tells Work Delegators, editors and admins about New Work, not reviewers or viewers", () => {
+  assert.ok(titles("work_delegator", "4.2.0").includes("New Work List"));
+  assert.ok(titles("work_delegator", "4.2.0").includes("Fingerprinting waits for the BMAT email"));
+  assert.deepEqual(titles("editor", "4.2.0"), ["Fingerprinting assigned to you"]);
+  assert.ok(titles("admin", "4.2.0").includes("New Work for admins"));
+  assert.deepEqual(whatsNewFor("reviewer", "4.2.0"), []);
+  assert.deepEqual(whatsNewFor("viewer", "4.2.0"), []);
 });
 
 test("first sign-in shows this release only, skipped releases catch up", () => {

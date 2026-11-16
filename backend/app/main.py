@@ -25,6 +25,7 @@ import app.models.user_mailbox           # noqa: F401
 import app.models.editor_notice          # noqa: F401
 import app.models.report_send            # noqa: F401
 import app.models.conversion             # noqa: F401
+import app.models.new_work               # noqa: F401
 from app.services.library_sync import (
     cleanup_contributor_duplicates,
     cleanup_cue_contributor_duplicates,
@@ -239,10 +240,39 @@ async def _sync_society_mail() -> None:
         print(f"[mail-sync] error: {exc}")
 
 
+async def _sync_fingerprint_mail() -> None:
+    """Read the fingerprinting service's emails and unlock "Fingerprinting Completed" for the works they name."""
+    from app.services.fingerprint_mail import sync
+
+    try:
+        async with AsyncSession(engine) as db:
+            async with db.begin():
+                result = await sync(db)
+        if result and (result["found"] or result["linked"] or result["error"]):
+            print(f"[fingerprint-mail] {result}")
+    except Exception as exc:
+        print(f"[fingerprint-mail] error: {exc}")
+
+
+async def _send_new_work_reminders() -> None:
+    """Chase new works stuck on a step: every few days, and at 15 and 30 days without a cue sheet allotment."""
+    from app.services.new_works import send_reminders
+
+    try:
+        async with AsyncSession(engine) as db:
+            async with db.begin():
+                sent = await send_reminders(db)
+        if sent:
+            print(f"[new-work-reminders] sent {sent}")
+    except Exception as exc:
+        print(f"[new-work-reminders] error: {exc}")
+
+
 async def _mail_sync_loop() -> None:
     await asyncio.sleep(90)
     while True:
         await _sync_society_mail()
+        await _sync_fingerprint_mail()
         await asyncio.sleep(max(1, settings.MAIL_SYNC_MINUTES) * 60)
 
 
@@ -263,6 +293,7 @@ async def _followup_loop() -> None:
     while True:
         await _send_followup_notifications()
         await _check_client_mailboxes()
+        await _send_new_work_reminders()
         await asyncio.sleep(3600)  # check every hour
 
 
@@ -369,7 +400,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="4.1.2",
+    version="4.3.0",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
     # Disable automatic debug info exposure in OpenAPI errors
