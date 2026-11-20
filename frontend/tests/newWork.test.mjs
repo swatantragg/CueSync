@@ -23,7 +23,7 @@ const ids = (list) => list.map((w) => w.id);
 
 test("every status the server sends has a label, in workflow order", () => {
   assert.deepEqual(STAGES.map(([k]) => k), [
-    "awaiting_bgm", "fp_not_assigned", "fp_assigned", "fp_in_progress", "cue_pending", "cue_assigned", "cue_in_progress", "completed", "closed",
+    "awaiting_bgm", "awaiting_video", "fp_not_assigned", "fp_assigned", "fp_in_progress", "cue_pending", "cue_assigned", "cue_in_progress", "completed", "closed",
   ]);
   for (const [key] of GROUPS) assert.ok(key.startsWith("g:"), key);
 });
@@ -61,4 +61,69 @@ test("every New Work audit action has a timeline label", () => {
     "new_work_fp_assign", "new_work_fp_status", "new_work_fp_mail", "new_work_fp_mail_link", "new_work_fp_done",
     "new_work_cue_assign", "new_work_cue_status", "new_work_cue_removed", "new_work_reminder",
     "fp_mailbox_connect", "fp_mailbox_disconnect", "fp_mailbox_lost"]) assert.ok(ACTION_LABEL[a], a);
+});
+
+// ── 4.3.1: client, release date and video link ──────────────────────────────
+import { RELEASE_OPTIONS, addDays, matchesRelease, releaseHint, safeLink, workClients } from "../src/utils/newWork.js";
+
+test("client and release filters, and search by client", () => {
+  const list = [
+    work(1, { client_id: 3, client_name: "Sun Music", release: { days: -4 } }),
+    work(2, { client_id: 5, client_name: "Zee Music", release: { days: 2 } }),
+    work(3, { client_id: 3, client_name: "Sun Music", release: null }),
+    work(4, { client_id: null, client_name: null, release: { days: 9 } }),
+  ];
+  assert.deepEqual(ids(filterWorks(list, { client: "3" })), [1, 3]);
+  assert.deepEqual(ids(filterWorks(list, { q: "zee" })), [2]);
+  assert.deepEqual(ids(filterWorks(list, { release: "upcoming" })), [1]);
+  assert.deepEqual(ids(filterWorks(list, { release: "week" })), [2]);
+  assert.deepEqual(ids(filterWorks(list, { release: "none" })), [3]);
+  assert.deepEqual(RELEASE_OPTIONS.map(([k]) => k), ["upcoming", "week", "none"]);
+  assert.equal(matchesRelease(list[0], ""), true);
+  assert.deepEqual(workClients(list), [{ id: 3, name: "Sun Music" }, { id: 5, name: "Zee Music" }]);
+});
+
+test("video links open only as web addresses", () => {
+  assert.equal(safeLink("https://youtu.be/abc"), "https://youtu.be/abc");
+  assert.equal(safeLink("http://example.com/x"), "http://example.com/x");
+  for (const bad of ["javascript:alert(1)", "data:text/html,hi", "youtu.be/abc", "", null]) assert.equal(safeLink(bad), null, String(bad));
+});
+
+test("release hint follows the server's rule: only dates still ahead get an update", () => {
+  assert.equal(addDays("2026-12-28", 7), "2027-01-04");
+  assert.equal(releaseHint(""), "");
+  assert.match(releaseHint("2026-11-25", "2026-11-19"), /release day.*7 days after/);
+  assert.match(releaseHint("2026-11-19", "2026-11-19"), /^Already released, so the only update comes 7 days after/);
+  assert.match(releaseHint("2026-11-12", "2026-11-19"), /no release update/);
+});
+
+// ── 4.3.2: movies in theatres wait for their video ──────────────────────────
+import { OTT_WINDOWS, expectedOtt, ottHint, releaseTypesFor } from "../src/utils/newWork.js";
+
+test("a TV show is never released in theatres", () => {
+  assert.deepEqual(releaseTypesFor("movie").map(([k]) => k), ["theatrical", "ott", "tv"]);
+  assert.deepEqual(releaseTypesFor("tv_show").map(([k]) => k), ["ott", "tv"]);
+  assert.deepEqual(OTT_WINDOWS.map(([d]) => d), [56, 28]);
+});
+
+test("expected OTT date: the announced one, else the usual gap after release", () => {
+  assert.equal(expectedOtt({ release_date: "2026-11-20", ott_date: "", ott_window_days: "56" }), "2027-01-15");
+  assert.equal(expectedOtt({ release_date: "2026-11-20", ott_date: "", ott_window_days: "28" }), "2026-12-18");
+  assert.equal(expectedOtt({ release_date: "2026-11-20", ott_date: "2026-12-25", ott_window_days: "56" }), "2026-12-25");
+  assert.equal(expectedOtt({ release_date: "", ott_date: "", ott_window_days: "56" }), "");
+  assert.match(ottHint({ release_date: "2026-11-20", ott_date: "", ott_window_days: "28" }, "2026-11-20"), /Dec 18, 2026|18 Dec 2026/);
+  assert.match(ottHint({ release_date: "", ott_date: "" }, "2026-11-20"), /No date known yet/);
+  assert.match(ottHint({ release_date: "2026-01-01", ott_date: "" , ott_window_days: "28"}, "2026-11-20"), /has passed/);
+});
+
+test("waiting-for-video groups", () => {
+  const list = [
+    work(1, { stage: "awaiting_video", video: { waiting: true, overdue: false } }),
+    work(2, { stage: "awaiting_bgm", video: { waiting: true, overdue: true } }),
+    work(3, { video: { waiting: false } }),
+    work(4, { video: null }),
+  ];
+  assert.deepEqual(ids(filterWorks(list, { status: "g:video" })), [1, 2]);
+  assert.deepEqual(ids(filterWorks(list, { status: "g:video_overdue" })), [2]);
+  assert.deepEqual(ids(filterWorks(list, { status: "awaiting_video" })), [1]);
 });

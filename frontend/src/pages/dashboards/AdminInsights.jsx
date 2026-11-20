@@ -470,8 +470,11 @@ function WeeklyReports() {
   };
 
   if (!status) return error ? <Card title="Weekly email reports"><div className="text-xs" style={{ color: C.danger }}>{error}</div></Card> : null;
-  const on = status.enabled && !status.missing.length && !status.problem && status.sending_enabled === true;
+  const checks = status.checks || [];
+  const failing = checks.filter((c) => c.ok === false);
+  const on = !status.problem && (status.ready ?? (status.enabled && !status.missing.length && status.sending_enabled === true));
   const off = status.problem
+    || (failing.length ? `Not reaching anyone: ${failing.length} thing${failing.length === 1 ? "" : "s"} to fix below.` : "")
     || (status.missing.length ? `Brevo isn't set up: fill in ${status.missing.join(", ")}.`
       : status.brevo_error ? `Brevo can't be checked: ${status.brevo_error}`
       : status.sending_enabled === false ? "Brevo has sending turned off on this account, so nothing would be delivered. Authenticate your domain in Brevo and ask their support to activate transactional email."
@@ -488,6 +491,21 @@ function WeeklyReports() {
               {on ? `On: next ${fmtDateTime(status.next_run)}` : off}
             </div>
             <div style={{ color: C.sub }}>Every {status.day} at {status.time} ({status.timezone}){status.sender ? ` from ${status.sender_name} <${status.sender}>` : ""}</div>
+            {!on && checks.length > 0 && (
+              <ul className="mt-1.5 space-y-1" aria-label="What the weekly email needs">
+                {checks.map((c) => (
+                  <li key={c.key} className="flex items-start gap-1.5">
+                    {c.ok ? <CheckCircle2 className="w-3.5 h-3.5 mt-px shrink-0" style={{ color: C.ok }} />
+                      : c.ok === false ? <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" style={{ color: C.danger }} />
+                      : <span className="w-3.5 h-3.5 mt-px shrink-0 text-center" style={{ color: C.muted }}>–</span>}
+                    <span className="min-w-0 break-words">
+                      <span style={{ color: c.ok === false ? C.dark : C.sub }}>{c.text}</span>
+                      {c.fix && <span className="block" style={{ color: C.sub }}>{c.fix}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
             {status.delivery && (
               <div style={{ color: C.sub, ...NUM }}>
                 Brevo, last {status.delivery.days} days: {status.delivery.delivered} delivered of {status.delivery.requests}, {status.delivery.bounced} bounced, {status.delivery.errors} not sent

@@ -49,10 +49,13 @@ async def report_status(db: AsyncSession = Depends(get_db)):
         last = {"week": last_key, **{k: counts.get(k, 0) for k in ("sent", "failed", "sending")},
                 "errors": [{"email": e, "error": m} for e, m in errors]}
     # What Brevo itself says: "sent" below only means Brevo took the email.
-    sending, stats, brevo_error = None, None, None
-    if not brevo.missing_config():
+    checks = await brevo.readiness(settings.REPORT_ENABLED)
+    by = {c["key"]: c for c in checks}
+    sending = by["relay"]["ok"] if "relay" in by else None
+    brevo_error = by["reachable"]["fix"] if "reachable" in by and not by["reachable"]["ok"] else None
+    stats = None
+    if by.get("reachable", {}).get("ok"):
         try:
-            sending = await brevo.sending_enabled()
             stats = await brevo.delivery_stats()
         except brevo.BrevoError as e:
             brevo_error = str(e)
@@ -61,6 +64,8 @@ async def report_status(db: AsyncSession = Depends(get_db)):
         "sending_enabled": sending,
         "delivery": stats,
         "brevo_error": brevo_error,
+        "checks": checks,
+        "ready": all(c["ok"] for c in checks),
         "missing": brevo.missing_config(),
         "sender": settings.BREVO_SENDER_EMAIL,
         "sender_name": settings.BREVO_SENDER_NAME,

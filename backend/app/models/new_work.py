@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base, utcnow
@@ -17,6 +17,28 @@ class NewWork(Base):
     title_key: Mapped[str]      = mapped_column(String(500), nullable=False, index=True)
     work_type: Mapped[str]      = mapped_column(String(20), default="movie", nullable=False)  # movie / tv_show
     remarks: Mapped[str | None] = mapped_column(Text)
+    # Whose work it is (required when a work is added; older rows may have none) and where it can be seen.
+    client_id: Mapped[int | None]       = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)
+    release_date: Mapped[date | None]   = mapped_column(Date)
+    video_link: Mapped[str | None]      = mapped_column(Text)
+    # Release updates already sent: 0 none, 1 on the release day, 2 seven days after. Set to what has already
+    # passed whenever the date is entered, so only dates still ahead get an update.
+    release_alert_level: Mapped[int]    = mapped_column(Integer, default=0, nullable=False)
+    # Where it is released first: theatrical / ott / tv. A theatrical release has no video to work from until it
+    # reaches OTT (or the client sends a copy), so its fingerprinting waits for "Video available".
+    release_type: Mapped[str | None]    = mapped_column(String(20))
+    ott_date: Mapped[date | None]       = mapped_column(Date)          # announced OTT date
+    ott_platform: Mapped[str | None]    = mapped_column(String(100))
+    ott_window_days: Mapped[int | None] = mapped_column(Integer)       # theatre → OTT gap to expect when no OTT date
+    video_state: Mapped[str | None]     = mapped_column(String(20))    # NULL not tracked / waiting / available
+    video_at: Mapped[datetime | None]   = mapped_column(DateTime(timezone=True))
+    video_by: Mapped[int | None]        = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    video_source: Mapped[str | None]    = mapped_column(String(20))    # ott / client / tv / other
+    video_note: Mapped[str | None]      = mapped_column(Text)
+    # "Is it on OTT yet?" checks already sent, and the one-time overdue flag; preset to what had passed when the
+    # dates were entered, like release_alert_level.
+    video_check_count: Mapped[int]      = mapped_column(Integer, default=0, nullable=False)
+    video_overdue_sent: Mapped[bool]    = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime]   = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime]   = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

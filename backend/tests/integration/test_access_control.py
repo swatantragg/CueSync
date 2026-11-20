@@ -35,11 +35,20 @@ def required_roles(route: APIRoute) -> tuple[set[str] | None, bool, bool]:
     return roles, login, superadmin
 
 
+def api_routes() -> list[tuple[str, APIRoute]]:
+    """(full path, route) of every endpoint. Newer FastAPI keeps each included router as one entry in app.routes, so
+    an inventory read off app.routes alone comes back nearly empty and every check below silently runs nothing."""
+    try:
+        from fastapi.routing import iter_route_contexts
+    except ImportError:   # older FastAPI: included routes are copied into app.routes with their full path
+        return [(r.path, r) for r in app.routes if isinstance(r, APIRoute)]
+    return [(c.path, c.route) for c in iter_route_contexts(app.routes) if isinstance(c.route, APIRoute)]
+
+
 ROUTES = []
-for r in app.routes:
-    if isinstance(r, APIRoute):
-        for m in r.methods - {"HEAD", "OPTIONS"}:
-            ROUTES.append((m, r.path, *required_roles(r)))
+for path, r in api_routes():
+    for m in r.methods - {"HEAD", "OPTIONS"}:
+        ROUTES.append((m, path, *required_roles(r)))
 
 
 def url(path: str) -> str:
@@ -106,6 +115,9 @@ SENSITIVE = {
     ("POST", "/api/new-works/"): {"admin", "work_delegator"},
     ("GET", "/api/new-works/activity"): {"admin", "work_delegator"},
     ("POST", "/api/new-works/{wid}/skip"): {"admin", "work_delegator"},
+    ("POST", "/api/new-works/{wid}/video"): {"admin", "work_delegator"},
+    ("PUT", "/api/new-works/{wid}"): {"admin", "work_delegator"},
+    ("GET", "/api/reports/status"): {"admin"},
     ("POST", "/api/new-works/{wid}/fingerprint/assign"): {"admin", "work_delegator"},
     ("POST", "/api/new-works/{wid}/cue/allot"): {"admin", "work_delegator"},
     ("POST", "/api/new-works/mail/connect"): {"admin"},

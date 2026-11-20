@@ -49,6 +49,7 @@ export const ACTION_LABEL = {
   new_work_fp_mail: "Fingerprinting email received", new_work_fp_mail_link: "Fingerprinting email linked by hand",
   new_work_fp_done: "Fingerprinting completed", new_work_cue_assign: "Allotted cue sheet work",
   new_work_cue_status: "Cue sheet status changed", new_work_cue_removed: "Cue sheet allotment removed",
-  new_work_reminder: "Reminder sent", fp_mailbox_connect: "Connected the fingerprinting mailbox",
+  new_work_reminder: "Reminder sent", new_work_release: "Release update sent",
+  new_work_video: "Video available", new_work_video_undo: "Video taken back", new_work_video_check: "Asked about the video", fp_mailbox_connect: "Connected the fingerprinting mailbox",
   fp_mailbox_disconnect: "Disconnected the fingerprinting mailbox", fp_mailbox_lost: "Fingerprinting mailbox needs reconnecting",
 };

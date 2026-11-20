@@ -1,6 +1,6 @@
 """New Work List: upcoming movies and TV shows tracked through BGM received → fingerprinting → cue sheet work.
 Rules and wording live in services/new_works.py; the fingerprinting service's emails in services/fingerprint_mail.py."""
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -25,18 +25,41 @@ WD = require_roles(*new_works.WD_ROLES)
 ADMIN = require_roles(UserRole.ADMIN)
 WorkType = Literal["movie", "tv_show"]
 Step = Literal["bgm", "fingerprint", "cue"]
+ReleaseType = Literal["theatrical", "ott", "tv"]
+VideoSource = Literal["ott", "client", "tv", "other"]
 
 
 class WorkIn(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     work_type: WorkType = "movie"
     remarks: str | None = Field(default=None, max_length=5000)
+    client_id: int | None = None          # required: checked in new_works.create for a readable message
+    release_date: date | None = None      # still ahead → updates on that day and 7 days after
+    video_link: str | None = Field(default=None, max_length=2000)
+    release_type: ReleaseType | None = None   # theatrical → waits for its video before fingerprinting
+    ott_date: date | None = None
+    ott_platform: str | None = Field(default=None, max_length=100)
+    ott_window_days: int | None = None        # 28 or 56: the usual gap to expect when no OTT date is known
 
 
 class WorkEdit(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=500)
     work_type: WorkType | None = None
     remarks: str | None = Field(default=None, max_length=5000)
+    client_id: int | None = None          # can be changed, not cleared
+    release_date: date | None = None      # null clears it
+    video_link: str | None = Field(default=None, max_length=2000)
+    release_type: ReleaseType | None = None
+    ott_date: date | None = None
+    ott_platform: str | None = Field(default=None, max_length=100)
+    ott_window_days: int | None = None
+
+
+class VideoIn(BaseModel):
+    available: bool
+    source: VideoSource | None = None     # where it came from, when available
+    note: str | None = Field(default=None, max_length=2000)
+    link: str | None = Field(default=None, max_length=2000)   # the OTT link, for source "ott"
 
 
 class BgmIn(BaseModel):
@@ -236,7 +259,9 @@ async def connect_fingerprint_mailbox(state: dict, code: str | None, error: str 
 # ── one work ─────────────────────────────────────────────────────────────────
 @router.post("/")
 async def create_work(payload: WorkIn, db: AsyncSession = Depends(get_db), current: User = Depends(WD)):
-    w = await new_works.create(db, current, payload.title, payload.work_type, payload.remarks)
+    w = await new_works.create(db, current, payload.title, payload.work_type, payload.remarks,
+                               payload.client_id, payload.release_date, payload.video_link, payload.release_type,
+                               payload.ott_date, payload.ott_platform, payload.ott_window_days)
     return await _saved(db, w)
 
 
@@ -268,6 +293,14 @@ async def delete_work(wid: int, db: AsyncSession = Depends(get_db), current: Use
 async def bgm(wid: int, payload: BgmIn, db: AsyncSession = Depends(get_db), current: User = Depends(WD)):
     w = await _get(db, wid)
     await new_works.set_bgm(db, w, current, payload.received)
+    return await _saved(db, w)
+
+
+@router.post("/{wid}/video")
+async def video(wid: int, payload: VideoIn, db: AsyncSession = Depends(get_db), current: User = Depends(WD)):
+    """A movie in theatres: its video is available now (OTT, a copy, TV…), or taken back."""
+    w = await _get(db, wid)
+    await new_works.set_video(db, w, current, payload.available, payload.source, payload.note, payload.link)
     return await _saved(db, w)
 
 
@@ -332,7 +365,7 @@ async def allot_cue(wid: int, payload: AllotIn, db: AsyncSession = Depends(get_d
     movie = w.work_type == "movie"
     order = DelegationCreate(
         serial_name=w.title, work_type="Movie Cue Sheet" if movie else "TV Cue Sheet", assigned_to=editor.id,
-        client_id=payload.client_id, channel=None if movie else (payload.channel or "").strip() or None,
+        client_id=payload.client_id or w.client_id, channel=None if movie else (payload.channel or "").strip() or None,
         episode_range=None if movie else (payload.episode_range or "").strip() or None,
         week_target=payload.week_target or None, notes=(payload.notes or "").strip() or None,
     )

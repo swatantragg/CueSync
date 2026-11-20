@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     FINGERPRINT_SENDER: str = "vericast-help@bmat.com"
     FINGERPRINT_SENDER_NAME: str = "BMAT Vericast Team"
     NEW_WORK_REMINDER_DAYS: int = 5      # a pending step is chased again every this many days
+    # A movie released in theatres first waits for its video (OTT or a copy) before fingerprinting opens.
+    NEW_WORK_OTT_WINDOW_DAYS: int = 56   # usual theatre → OTT gap when no OTT date is known (8 weeks; 4 weeks = 28)
+    NEW_WORK_VIDEO_CHECK_DAYS: int = 7   # "is it on OTT yet?" again every this many days from the expected date
+    NEW_WORK_VIDEO_OVERDUE_DAYS: int = 90  # still no video this long after release: flagged once, check with the client
 
     @field_validator("DEBUG", mode="before")
     @classmethod

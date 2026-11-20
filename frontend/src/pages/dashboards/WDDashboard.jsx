@@ -67,7 +67,10 @@ function DelegationForm({ editors, onSave, onClose, onNewWork, initial = null })
 
   const clientOptions = clients.filter((c) => c.is_active || c.id === initial?.client_id);
   const needsNewWork = !initial && isNewSerial && !!form.serial_name.trim() && TRACKED_TYPES.includes(form.work_type);
-  const toNewWork = () => onNewWork({ title: form.serial_name.trim(), work_type: form.work_type === "Movie Cue Sheet" ? "movie" : "tv_show" });
+  const toNewWork = () => onNewWork({
+    title: form.serial_name.trim(), work_type: form.work_type === "Movie Cue Sheet" ? "movie" : "tv_show",
+    client_id: /^\d+$/.test(form.client_id) ? form.client_id : "",
+  });
 
   const searchProjects = async (q) => {
     if (!q.trim()) { setSuggestions([]); setShowSuggest(false); setIsNewSerial(false); return; }

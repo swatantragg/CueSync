@@ -1,4 +1,4 @@
-export const APP_VERSION = "4.3.0";
+export const APP_VERSION = "4.3.2";
 
 // `roles`: who sees the entry in the What's New popup. Admins see every entry, so they can track each release.
 const ADMIN = [], WD = ["work_delegator"], REVIEWER = ["reviewer"], EDITOR = ["editor"];
@@ -6,6 +6,36 @@ const STAFF = ["work_delegator", "reviewer"];
 const ALL = ["work_delegator", "reviewer", "editor", "viewer"];
 
 export const CHANGELOG = [
+  {
+    version: "4.3.2", roles: WD,
+    title: "Movies in theatres wait for their video",
+    body: "A new work now says where it is released first: Theatres first, OTT or TV. A movie in theatres has no video to work from yet, so it shows Waiting for video and its fingerprinting stays locked until you tick Video available, saying where the video came from (streaming on OTT with its link, a copy from the client, TV or other). While it waits, the 5-day reminders and the 15/30-day flags hold off and count from the day the video came.",
+  },
+  {
+    version: "4.3.2", roles: WD,
+    title: "Is it on OTT yet?",
+    body: "Add the OTT date and platform when they are announced. If not, pick the usual gap after release (8 weeks for Hindi films, 4 weeks for South Indian films). CueSync asks on that day whether the movie is streaming, then every 7 days until the video is in, and flags it if there is still no video 90 days after release. These are in the bell's Reminders tab, the Waiting for video tile and your weekly report.",
+  },
+  {
+    version: "4.3.2", roles: ADMIN,
+    title: "Waiting for video, and why weekly emails weren't arriving",
+    body: "New Work tracks movies released in theatres until their video is available, with OTT reminders for Admins and Work Delegators. Dashboard → Weekly email reports now lists each thing the email needs (switched on, Brevo key and sender, server allowed by Brevo, sending active, sender domain authenticated) and what to fix.",
+  },
+  {
+    version: "4.3.1", roles: WD,
+    title: "Client, release date and video link on every new work",
+    body: "Adding a movie or TV show to the New Work List now asks for its client (required), and you can add the release date and a video link. They show under the title, in the list's new Client and Release columns, and the list filters by client and by release date. Edit them any time with the pencil. Allotting the cue sheet work picks the same client for you.",
+  },
+  {
+    version: "4.3.1", roles: WD,
+    title: "Release day updates",
+    body: "When the release date you enter is still ahead, CueSync sends you an update on the release day and again 7 days after, saying where the work stands (BGM, fingerprinting or cue sheet) and whether it has a video link. They are in the bell's Reminders tab and the tracking log. Change the date and the updates follow the new one.",
+  },
+  {
+    version: "4.3.1", roles: ADMIN,
+    title: "New Work: client, release date and video link",
+    body: "Each new work now names its client and can carry a release date and video link. Admins and Work Delegators get an update on a future release date and 7 days after it. A client used by a new work can no longer be deleted, only deactivated.",
+  },
   {
     version: "4.3.0", roles: WD,
     title: "New Work List",

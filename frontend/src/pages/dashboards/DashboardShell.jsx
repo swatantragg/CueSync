@@ -15,10 +15,12 @@ export default function DashboardShell({ title, subtitle, actions, tabs, activeT
         </div>
 
         {/* Tab bar */}
-        <div className="flex flex-wrap items-center gap-1 mb-6 border-b" style={{ borderColor: alpha(C.mint1, "44") }}>
+        <div role="tablist" className="flex flex-wrap items-center gap-1 mb-6 border-b" style={{ borderColor: alpha(C.mint1, "44") }}>
           {tabs.map((t) => (
             <button
               key={t.key}
+              role="tab"
+              aria-selected={activeTab === t.key}
               onClick={() => onTab(t.key)}
               className="px-4 py-2.5 text-sm rounded-t-lg transition-colors relative"
               style={{

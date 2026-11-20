@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlarmClock, BellRing, ChevronRight, Clapperboard, History, List, Mail, MailCheck, MailWarning, Plug, Plus, RefreshCw, Search, Tv, Unplug, X,
+  AlarmClock, BellRing, ChevronRight, Clapperboard, ExternalLink, History, List, Mail, MailCheck, MailWarning, Plug, Plus, RefreshCw, Search, Tv, Unplug, X,
 } from "lucide-react";
 import { C, FONTS, alpha, T } from "../styles/palette";
 import Select from "./Select";
@@ -9,7 +9,7 @@ import { NewWorkTiles, StageBadge } from "./NewWorkSummary";
 import { showAlert, showConfirm } from "./Dialog";
 import { api, API_ORIGIN } from "../utils/api";
 import { fmtDateTime, timeAgo } from "../utils/format";
-import { GROUPS, PENDING_OPTIONS, STAGES, assignees, daysLabel, filterWorks } from "../utils/newWork";
+import { GROUPS, PENDING_OPTIONS, RELEASE_OPTIONS, STAGES, assignees, daysLabel, filterWorks, fmtDate, safeLink, workClients } from "../utils/newWork";
 import { useApp } from "../context/AppContext";
 
 // The New Work tab of the Work Delegator and Admin dashboards: the numbers, the list with its filters, the
@@ -20,7 +20,7 @@ const LINE = alpha(C.mint1, "44");
 const TH = "text-left text-[0.625rem] uppercase tracking-wider font-semibold px-3 py-2.5 whitespace-nowrap";
 const box = "px-2.5 py-1.5 rounded-lg text-xs border";
 const boxStyle = { borderColor: LINE, color: C.dark, background: C.white };
-const NO_FILTERS = { q: "", type: "", status: "", person: "", pending: "" };
+const NO_FILTERS = { q: "", type: "", status: "", person: "", pending: "", client: "", release: "" };
 const LOG_PAGE = 50;
 const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
 
@@ -42,12 +42,13 @@ function Empty({ children }) {
 function Filters({ works, filters, setFilters, shown }) {
   const set = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
   const people = assignees(works);
+  const clients = workClients(works);
   const active = Object.values(filters).some(Boolean);
   return (
     <div className="px-4 py-3 flex flex-wrap items-center gap-2 border-b" style={{ borderColor: LINE }}>
       <div className="relative w-56 max-w-full">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: C.sub }} />
-        <input value={filters.q} onChange={set("q")} placeholder="Search name, person or remarks…" aria-label="Search new works"
+        <input value={filters.q} onChange={set("q")} placeholder="Search name, client, person or remarks…" aria-label="Search new works"
           className={`${box} w-full pl-8 focus:outline-none`} style={boxStyle} />
       </div>
       <Select value={filters.type} onChange={set("type")} className={`${box} min-w-32`} style={boxStyle}>
@@ -72,6 +73,14 @@ function Filters({ works, filters, setFilters, shown }) {
         <option value="">Any pending time</option>
         {PENDING_OPTIONS.map(([key, text]) => <option key={key} value={key}>Pending {text}</option>)}
       </Select>
+      <Select value={filters.client} onChange={set("client")} className={`${box} min-w-36`} style={boxStyle} searchable searchPlaceholder="Search clients…">
+        <option value="" data-keep>All clients</option>
+        {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </Select>
+      <Select value={filters.release} onChange={set("release")} className={`${box} min-w-40`} style={boxStyle}>
+        <option value="">Any release date</option>
+        {RELEASE_OPTIONS.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
+      </Select>
       {active && (
         <button onClick={() => setFilters(NO_FILTERS)} className="inline-flex items-center gap-1 text-xs font-semibold hover:underline" style={{ color: C.sub }}>
           <X className="w-3 h-3" /> Clear
@@ -90,6 +99,8 @@ function WorkTable({ rows, onOpen }) {
         <thead>
           <tr className="border-b" style={{ borderColor: LINE, color: C.sub, background: alpha(C.mint4, "33") }}>
             <th className={`${TH} pl-4`}>Movie / TV show</th>
+            <th className={TH}>Client</th>
+            <th className={TH} title="An update comes on the release day and 7 days after, for a date still ahead when it was entered">Release</th>
             <th className={TH}>Date added</th>
             <th className={TH}>BGM received</th>
             <th className={TH}>Fingerprinting</th>
@@ -112,6 +123,29 @@ function WorkTable({ rows, onOpen }) {
                   <div className="font-semibold text-sm break-words" style={{ color: C.dark }}>{w.title}</div>
                   <div className="flex items-center gap-1 text-[0.625rem]" style={{ color: C.sub }}><TypeIcon className="w-3 h-3" /> {w.work_type_label}</div>
                   {w.remarks && <div className="text-[0.625rem] mt-0.5 line-clamp-2 break-words" style={{ color: C.sub }} title={w.remarks}>{w.remarks}</div>}
+                </td>
+                <td className="px-3 py-2.5 max-w-40">
+                  {w.client_name ? <div className="break-words" style={{ color: C.dark }}>{w.client_name}</div> : <div style={{ color: T.orange }}>Not set</div>}
+                </td>
+                <td className="px-3 py-2.5 whitespace-nowrap">
+                  {w.release ? (
+                    <>
+                      <div className="font-semibold" style={{ color: w.release.upcoming ? T.blue : C.dark }}>{fmtDate(w.release.date)}</div>
+                      <div className="text-[0.625rem]" style={{ color: C.sub }}>{w.release_type_label ? `${w.release_type_label} · ` : ""}{w.release.label}</div>
+                    </>
+                  ) : w.release_type_label ? <div className="text-[0.625rem]" style={{ color: C.sub }}>{w.release_type_label}</div> : <span style={{ color: C.muted }}>—</span>}
+                  {w.video?.waiting && (
+                    <div className="text-[0.625rem] font-semibold" style={{ color: w.video.overdue ? T.red : T.blue }}
+                      title={w.video.next_check ? `CueSync asks again on ${fmtDate(w.video.next_check)}` : undefined}>
+                      Video: waiting{w.video.expected_ott ? ` · OTT ${w.video.estimated ? "~" : ""}${fmtDate(w.video.expected_ott)}` : ""}
+                    </div>
+                  )}
+                  {safeLink(w.video_link) && (
+                    <a href={safeLink(w.video_link)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title={w.video_link}
+                      className="inline-flex items-center gap-1 text-[0.625rem] font-semibold hover:underline mt-0.5" style={{ color: C.mid }}>
+                      <ExternalLink className="w-3 h-3" /> Video
+                    </a>
+                  )}
                 </td>
                 <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: C.sub }}>{fmtDay(w.created_at)}</td>
                 <td className="px-3 py-2.5 whitespace-nowrap">

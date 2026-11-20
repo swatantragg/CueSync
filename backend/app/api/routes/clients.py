@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
 from app.models.client import Client, ClientMailbox
-from app.models.new_work import SystemMailbox
+from app.models.new_work import NewWork, SystemMailbox
 from app.models.user import User, UserRole
 from app.models.user_mailbox import UserMailbox
 from app.services import gmail
@@ -218,9 +218,10 @@ async def update_client(cid: int, payload: ClientUpdate, db: AsyncSession = Depe
 async def delete_client(cid: int, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     c = await _get(db, cid)
     row = await _row(db, c)
-    if row["delegations"] or row["submissions"]:
-        raise HTTPException(409, f"{c.name} is used by {row['delegations']} delegation(s) and "
-                                 f"{row['submissions']} submission(s). Deactivate it instead.")
+    works = len((await db.execute(select(NewWork.id).where(NewWork.client_id == c.id))).scalars().all())
+    if row["delegations"] or row["submissions"] or works:
+        raise HTTPException(409, f"{c.name} is used by {row['delegations']} delegation(s), "
+                                 f"{row['submissions']} submission(s) and {works} new work(s). Deactivate it instead.")
     mb = await _mailbox(db, c.id)
     if mb:
         await _disconnect(db, mb)

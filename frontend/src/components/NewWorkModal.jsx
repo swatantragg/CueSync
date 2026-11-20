@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronRight, Clapperboard, Lock, MailCheck, MailQuestion, Minus, Pencil,
-  SkipForward, Trash2, Tv, Undo2, X,
+  AlertTriangle, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, Clapperboard, ExternalLink, Lock, MailCheck,
+  MailQuestion, Minus, Pencil, SkipForward, Trash2, Tv, Undo2, X,
 } from "lucide-react";
 import { C, FONTS, alpha, T } from "../styles/palette";
 import Select from "./Select";
@@ -10,7 +10,9 @@ import { StageBadge } from "./NewWorkSummary";
 import { showAlert, showConfirm } from "./Dialog";
 import { api } from "../utils/api";
 import { fmtDateTime } from "../utils/format";
-import { daysLabel } from "../utils/newWork";
+import {
+  OTT_WINDOWS, VIDEO_SOURCES, daysLabel, fmtDate, ottHint, releaseHint, releaseTypesFor, safeLink,
+} from "../utils/newWork";
 import { useApp } from "../context/AppContext";
 
 // One new movie or TV show, as three steps: BGM received → fingerprinting → cue sheet work.
@@ -134,6 +136,74 @@ function BgmStep({ w, act, busy, canEdit }) {
   );
 }
 
+// ─── Video (movies released in theatres) ─────────────────────────────────────
+function VideoStep({ w, n, act, busy, canEdit }) {
+  const v = w.video;
+  const [form, setForm] = useState({ source: "ott", link: w.video_link || "", note: "" });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const fpStarted = w.fingerprint.status !== "not_assigned";
+  const ready = form.source === "ott" ? !!form.link.trim() : form.source === "other" ? form.note.trim().length >= MIN_REASON : true;
+  const weeks = Math.round((w.ott?.window_days || 56) / 7);
+  return (
+    <StepCard n={n} title="Video available" state={v.waiting ? "current" : "done"} badge={v.waiting ? "Waiting" : null}>
+      {v.waiting ? (
+        <>
+          <Fact>
+            {w.release_date ? `In theatres since ${fmtDate(w.release_date)}${v.days_since_release != null ? ` (${daysLabel(v.days_since_release)})` : ""}. ` : "Release date not known yet. "}
+            {v.expected_ott
+              ? `Expected on ${w.ott?.platform || "OTT"} ${v.estimated ? `around ${fmtDate(v.expected_ott)}, the usual ${weeks}-week gap after release` : `on ${fmtDate(v.expected_ott)}`}.`
+              : "No OTT date known yet."}
+            {v.next_check ? ` CueSync asks again on ${fmtDate(v.next_check)}.` : ""}
+          </Fact>
+          {v.overdue && (
+            <div className="rounded-lg px-3 py-2 text-xs flex items-start gap-2" style={{ background: T.redBg, color: C.dark }}>
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: T.red }} />
+              <span>Still no video long after release. Check with the client: it may be going to TV, or they can send a copy.</span>
+            </div>
+          )}
+          {canEdit && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={label} style={{ color: C.sub }}>Where did the video come from?</label>
+                  <Select value={form.source} onChange={set("source")} className={field} style={fieldStyle}>
+                    {VIDEO_SOURCES.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
+                  </Select>
+                </div>
+                {form.source === "ott" ? (
+                  <div>
+                    <label className={label} style={{ color: C.sub }}>OTT link *</label>
+                    <input type="url" inputMode="url" value={form.link} onChange={set("link")} maxLength={2000} placeholder="https://www.primevideo.com/…" className={field} style={fieldStyle} />
+                  </div>
+                ) : (
+                  <div>
+                    <label className={label} style={{ color: C.sub }}>Note{form.source === "other" ? " *" : " (optional)"}</label>
+                    <input value={form.note} onChange={set("note")} maxLength={2000} placeholder={form.source === "other" ? "Where the video came from…" : "e.g. Drive link shared by the producer"} className={field} style={fieldStyle} />
+                  </div>
+                )}
+              </div>
+              <Tick checked={false} disabled={busy || !ready} hint={form.source === "ott" ? "Add the OTT link first." : "Say where the video came from."}
+                onChange={() => act(() => api.newWorkVideo(w.id, { available: true, source: form.source, note: form.source === "ott" ? null : form.note.trim() || null, link: form.source === "ott" ? form.link.trim() : null }))}>
+                Video available
+              </Tick>
+              <Fact>Tick it once the movie is streaming or the client has sent a copy. Fingerprinting opens then, and the reminders start counting from that day.</Fact>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <Tick checked disabled onChange={() => {}}>Video available</Tick>
+          <Fact>Since {fmtDateTime(v.at)}: {v.source_label}{v.by_name ? `, ticked by ${v.by_name}` : ""}.{v.note ? ` ${v.note}` : ""}</Fact>
+          {canEdit && w.release_type === "theatrical" && (
+            <Btn kind="link" disabled={busy || fpStarted} title={fpStarted ? "Fingerprinting has already started. Unassign or reopen it first." : undefined}
+              onClick={() => act(() => api.newWorkVideo(w.id, { available: false }))}><Undo2 className="w-3.5 h-3.5" /> Not available after all</Btn>
+          )}
+        </>
+      )}
+    </StepCard>
+  );
+}
+
 // ─── Step 2 ──────────────────────────────────────────────────────────────────
 function MailBox({ w, mail, act, busy, canEdit }) {
   const linked = w.fingerprint.mail;
@@ -216,7 +286,7 @@ export function FingerprintDone({ w, mailInfo, act, busy }) {
   );
 }
 
-function FingerprintStep({ w, mail, editors, act, busy, canEdit }) {
+function FingerprintStep({ w, n, mail, editors, act, busy, canEdit }) {
   const fp = w.fingerprint;
   const locked = w.locked.fingerprint;
   const cueStarted = w.cue.status !== "not_assigned";
@@ -225,7 +295,10 @@ function FingerprintStep({ w, mail, editors, act, busy, canEdit }) {
   const reopen = canEdit ? () => act(() => api.newWorkReopen(w.id, "fingerprint")) : null;
   const options = editors.some((e) => e.id === fp.assigned_to) || !fp.assigned_to ? editors : [...editors, { id: fp.assigned_to, full_name: `${fp.assigned_to_name || "Unknown"} (inactive)` }];
   return (
-    <StepCard n={2} title="Fingerprinting" state={state} locked={locked} lockedText="Opens when the BGM is received, or that step is skipped.">
+    <StepCard n={n} title="Fingerprinting" state={state} locked={locked}
+      lockedText={w.bgm.state === "awaiting"
+        ? `Opens when the BGM is received, or that step is skipped${w.video?.waiting ? ", and the video is available" : ""}.`
+        : "Opens when the video is available."}>
       {fp.status === "skipped" ? (
         <Skipped by={fp.done_by_name} at={fp.done_at} reason={fp.skip_reason} canReopen={!cueStarted} why={why} onReopen={reopen} />
       ) : fp.status === "completed" ? (
@@ -277,10 +350,10 @@ function FingerprintStep({ w, mail, editors, act, busy, canEdit }) {
 }
 
 // ─── Step 3 ──────────────────────────────────────────────────────────────────
-function CueStep({ w, editors, clients, act, busy, canEdit }) {
+function CueStep({ w, n, editors, clients, act, busy, canEdit }) {
   const cue = w.cue;
   const movie = w.work_type === "movie";
-  const [form, setForm] = useState({ assigned_to: "", client_id: "", channel: "", episode_range: "", week_target: "", notes: "" });
+  const [form, setForm] = useState({ assigned_to: "", client_id: w.client_id ? String(w.client_id) : "", channel: "", episode_range: "", week_target: "", notes: "" });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const locked = w.locked.cue;
   const state = locked ? "locked" : cue.status === "completed" ? "done" : cue.status === "skipped" ? "skipped" : "current";
@@ -295,7 +368,7 @@ function CueStep({ w, editors, clients, act, busy, canEdit }) {
   }), "allot");
 
   return (
-    <StepCard n={3} title="Cue sheet work delegation" state={state} locked={locked} lockedText="Opens when fingerprinting is completed, or that step is skipped."
+    <StepCard n={n} title="Cue sheet work delegation" state={state} locked={locked} lockedText="Opens when fingerprinting is completed, or that step is skipped."
       badge={["assigned", "in_progress"].includes(cue.status) ? cue.status_label : null}>
       {cue.status === "skipped" ? (
         <Skipped at={cue.done_at} reason={cue.skip_reason} canReopen
@@ -313,9 +386,9 @@ function CueStep({ w, editors, clients, act, busy, canEdit }) {
               </div>
               <div>
                 <label className={label} style={{ color: C.sub }}>Client</label>
-                <Select value={form.client_id} onChange={set("client_id")} className={field} style={fieldStyle}>
-                  <option value="">No client</option>
-                  {clients.filter((c) => c.is_active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <Select value={form.client_id} onChange={set("client_id")} className={field} style={fieldStyle} searchable searchPlaceholder="Search clients…">
+                  {!w.client_id && <option value="">No client</option>}
+                  {clients.filter((c) => c.is_active || c.id === w.client_id).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </Select>
               </div>
               {!movie && (
@@ -374,17 +447,116 @@ function CueStep({ w, editors, clients, act, busy, canEdit }) {
   );
 }
 
+// ─── Client, release date and video link (the Add form and the edit form) ────
+function ReleaseFields({ form, setForm, clients, clientLocked }) {
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const options = clients.filter((c) => c.is_active || String(c.id) === String(form.client_id));
+  const hint = releaseHint(form.release_date);
+  const theatrical = form.release_type === "theatrical";
+  const dateLabel = theatrical ? "Release date in theatres" : form.release_type === "ott" ? "OTT release date" : form.release_type === "tv" ? "First broadcast date" : "Release date";
+  return (
+    <>
+      <div>
+        <label className={label} style={{ color: C.sub }}>Client *</label>
+        <Select value={form.client_id} onChange={set("client_id")} className={field} style={fieldStyle} searchable searchPlaceholder="Search clients…"
+          placeholder={clients.length ? "Select client…" : "No clients yet: ask an Admin or Reviewer to add one under Clients"}
+          disabled={clientLocked} title={clientLocked ? "The cue sheet work is allotted: change its client under Editors and their serials" : undefined}>
+          {options.map((c) => <option key={c.id} value={c.id}>{c.is_active ? c.name : `${c.name} (inactive)`}</option>)}
+        </Select>
+      </div>
+      <div>
+        <span className={label} style={{ color: C.sub }}>Released first in</span>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Released first in">
+          {releaseTypesFor(form.work_type).map(([key, text]) => (
+            <button key={key} type="button" onClick={() => setForm((f) => ({ ...f, release_type: key }))} aria-pressed={form.release_type === key}
+              className="flex-1 min-w-24 px-3 py-1.5 rounded-lg text-xs font-semibold border"
+              style={form.release_type === key ? { background: C.dark, color: C.mint4, borderColor: C.dark } : { background: C.white, color: C.dark, borderColor: alpha(C.mint1, "88") }}>
+              {text}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className={label} style={{ color: C.sub }}>{dateLabel} <span className="font-normal">(optional)</span></label>
+          <input type="date" min="1950-01-01" max="2100-12-31" value={form.release_date} onChange={set("release_date")} className={field} style={fieldStyle} />
+        </div>
+        <div>
+          <label className={label} style={{ color: C.sub }}>Video link <span className="font-normal">(optional)</span></label>
+          <input type="url" inputMode="url" value={form.video_link} onChange={set("video_link")} maxLength={2000}
+            placeholder="https://…" className={field} style={fieldStyle} />
+        </div>
+      </div>
+      {hint && <div className="flex items-start gap-1.5 text-[0.6875rem]" style={{ color: C.sub }}><CalendarDays className="w-3.5 h-3.5 mt-px shrink-0" /> {hint}</div>}
+      {theatrical && (
+        <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: alpha(C.mint1, "66"), background: alpha(C.mint4, "55") }}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className={label} style={{ color: C.sub }}>OTT date <span className="font-normal">(if announced)</span></label>
+              <input type="date" min="1950-01-01" max="2100-12-31" value={form.ott_date} onChange={set("ott_date")} className={field} style={fieldStyle} />
+            </div>
+            <div>
+              <label className={label} style={{ color: C.sub }}>OTT platform <span className="font-normal">(optional)</span></label>
+              <input value={form.ott_platform} onChange={set("ott_platform")} maxLength={100} placeholder="e.g. Netflix" className={field} style={fieldStyle} />
+            </div>
+            <div>
+              <label className={label} style={{ color: C.sub }}>Usual gap to OTT</label>
+              <Select value={String(form.ott_window_days)} onChange={set("ott_window_days")} className={field} style={fieldStyle}
+                disabled={!!form.ott_date} title={form.ott_date ? "Not needed: the OTT date is known" : "Used while the OTT date isn't known"}>
+                {OTT_WINDOWS.map(([days, text]) => <option key={days} value={days}>{text}</option>)}
+              </Select>
+            </div>
+          </div>
+          <div className="flex items-start gap-1.5 text-[0.6875rem]" style={{ color: C.sub }}><Clapperboard className="w-3.5 h-3.5 mt-px shrink-0" /> {ottHint(form)}</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+const defaultRelease = (workType) => (workType === "movie" ? "theatrical" : "tv");
+const releaseState = (w) => ({
+  release_type: w?.release_type || "", ott_date: w?.ott?.date || "", ott_platform: w?.ott?.platform || "",
+  ott_window_days: String(w?.ott?.window_days || 56),
+});
+
+const releaseBody = (form) => {
+  const theatrical = form.release_type === "theatrical";
+  return {
+    client_id: form.client_id ? Number(form.client_id) : null,
+    release_date: form.release_date || null,
+    video_link: form.video_link.trim() || null,
+    ...(form.release_type ? { release_type: form.release_type } : {}),
+    ott_date: theatrical ? form.ott_date || null : null,
+    ott_platform: theatrical ? form.ott_platform.trim() || null : null,
+    ott_window_days: theatrical ? Number(form.ott_window_days) || null : null,
+  };
+};
+
+// Switching Movie ↔ TV Show: a TV show is never "theatres first".
+const withType = (f, workType) => ({
+  ...f, work_type: workType,
+  // Only a default follows the type; a choice the user made stays, and an older work with none stays without one.
+  release_type: workType !== "movie" && f.release_type === "theatrical" ? "tv" : f.release_type && f.release_type === defaultRelease(f.work_type) ? defaultRelease(workType) : f.release_type,
+});
+
 // ─── Add a new work ──────────────────────────────────────────────────────────
-function AddForm({ initial, onCreated, onClose }) {
-  const [form, setForm] = useState({ title: initial?.title || "", work_type: initial?.work_type || "movie", remarks: "" });
+function AddForm({ initial, clients, onCreated, onClose }) {
+  const [form, setForm] = useState({
+    title: initial?.title || "", work_type: initial?.work_type || "movie", remarks: "",
+    client_id: initial?.client_id ? String(initial.client_id) : "", release_date: "", video_link: "",
+    ...releaseState(null), release_type: defaultRelease(initial?.work_type || "movie"),
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const submit = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) { setError("Enter the movie or TV show name."); return; }
+    if (!form.client_id) { setError("Pick the client. Every new work needs one."); return; }
     setBusy(true); setError("");
-    try { onCreated(await api.createNewWork({ title: form.title.trim(), work_type: form.work_type, remarks: form.remarks.trim() || null })); }
-    catch (ex) { setError(ex.message); }
+    try {
+      onCreated(await api.createNewWork({ title: form.title.trim(), work_type: form.work_type, remarks: form.remarks.trim() || null, ...releaseBody(form) }));
+    } catch (ex) { setError(ex.message); }
     finally { setBusy(false); }
   };
   return (
@@ -402,7 +574,7 @@ function AddForm({ initial, onCreated, onClose }) {
         <span className={label} style={{ color: C.sub }}>Work type</span>
         <div className="flex gap-2">
           {TYPES.map(([key, text, Icon]) => (
-            <button key={key} type="button" onClick={() => setForm((f) => ({ ...f, work_type: key }))} aria-pressed={form.work_type === key}
+            <button key={key} type="button" onClick={() => setForm((f) => withType(f, key))} aria-pressed={form.work_type === key}
               className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border"
               style={form.work_type === key ? { background: C.dark, color: C.mint4, borderColor: C.dark } : { background: C.white, color: C.dark, borderColor: alpha(C.mint1, "88") }}>
               <Icon className="w-4 h-4" /> {text}
@@ -410,6 +582,7 @@ function AddForm({ initial, onCreated, onClose }) {
           ))}
         </div>
       </div>
+      <ReleaseFields form={form} setForm={setForm} clients={clients} />
       <div>
         <label className={label} style={{ color: C.sub }}>Remarks / notes</label>
         <textarea value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} rows={2} maxLength={5000}
@@ -418,15 +591,22 @@ function AddForm({ initial, onCreated, onClose }) {
       {error && <div className="text-xs" style={{ color: C.danger }}>{error}</div>}
       <div className="flex justify-end gap-3">
         <Btn kind="link" onClick={onClose}>Cancel</Btn>
-        <Btn kind="dark" disabled={busy} onClick={submit}>{busy ? "Adding…" : "Add to New Work List"}</Btn>
+        <Btn kind="dark" disabled={busy || !form.title.trim() || !form.client_id} onClick={submit}>{busy ? "Adding…" : "Add to New Work List"}</Btn>
       </div>
     </form>
   );
 }
 
-// Name, type and remarks of an existing work.
-function Details({ w, act, busy, onCancel }) {
-  const [form, setForm] = useState({ title: w.title, work_type: w.work_type, remarks: w.remarks || "" });
+// Name, type, client, release date, video link and remarks of an existing work.
+function Details({ w, clients, act, busy, onCancel }) {
+  const [form, setForm] = useState({
+    title: w.title, work_type: w.work_type, remarks: w.remarks || "",
+    client_id: w.client_id ? String(w.client_id) : "", release_date: w.release_date || "", video_link: w.video_link || "",
+    ...releaseState(w),
+  });
+  // A client the list no longer has (deleted) still shows by name until another is picked.
+  const known = !w.client_id || clients.some((c) => c.id === w.client_id);
+  const pickable = known ? clients : [...clients, { id: w.client_id, name: w.client_name || "Unknown", is_active: false }];
   return (
     <div className="rounded-xl border p-4 space-y-3" style={{ background: C.white, borderColor: LINE }}>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -437,22 +617,56 @@ function Details({ w, act, busy, onCancel }) {
         <div>
           <label className={label} style={{ color: C.sub }}>Work type</label>
           <Select value={form.work_type} disabled={!!w.cue.delegation_id} title={w.cue.delegation_id ? "Fixed once the cue sheet work is allotted" : undefined}
-            onChange={(e) => setForm((f) => ({ ...f, work_type: e.target.value }))} className={field} style={fieldStyle}>
+            onChange={(e) => setForm((f) => withType(f, e.target.value))} className={field} style={fieldStyle}>
             {TYPES.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
           </Select>
         </div>
       </div>
+      <ReleaseFields form={form} setForm={setForm} clients={pickable} clientLocked={!!(w.client_id && w.cue.delegation_id)} />
       <div>
         <label className={label} style={{ color: C.sub }}>Remarks / notes</label>
         <textarea value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} rows={2} maxLength={5000} className={`${field} resize-none`} style={fieldStyle} />
       </div>
       <div className="flex justify-end gap-3">
         <Btn kind="link" onClick={onCancel}>Cancel</Btn>
-        <Btn kind="dark" disabled={busy || !form.title.trim()}
-          onClick={() => act(() => api.updateNewWork(w.id, { title: form.title.trim(), work_type: form.work_type, remarks: form.remarks.trim() || null })).then((ok) => ok && onCancel())}>
+        <Btn kind="dark" disabled={busy || !form.title.trim() || !form.client_id}
+          onClick={() => act(() => api.updateNewWork(w.id, {
+            title: form.title.trim(), work_type: form.work_type, remarks: form.remarks.trim() || null, ...releaseBody(form),
+          })).then((ok) => ok && onCancel())}>
           Save
         </Btn>
       </div>
+    </div>
+  );
+}
+
+// Client, release date and video link under the title.
+function WorkFacts({ w, onEdit }) {
+  const r = w.release;
+  const href = safeLink(w.video_link);
+  const chip = "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[0.6875rem] font-semibold max-w-full";
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+      {w.client_name
+        ? <span className={chip} style={{ background: C.mint4, color: C.dark }}><Building2 className="w-3.5 h-3.5 shrink-0" /> <span className="truncate">{w.client_name}</span></span>
+        : <button onClick={onEdit} className={`${chip} hover:underline`} style={{ background: T.amberBg, color: T.orange }}><Building2 className="w-3.5 h-3.5" /> Client not set: add it</button>}
+      {r && (
+        <span className={chip} title={r.next_update ? `Next release update: ${fmtDate(r.next_update)}` : undefined}
+          style={r.upcoming ? { background: T.blueBg, color: T.blue } : { background: C.mint4, color: C.dark }}>
+          <CalendarDays className="w-3.5 h-3.5 shrink-0" /> {w.release_type_label ? `${w.release_type_label}: ` : ""}{fmtDate(r.date)} · {r.label}
+        </span>
+      )}
+      {!r && w.release_type_label && <span className={chip} style={{ background: C.mint4, color: C.dark }}><CalendarDays className="w-3.5 h-3.5 shrink-0" /> {w.release_type_label}</span>}
+      {w.video?.expected_ott && (
+        <span className={chip} style={w.video.waiting ? { background: T.blueBg, color: T.blue } : { background: C.mint4, color: C.dark }}>
+          <Clapperboard className="w-3.5 h-3.5 shrink-0" /> OTT{w.ott?.platform ? ` (${w.ott.platform})` : ""}: {w.video.estimated ? "around " : ""}{fmtDate(w.video.expected_ott)}
+        </span>
+      )}
+      {href && (
+        <a href={href} target="_blank" rel="noopener noreferrer" className={`${chip} hover:underline`} style={{ background: C.mint4, color: C.dark }} title={href}>
+          <ExternalLink className="w-3.5 h-3.5 shrink-0" /> Video link
+        </a>
+      )}
     </div>
   );
 }
@@ -516,21 +730,24 @@ export default function NewWorkModal({ workId, initial, onClose, onChanged }) {
           <div className="flex-1 min-w-0">
             <h3 className="text-xl leading-tight break-words" style={{ fontFamily: FONTS.serif, color: C.dark }}>{w ? w.title : "New Work"}</h3>
             {w ? (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[0.6875rem]" style={{ color: C.sub }}>
-                <span className="inline-flex items-center gap-1 font-semibold"><TypeIcon className="w-3.5 h-3.5" /> {w.work_type_label}</span>
-                <StageBadge work={w} />
-                <span>Added {fmtDateTime(w.created_at)}{w.created_by_name ? ` by ${w.created_by_name}` : ""}</span>
-                <span>Last updated {fmtDateTime(w.updated_at)}</span>
-              </div>
+              <>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[0.6875rem]" style={{ color: C.sub }}>
+                  <span className="inline-flex items-center gap-1 font-semibold"><TypeIcon className="w-3.5 h-3.5" /> {w.work_type_label}</span>
+                  <StageBadge work={w} />
+                  <span>Added {fmtDateTime(w.created_at)}{w.created_by_name ? ` by ${w.created_by_name}` : ""}</span>
+                  <span>Last updated {fmtDateTime(w.updated_at)}</span>
+                </div>
+                <WorkFacts w={w} onEdit={() => setEditing(true)} />
+              </>
             ) : <div className="text-[0.6875rem] mt-1" style={{ color: C.sub }}>A new movie or TV show to track</div>}
           </div>
-          {w && <button onClick={() => setEditing((v) => !v)} title="Edit name, type and remarks" className="p-1.5 rounded-lg hover:bg-black/5"><Pencil className="w-4 h-4" style={{ color: C.sub }} /></button>}
+          {w && <button onClick={() => setEditing((v) => !v)} title="Edit name, type, client, release date, video link and remarks" className="p-1.5 rounded-lg hover:bg-black/5"><Pencil className="w-4 h-4" style={{ color: C.sub }} /></button>}
           {w && isAdmin && <button onClick={remove} title="Remove (added by mistake)" className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 className="w-4 h-4" style={{ color: C.danger }} /></button>}
           <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-black/5"><X className="w-4 h-4" style={{ color: C.sub }} /></button>
         </div>
 
         {!id ? (
-          <AddForm initial={initial} onClose={onClose} onCreated={(d) => { setData(d); setId(d.work.id); onChanged?.("work"); }} />
+          <AddForm initial={initial} clients={clients} onClose={onClose} onCreated={(d) => { setData(d); setId(d.work.id); onChanged?.("work"); }} />
         ) : !w ? (
           <div className="p-10 text-center text-sm" style={{ color: error ? C.danger : C.sub }}>{error || "Loading…"}</div>
         ) : (
@@ -547,12 +764,13 @@ export default function NewWorkModal({ workId, initial, onClose, onChanged }) {
               </div>
             )}
             {editing
-              ? <Details w={w} act={act} busy={busy} onCancel={() => setEditing(false)} />
+              ? <Details w={w} clients={clients} act={act} busy={busy} onCancel={() => setEditing(false)} />
               : w.remarks && <div className="text-xs rounded-lg px-3 py-2 whitespace-pre-wrap break-words" style={{ background: C.white, color: C.dark, border: `1px solid ${LINE}` }}><b>Remarks:</b> {w.remarks}</div>}
 
             <BgmStep w={w} act={act} busy={busy} canEdit />
-            <FingerprintStep w={w} mail={mail} editors={editors} act={linked} busy={busy} canEdit />
-            <CueStep w={w} editors={editors} clients={clients} act={act} busy={busy} canEdit />
+            {w.video && <VideoStep key={w.video.state} w={w} n={2} act={act} busy={busy} canEdit />}
+            <FingerprintStep w={w} n={w.video ? 3 : 2} mail={mail} editors={editors} act={linked} busy={busy} canEdit />
+            <CueStep key={w.client_id || 0} n={w.video ? 4 : 3} w={w} editors={editors} clients={clients} act={act} busy={busy} canEdit />
 
             <div className="rounded-xl border overflow-hidden" style={{ background: C.white, borderColor: LINE }}>
               <button onClick={() => setShowLog((v) => !v)} className="w-full px-4 py-3 flex items-center gap-2 text-left">

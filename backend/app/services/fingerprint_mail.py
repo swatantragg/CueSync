@@ -173,7 +173,7 @@ async def match_waiting(db: AsyncSession) -> int:
     after the work was added, so last year's email about a same-named title unlocks nothing."""
     works = (await db.execute(select(NewWork).where(
         NewWork.bgm_state != "awaiting", NewWork.fp_status.in_(("not_assigned", "assigned", "in_progress")),
-        NewWork.fp_mail_id.is_(None),
+        NewWork.fp_mail_id.is_(None), NewWork.video_state.is_distinct_from("waiting"),   # matched once the video is in
     ))).scalars().all()
     if not works:
         return 0

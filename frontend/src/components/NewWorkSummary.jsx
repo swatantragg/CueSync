@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  AlarmClock, BellRing, CheckCircle2, ChevronRight, ClipboardList, Clock, Fingerprint, Hourglass, Inbox, ListPlus, Music, UserPlus,
+  AlarmClock, BellRing, CheckCircle2, ChevronRight, ClipboardList, Clock, Clapperboard, Fingerprint, Hourglass, Inbox, ListPlus, Music, UserPlus,
 } from "lucide-react";
 import { C, FONTS, alpha, T } from "../styles/palette";
 import { api } from "../utils/api";
@@ -10,6 +10,7 @@ import { api } from "../utils/api";
 
 export const STAGE_TONE = {
   awaiting_bgm: [T.orange, T.orangeBg],
+  awaiting_video: [T.teal, T.blueBg],
   fp_not_assigned: [T.red, T.redBg],
   fp_assigned: [T.purple, T.purpleBg],
   fp_in_progress: [T.purple, T.purpleBg],
@@ -47,10 +48,12 @@ export function NewWorkTiles({ summary: s, onPick }) {
   const pick = (status, extra) => (onPick ? () => onPick({ status, ...extra }) : undefined);
   const also = (n, text) => (n ? `${n} ${text}` : undefined);
   return (
-    <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
       <Tile Icon={ListPlus} tone={C.sub} label="Total new works added" value={s.total}
         sub={`${s.movies} movie${s.movies === 1 ? "" : "s"} · ${s.tv_shows} TV show${s.tv_shows === 1 ? "" : "s"}`} onClick={pick("")} />
       <Tile Icon={Clock} tone={T.orange} label="Awaiting BGM" value={s.awaiting_bgm} onClick={pick("awaiting_bgm")} />
+      <Tile Icon={Clapperboard} tone={s.video_overdue ? T.red : T.blue} label="Waiting for video (in theatres)" value={s.awaiting_video ?? 0}
+        sub={also(s.video_overdue, "long after release: check with the client")} onClick={pick("g:video")} />
       <Tile Icon={Music} tone={T.teal} label="BGM received" value={s.bgm_received}
         sub={also(s.bgm_skipped, "more skipped this step")} onClick={pick("g:bgm_received")} />
       <Tile Icon={UserPlus} tone={T.red} label="Fingerprinting not assigned" value={s.fp_not_assigned} onClick={pick("fp_not_assigned")} />

@@ -16,7 +16,7 @@ function categorize(n) {
   if (n.entity_type === "delegation") return "allotted";
   if (n.entity_type === "editor_notice") return "email";
   // New Work: its own types come first, so a title like "Rejected Love" isn't read as a rejection.
-  if (n.entity_type === "new_work_reminder") return "reminder";
+  if (["new_work_reminder", "new_work_release", "new_work_video"].includes(n.entity_type)) return "reminder";
   if (n.entity_type === "new_work") return (n.title || "").toLowerCase().startsWith("fingerprinting assigned") ? "allotted" : "other";
   const t = (n.title || "").toLowerCase();
   if (t.includes("approved") || t.includes("approval")) return "approved";

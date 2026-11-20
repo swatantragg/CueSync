@@ -267,6 +267,7 @@ def _new_work_section(doc: Doc, nw: dict) -> None:
     doc.kpis([
         ("Total new works added", s["total"], f"{s['movies']} movies, {s['tv_shows']} TV shows"),
         ("Awaiting BGM", s["awaiting_bgm"]),
+        ("Waiting for video (in theatres)", s["awaiting_video"], more(s["video_overdue"], f"over {settings.NEW_WORK_VIDEO_OVERDUE_DAYS} days after release")),
         ("BGM received", s["bgm_received"], more(s["bgm_skipped"], "skipped this step")),
         ("Fingerprinting not assigned", s["fp_not_assigned"]),
         ("Fingerprinting in progress", s["fp_in_progress"], more(s["fp_assigned"], "assigned, not started")),
@@ -285,6 +286,16 @@ def _new_work_section(doc: Doc, nw: dict) -> None:
               empty="Every new work has its cue sheet work allotted.",
               note=f"{len(rows)} in total. " * (len(rows) > WAITING_LIST)
                    + f"A reminder goes out every {settings.NEW_WORK_REMINDER_DAYS} days while a step is waiting, and at 15 and 30 days since the work was added.")
+    video = nw.get("waiting_video") or []
+    if video:
+        day = lambda iso: datetime.fromisoformat(iso).strftime("%d %b %Y") if iso else "—"
+        doc.table("Movies waiting for their video" + (f" (longest {WAITING_LIST})" if len(video) > WAITING_LIST else ""),
+                  ["Movie", "Client", "In theatres", "Expected on OTT", "Since release"],
+                  [[r["title"], r["client_name"] or "—", day(r["release_date"]),
+                    day(r["video"]["expected_ott"]) + (" (usual gap)" if r["video"]["estimated"] else "") if r["video"]["expected_ott"] else "Not known",
+                    _days(r["video"]["days_since_release"])] for r in video[:WAITING_LIST]],
+                  note=f"Released in theatres, not yet on OTT: fingerprinting opens once the video is available. CueSync asks every "
+                       f"{settings.NEW_WORK_VIDEO_CHECK_DAYS} days from the expected OTT date.")
 
 
 def _fingerprint_table(doc: Doc, rows: list[dict]) -> None:

@@ -33,8 +33,8 @@ test("each role sees only its own changes", () => {
 });
 
 test("admin sees everything in the release", () => {
-  assert.equal(whatsNewFor("admin", "4.2.0").length, CHANGELOG.filter((c) => c.version === APP_VERSION).length);
-  assert.equal(whatsNewFor("admin", "4.1.1").length, CHANGELOG.filter((c) => ["4.1.2", "4.2.0", "4.3.0"].includes(c.version)).length);
+  assert.equal(whatsNewFor("admin", "4.3.1").length, CHANGELOG.filter((c) => c.version === APP_VERSION).length);
+  assert.equal(whatsNewFor("admin", "4.1.1").length, CHANGELOG.filter((c) => ["4.1.2", "4.2.0", "4.3.0", "4.3.1", "4.3.2"].includes(c.version)).length);
 });
 
 test("a change for one role leaves other roles without a popup", () => {
@@ -56,10 +56,23 @@ test("4.2.0 tells reviewers about Conversion and nobody else", () => {
 test("4.3.0 tells Work Delegators, editors and admins about New Work, not reviewers or viewers", () => {
   assert.ok(titles("work_delegator", "4.2.0").includes("New Work List"));
   assert.ok(titles("work_delegator", "4.2.0").includes("Fingerprinting waits for the BMAT email"));
-  assert.deepEqual(titles("editor", "4.2.0"), ["Fingerprinting assigned to you"]);
+  assert.deepEqual(titles("editor", "4.2.0"), ["Fingerprinting assigned to you"]);   // 4.3.1 has nothing for editors
   assert.ok(titles("admin", "4.2.0").includes("New Work for admins"));
   assert.deepEqual(whatsNewFor("reviewer", "4.2.0"), []);
   assert.deepEqual(whatsNewFor("viewer", "4.2.0"), []);
+});
+
+test("4.3.1 tells Work Delegators and admins about client, release date and video link, nobody else", () => {
+  assert.deepEqual(whatsNewFor("work_delegator", "4.3.0").filter((c) => c.version === "4.3.1").map((c) => c.title),
+    ["Client, release date and video link on every new work", "Release day updates"]);
+  assert.ok(titles("admin", "4.3.0").includes("New Work: client, release date and video link"));
+  for (const role of ["editor", "reviewer", "viewer"]) assert.deepEqual(whatsNewFor(role, "4.3.0"), [], role);
+});
+
+test("4.3.2 tells Work Delegators and admins about waiting for video, nobody else", () => {
+  assert.deepEqual(titles("work_delegator", "4.3.1"), ["Movies in theatres wait for their video", "Is it on OTT yet?"]);
+  assert.deepEqual(titles("admin", "4.3.1"), ["Movies in theatres wait for their video", "Is it on OTT yet?", "Waiting for video, and why weekly emails weren't arriving"]);
+  for (const role of ["editor", "reviewer", "viewer"]) assert.deepEqual(whatsNewFor(role, "4.3.1"), [], role);
 });
 
 test("first sign-in shows this release only, skipped releases catch up", () => {

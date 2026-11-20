@@ -116,6 +116,24 @@ MIGRATIONS = [
     "ALTER TABLE client_mailboxes ADD COLUMN IF NOT EXISTS last_sent_scan_at TIMESTAMPTZ",
     # Conversion: the email carried sheets converted from an uploaded file, not approved episodes
     "ALTER TABLE society_submissions ADD COLUMN IF NOT EXISTS from_conversion BOOLEAN DEFAULT FALSE NOT NULL",
+    # New Work (4.3.1): client, release date (updates on the day and 7 days after) and video link
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL",
+    "CREATE INDEX IF NOT EXISTS ix_new_works_client_id ON new_works(client_id)",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS release_date DATE",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS video_link TEXT",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS release_alert_level INTEGER DEFAULT 0 NOT NULL",
+    # New Work (4.3.2): theatrical releases wait for their video (OTT or a copy) before fingerprinting
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS release_type VARCHAR(20)",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS ott_date DATE",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS ott_platform VARCHAR(100)",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS ott_window_days INTEGER",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS video_state VARCHAR(20)",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS video_at TIMESTAMPTZ",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS video_by INTEGER REFERENCES users(id) ON DELETE SET NULL",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS video_source VARCHAR(20)",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS video_note TEXT",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS video_check_count INTEGER DEFAULT 0 NOT NULL",
+    "ALTER TABLE new_works ADD COLUMN IF NOT EXISTS video_overdue_sent BOOLEAN DEFAULT FALSE NOT NULL",
 ]
 
 # Users columns. Run in autocommit (not inside MIGRATIONS' shared transaction) because every
@@ -255,15 +273,19 @@ async def _sync_fingerprint_mail() -> None:
 
 
 async def _send_new_work_reminders() -> None:
-    """Chase new works stuck on a step: every few days, and at 15 and 30 days without a cue sheet allotment."""
-    from app.services.new_works import send_reminders
+    """Chase new works stuck on a step: every few days, and at 15 and 30 days without a cue sheet allotment.
+    Also the release updates (on a work's release day and 7 days after it) and, for movies in theatres, the
+    "is it on OTT yet?" checks."""
+    from app.services.new_works import send_release_updates, send_reminders, send_video_checks
 
     try:
         async with AsyncSession(engine) as db:
             async with db.begin():
                 sent = await send_reminders(db)
-        if sent:
-            print(f"[new-work-reminders] sent {sent}")
+                released = await send_release_updates(db)
+                video = await send_video_checks(db)
+        if sent or released or video:
+            print(f"[new-work-reminders] sent {sent}, release updates {released}, video checks {video}")
     except Exception as exc:
         print(f"[new-work-reminders] error: {exc}")
 
@@ -277,8 +299,16 @@ async def _mail_sync_loop() -> None:
 
 
 async def _weekly_report_loop() -> None:
+    from app.services import brevo
     from app.services.weekly_reports import run_if_due
 
+    # Said once at startup, so "nobody gets the weekly email" is visible in the logs, not silent.
+    missing = brevo.missing_config()
+    if not settings.REPORT_ENABLED or missing:
+        why = ["REPORT_ENABLED is false"] * (not settings.REPORT_ENABLED) + [f"missing {', '.join(missing)}"] * bool(missing)
+        print(f"[weekly-reports] OFF: {'; '.join(why)}. Nobody receives the weekly email until this is fixed in the .env.")
+    elif brevo.sender_problem():
+        print(f"[weekly-reports] WARNING: {brevo.sender_problem()}")
     await asyncio.sleep(120)
     while True:
         try:
@@ -400,7 +430,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="4.3.0",
+    version="4.3.2",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
     # Disable automatic debug info exposure in OpenAPI errors

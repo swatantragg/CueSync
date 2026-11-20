@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clapperboard, Fingerprint, MailCheck, MailQuestion, Tv } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clapperboard, ExternalLink, Fingerprint, MailCheck, MailQuestion, Tv } from "lucide-react";
 import { C, FONTS, alpha, T } from "../styles/palette";
 import Select from "./Select";
 import { FingerprintDone } from "./NewWorkModal";
 import { api } from "../utils/api";
 import { fmtDateTime } from "../utils/format";
-import { daysLabel } from "../utils/newWork";
+import { daysLabel, safeLink } from "../utils/newWork";
 import { useApp } from "../context/AppContext";
 
 // Editor Dashboard: the fingerprinting a Work Delegator assigned to this editor. They move it to In progress and
@@ -26,6 +26,12 @@ function Task({ w, info, act, busy }) {
             <span className="inline-flex items-center gap-1"><TypeIcon className="w-3 h-3" /> {w.work_type_label}</span>
             <span>Assigned{fp.assigned_by_name ? ` by ${fp.assigned_by_name}` : ""} on {fmtDateTime(fp.assigned_at)}</span>
             {w.bgm.received && <span>BGM received {fmtDateTime(w.bgm.at)}</span>}
+            {w.video?.state === "available" && <span>Video: {w.video.source_label}{w.video.note ? ` (${w.video.note})` : ""}</span>}
+            {safeLink(w.video_link) && (
+              <a href={safeLink(w.video_link)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold hover:underline" style={{ color: C.mid }}>
+                <ExternalLink className="w-3 h-3" /> Open video
+              </a>
+            )}
             {!done && fp.assigned_days > 0 && <span className="font-semibold" style={{ color: fp.assigned_days >= 5 ? T.orange : C.sub }}>with you for {daysLabel(fp.assigned_days)}</span>}
           </div>
         </div>

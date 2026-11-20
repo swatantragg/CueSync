@@ -201,6 +201,7 @@ export const api = {
   updateNewWork: (id, payload) => request(`/api/new-works/${id}`, { method: "PUT", body: payload }),
   deleteNewWork: (id) => request(`/api/new-works/${id}`, { method: "DELETE" }),
   newWorkBgm: (id, received) => request(`/api/new-works/${id}/bgm`, { method: "POST", body: { received } }),
+  newWorkVideo: (id, payload) => request(`/api/new-works/${id}/video`, { method: "POST", body: payload }),
   newWorkSkip: (id, step, reason) => request(`/api/new-works/${id}/skip`, { method: "POST", body: { step, reason } }),
   newWorkReopen: (id, step) => request(`/api/new-works/${id}/reopen`, { method: "POST", body: { step } }),
   newWorkAssignFingerprint: (id, assigned_to) => request(`/api/new-works/${id}/fingerprint/assign`, { method: "POST", body: { assigned_to } }),

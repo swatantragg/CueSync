@@ -9,8 +9,21 @@ Three steps, each done or skipped with a reason before the next one opens:
 A step left waiting is chased every NEW_WORK_REMINDER_DAYS days, and once more at 15 and at 30 days since the work
 was added while its cue sheet work is still not allotted. Everything done here, by a person or by CueSync, is written
 to the audit log under entity "new_work".
+
+Each work names its client (required when it is added) and may carry a release date and a video link. A release date
+still ahead when it is entered brings the Admins and Work Delegators an update on that day and RELEASE_FOLLOW_UP days
+after it, saying where the work stands.
+
+A movie released in theatres first (release_type "theatrical") has no video to work from until it reaches OTT or the
+client sends a copy, so it waits for "Video available" before fingerprinting opens. While it waits, the step
+reminders and the 15/30-day flags hold off (they count from the day the video came); instead CueSync asks "is it on
+OTT yet?" on the expected OTT date (the announced one, or the usual gap after release) and every
+NEW_WORK_VIDEO_CHECK_DAYS after, and flags it once NEW_WORK_VIDEO_OVERDUE_DAYS after release.
 """
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy import or_, select, update
@@ -18,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.audit import AuditLog
+from app.models.client import Client
 from app.models.new_work import FingerprintMail, NewWork
 from app.models.notification import Notification
 from app.models.user import User, UserRole
@@ -28,6 +42,12 @@ WD_ROLES = (UserRole.ADMIN, UserRole.WORK_DELEGATOR)
 ENTITY = "new_work"
 EVENT = "new_work"                 # notification about something that happened to a work
 REMINDER = "new_work_reminder"     # notification chasing a pending step
+RELEASE = "new_work_release"       # notification on a work's release day, and RELEASE_FOLLOW_UP days after it
+RELEASE_FOLLOW_UP = 7              # days after the release date for the second update
+VIDEO = "new_work_video"           # notification: is a theatrical release on OTT yet?
+RELEASE_TYPES = {"theatrical": "Theatres first", "ott": "OTT", "tv": "TV"}
+OTT_WINDOWS = (28, 56)             # the usual theatre → OTT gaps a work can be set to: 4 weeks (South), 8 weeks (Hindi)
+VIDEO_SOURCES = {"ott": "Streaming on OTT", "client": "Copy sent by the client", "tv": "Shown on TV", "other": "Other"}
 TYPES = {"movie": "Movie", "tv_show": "TV Show"}
 STEPS = {"bgm": "BGM received", "fingerprint": "Fingerprinting", "cue": "Cue sheet work"}
 LONG_PENDING = (15, 30)            # days since added, cue sheet work still not allotted
@@ -36,6 +56,7 @@ RECENT_DONE = timedelta(days=14)   # how long finished fingerprinting stays on t
 
 STAGES = {
     "awaiting_bgm": "Awaiting BGM",
+    "awaiting_video": "Waiting for video",
     "fp_not_assigned": "Fingerprinting not assigned",
     "fp_assigned": "Fingerprinting assigned",
     "fp_in_progress": "Fingerprinting in progress",
@@ -71,6 +92,132 @@ def ago(days: int) -> str:
     return "today" if days <= 0 else "1 day ago" if days == 1 else f"{days} days ago"
 
 
+def local_today(now: datetime) -> date:
+    """The office's calendar day (REPORT_TIMEZONE): a release date "arrives" at its midnight, not UTC's."""
+    try:
+        tz = ZoneInfo(settings.REPORT_TIMEZONE.strip())
+    except Exception:
+        tz = timezone.utc
+    return now.astimezone(tz).date()
+
+
+def day(d: date | None) -> str | None:
+    return f"{d:%d %b %Y}" if d else None
+
+
+DATE_RANGE = (date(1950, 1, 1), date(2100, 12, 31))
+
+
+def sane_date(d: date | None, what: str) -> date | None:
+    """A typo like year 9999 would overflow every "+ 7 days" and break the whole list, so dates stay in a real range."""
+    if d is not None and not DATE_RANGE[0] <= d <= DATE_RANGE[1]:
+        raise HTTPException(400, f"The {what} must be between {DATE_RANGE[0].year} and {DATE_RANGE[1].year}.")
+    return d
+
+
+def release_level(release: date | None, today: date) -> int:
+    """How many of the two release updates have come round: on the day (1), and RELEASE_FOLLOW_UP days after (2)."""
+    if not release or today < release:
+        return 0
+    return 2 if (today - release).days >= RELEASE_FOLLOW_UP else 1
+
+
+def release_info(w: NewWork, today: date) -> dict | None:
+    if not w.release_date:
+        return None
+    days = (today - w.release_date).days   # negative while it is still ahead
+    label = ("Releases today" if days == 0 else "Releases tomorrow" if days == -1 else f"Releases in {-days} days" if days < 0
+             else "Released yesterday" if days == 1 else f"Released {days} days ago")
+    follow = w.release_date + timedelta(days=RELEASE_FOLLOW_UP)
+    nxt = (w.release_date if w.release_alert_level < 1 and today <= w.release_date
+           else follow if w.release_alert_level < 2 and today <= follow else None)
+    return {"date": w.release_date.isoformat(), "days": days, "upcoming": days < 0, "label": label,
+            "updates_sent": w.release_alert_level, "next_update": nxt.isoformat() if nxt else None}
+
+
+# ── waiting for the video (theatrical releases) ───────────────────────────────
+def expected_ott(w: NewWork) -> date | None:
+    """The announced OTT date, or the usual gap after the theatrical release."""
+    if w.ott_date:
+        return w.ott_date
+    if w.release_date:
+        return w.release_date + timedelta(days=w.ott_window_days or settings.NEW_WORK_OTT_WINDOW_DAYS)
+    return None
+
+
+def _added_day(w: NewWork) -> date:
+    return local_today(w.created_at or datetime.now(timezone.utc))
+
+
+def video_anchor(w: NewWork) -> date:
+    """The day of the first "is it on OTT yet?" check: the expected OTT date, or a week after the work was added
+    when neither a release nor an OTT date is known."""
+    return expected_ott(w) or _added_day(w) + timedelta(days=max(1, settings.NEW_WORK_VIDEO_CHECK_DAYS))
+
+
+def video_checks_due(w: NewWork, today: date) -> int:
+    anchor = video_anchor(w)
+    return 0 if today < anchor else 1 + (today - anchor).days // max(1, settings.NEW_WORK_VIDEO_CHECK_DAYS)
+
+
+def video_overdue(w: NewWork, today: date) -> bool:
+    start = w.release_date or _added_day(w)
+    return (today - start).days >= settings.NEW_WORK_VIDEO_OVERDUE_DAYS
+
+
+def arm_video_checks(w: NewWork, today: date) -> None:
+    """Checks and the overdue flag owed from now on: whatever has already come round is not sent late."""
+    w.video_check_count = video_checks_due(w, today)
+    w.video_overdue_sent = video_overdue(w, today)
+
+
+def video_info(w: NewWork, today: date, by_name: str | None) -> dict | None:
+    if not w.video_state:
+        return None
+    exp = expected_ott(w)
+    every = max(1, settings.NEW_WORK_VIDEO_CHECK_DAYS)
+    waiting = w.video_state == "waiting"
+    nxt = video_anchor(w) + timedelta(days=every * w.video_check_count) if waiting else None
+    return {
+        "state": w.video_state, "waiting": waiting, "at": iso(w.video_at), "by_name": by_name,
+        "source": w.video_source, "source_label": VIDEO_SOURCES.get(w.video_source or ""), "note": w.video_note,
+        "expected_ott": exp.isoformat() if exp else None, "estimated": bool(exp and not w.ott_date),
+        "checks_sent": w.video_check_count, "next_check": nxt.isoformat() if nxt else None,
+        "overdue": waiting and video_overdue(w, today),
+        "days_since_release": (today - w.release_date).days if w.release_date and w.release_date <= today else None,
+    }
+
+
+def counts_from_video(w: NewWork) -> bool:
+    """Pending time of a theatrical release starts when its video came, not when its name did."""
+    return w.video_state == "available" and w.video_at is not None
+
+
+def clean_link(text: str | None) -> str | None:
+    """A video link as a web address (http/https only, so it is safe to open); "youtu.be/x" gets https:// added."""
+    link = (text or "").strip()
+    if not link:
+        return None
+    if not re.match(r"https?://", link, re.I):
+        link = "https://" + link
+    try:
+        host = urlparse(link).hostname or ""
+    except ValueError:
+        host = ""
+    if "." not in host or any(ch.isspace() for ch in link):
+        raise HTTPException(400, "The video link must be a web address, e.g. https://youtu.be/…")
+    return link
+
+
+async def client_of(db: AsyncSession, client_id: int | None) -> Client:
+    if not client_id:
+        raise HTTPException(400, "Pick the client. Every new work needs one.")
+    c = await db.get(Client, client_id)
+    if not c or not c.is_active:
+        raise HTTPException(400, "Pick an active client from the client list.")
+    return c
+
+
 def reason_of(text: str | None, what: str) -> str:
     reason = " ".join((text or "").split())
     if len(reason) < MIN_REASON:
@@ -87,9 +234,15 @@ def cue_status(w: NewWork, dl: WorkDelegation | None) -> str:
     return "completed" if w.cue_done_at else "not_assigned"   # the allotment was deleted after the work was done
 
 
+def fingerprint_locked(w: NewWork) -> bool:
+    return w.bgm_state == "awaiting" or w.video_state == "waiting"
+
+
 def stage_of(w: NewWork, dl: WorkDelegation | None) -> str:
     if w.bgm_state == "awaiting":
         return "awaiting_bgm"
+    if w.video_state == "waiting" and w.fp_status not in ("completed", "skipped"):
+        return "awaiting_video"
     if w.fp_status not in ("completed", "skipped"):
         return f"fp_{w.fp_status}"
     return {"not_assigned": "cue_pending", "assigned": "cue_assigned", "in_progress": "cue_in_progress",
@@ -100,8 +253,11 @@ def stage_since(w: NewWork, stage: str) -> datetime | None:
     """When the step the work is waiting on opened."""
     if stage == "awaiting_bgm":
         return w.created_at
-    if stage.startswith("fp_"):
+    if stage == "awaiting_video":
         return w.bgm_at or w.created_at
+    if stage.startswith("fp_"):
+        opened = w.bgm_at or w.created_at
+        return max(opened, w.video_at) if counts_from_video(w) and opened else opened
     if stage == "cue_pending":
         return w.fp_done_at or w.bgm_at or w.created_at
     if stage in ("cue_assigned", "cue_in_progress"):
@@ -109,19 +265,24 @@ def stage_since(w: NewWork, stage: str) -> datetime | None:
     return w.cue_done_at
 
 
+def _opened(w: NewWork, days_open: int) -> str:
+    return (f"The video of {w.title} became available {ago(days_open)}" if counts_from_video(w)
+            else f"{w.title} was added {ago(days_open)}")
+
+
 def _long_message(w: NewWork, kind: str, days_open: int, days: int, message: str) -> str:
+    opened = _opened(w, days_open)
     if kind == "bgm":   # both count from the day it was added: say it once
-        return (f"{w.title} was added {ago(days_open)}. The BGM has still not been received, so cue sheet work "
-                "has not been assigned. Please follow up.")
+        return f"{opened}. The BGM has still not been received, so cue sheet work has not been assigned. Please follow up."
     if kind == "cue":   # the step itself is "not allotted": don't say it twice
         done = "skipped" if w.fp_status == "skipped" else "completed"
-        return (f"{w.title} was added {ago(days_open)}, but cue sheet work has still not been assigned. "
-                f"Fingerprinting was {done} {ago(days)}.")
-    return f"{w.title} was added {ago(days_open)}, but cue sheet work has still not been assigned. {message}"
+        return f"{opened}, but cue sheet work has still not been assigned. Fingerprinting was {done} {ago(days)}."
+    return f"{opened}, but cue sheet work has still not been assigned. {message}"
 
 
 def follow_up(w: NewWork, stage: str, now: datetime, assignee: str | None = None) -> dict | None:
-    """What still has to be chased for this work, in the words of its reminder. None once cue sheet work is allotted."""
+    """What still has to be chased for this work, in the words of its reminder. None once cue sheet work is allotted,
+    and while the work waits for its video (those checks are send_video_checks')."""
     if stage not in PENDING_STAGES:
         return None
     since = stage_since(w, stage)
@@ -135,13 +296,15 @@ def follow_up(w: NewWork, stage: str, now: datetime, assignee: str | None = None
         message = f"Fingerprinting for {w.title} {done} {ago(days)}, but cue sheet work has not yet been allocated."
     else:
         kind = "fingerprint"
-        start = (f"The BGM step for {w.title} was skipped {ago(days)}" if w.bgm_state == "skipped"
+        start = (f"The video of {w.title} became available {ago(days)}" if counts_from_video(w) and since == w.video_at
+                 else f"The BGM step for {w.title} was skipped {ago(days)}" if w.bgm_state == "skipped"
                  else f"BGM for {w.title} was received {ago(days)}")
         who = " It is not assigned to anyone yet." if stage == "fp_not_assigned" else f" Assigned to {assignee}." if assignee else ""
         message = f"{start}, but fingerprinting is still pending.{who}"
     every = max(1, settings.NEW_WORK_REMINDER_DAYS)
-    days_open = days_since(w.created_at, now)
-    level = max((n for n in LONG_PENDING if days_open >= n), default=0)
+    days_open = days_since(w.video_at if counts_from_video(w) else w.created_at, now)
+    # No video yet: nothing can be allotted, so the 15/30-day flags wait for it.
+    level = 0 if w.video_state == "waiting" else max((n for n in LONG_PENDING if days_open >= n), default=0)
     return {
         "kind": kind, "days": days, "days_open": days_open, "count": days // every,
         "due": days >= every or level > 0, "level": level, "message": message,
@@ -167,8 +330,10 @@ class Loaded:
         uids = set()
         for w in self.works:
             uids |= {w.created_by, w.bgm_by, w.fp_assigned_to, w.fp_assigned_by, w.fp_done_by, w.fp_mail_linked_by,
-                     w.cue_assigned_to, w.cue_assigned_by}
+                     w.cue_assigned_to, w.cue_assigned_by, w.video_by}
         uids |= {d.assigned_to for d in self.delegations.values()}
+        cids = {w.client_id for w in self.works if w.client_id}
+        self.clients = {c.id: c for c in (await db.execute(select(Client).where(Client.id.in_(cids)))).scalars().all()} if cids else {}
         uids.discard(None)
         self.users = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(uids)))).scalars().all()} if uids else {}
         return self
@@ -176,6 +341,10 @@ class Loaded:
     def name(self, uid: int | None) -> str | None:
         u = self.users.get(uid)
         return u.full_name if u else None
+
+    def client(self, w: NewWork) -> str | None:
+        c = self.clients.get(w.client_id) if w.client_id else None
+        return c.name if c else None
 
     def delegation(self, w: NewWork) -> WorkDelegation | None:
         return self.delegations.get(w.delegation_id) if w.delegation_id else None
@@ -198,9 +367,16 @@ class Loaded:
         return {
             "id": w.id, "title": w.title, "work_type": w.work_type, "work_type_label": TYPES.get(w.work_type, w.work_type),
             "remarks": w.remarks, "created_at": iso(w.created_at), "created_by_name": self.name(w.created_by),
+            "client_id": w.client_id, "client_name": self.client(w), "video_link": w.video_link,
+            "release_date": w.release_date.isoformat() if w.release_date else None,
+            "release": release_info(w, local_today(self.now)),
+            "release_type": w.release_type, "release_type_label": RELEASE_TYPES.get(w.release_type or ""),
+            "ott": {"date": w.ott_date.isoformat() if w.ott_date else None, "platform": w.ott_platform,
+                    "window_days": w.ott_window_days or settings.NEW_WORK_OTT_WINDOW_DAYS},
+            "video": video_info(w, local_today(self.now), self.name(w.video_by)),
             "updated_at": iso(w.updated_at),
             "stage": stage, "stage_label": STAGES[stage], "stage_since": iso(since),
-            "days_in_stage": days_since(since, self.now) if stage in PENDING_STAGES or stage.startswith("cue_") else None,
+            "days_in_stage": days_since(since, self.now) if stage in PENDING_STAGES or stage == "awaiting_video" or stage.startswith("cue_") else None,
             "days_open": reminder["days_open"] if reminder else None,
             "bgm": {
                 "state": w.bgm_state, "received": w.bgm_state == "received", "at": iso(w.bgm_at),
@@ -225,7 +401,7 @@ class Loaded:
                 "client": dl.client if dl else None, "episode_range": dl.episode_range if dl else None,
                 "week_target": dl.week_target if dl else None,
             },
-            "locked": {"fingerprint": w.bgm_state == "awaiting", "cue": w.fp_status not in ("completed", "skipped")},
+            "locked": {"fingerprint": fingerprint_locked(w), "cue": w.fp_status not in ("completed", "skipped")},
             "reminder": reminder,
         }
 
@@ -252,6 +428,8 @@ def summarize(rows: list[dict]) -> dict:
         "movies": sum(1 for r in rows if r["work_type"] == "movie"),
         "tv_shows": sum(1 for r in rows if r["work_type"] == "tv_show"),
         "awaiting_bgm": stage["awaiting_bgm"],
+        "awaiting_video": sum(1 for r in rows if r["video"] and r["video"]["waiting"]),
+        "video_overdue": sum(1 for r in rows if r["video"] and r["video"]["overdue"]),
         "bgm_received": sum(1 for r in rows if r["bgm"]["state"] == "received"),
         "bgm_skipped": sum(1 for r in rows if r["bgm"]["state"] == "skipped"),
         "fp_not_assigned": stage["fp_not_assigned"],
@@ -305,6 +483,9 @@ async def report_data(db: AsyncSession) -> dict:
         "summary": summarize(rows),
         "pending": sorted((r for r in rows if r["reminder"]), key=lambda r: (-r["days_open"], r["title"].lower())),
         "fingerprint_by_editor": by_editor,
+        # Longest since release first; no release date last.
+        "waiting_video": sorted((r for r in rows if r["video"] and r["video"]["waiting"]),
+                                key=lambda r: (-(r["video"]["days_since_release"] or -1), r["title"].lower())),
     }
 
 
@@ -337,22 +518,94 @@ async def clear_reminders(db: AsyncSession, w: NewWork) -> None:
     ).values(is_read=True))
 
 
-async def create(db: AsyncSession, user: User, title: str, work_type: str, remarks: str | None) -> NewWork:
+def release_fields(work_type: str, release_type: str | None, ott_platform: str | None, ott_window_days: int | None) -> tuple:
+    """Checked release type, OTT platform and OTT gap; the OTT details only belong to a theatrical release."""
+    if release_type is not None and release_type not in RELEASE_TYPES:
+        raise HTTPException(400, "Release type must be Theatres first, OTT or TV.")
+    if release_type == "theatrical" and work_type != "movie":
+        raise HTTPException(400, "Only a movie is released in theatres. Pick OTT or TV for a TV show.")
+    if ott_window_days is not None and ott_window_days not in OTT_WINDOWS:
+        raise HTTPException(400, "The usual OTT gap must be 4 or 8 weeks.")
+    if release_type != "theatrical":
+        return release_type, None, None
+    return release_type, " ".join((ott_platform or "").split())[:100] or None, ott_window_days
+
+
+async def create(db: AsyncSession, user: User, title: str, work_type: str, remarks: str | None, client_id: int | None = None,
+                 release_date: date | None = None, video_link: str | None = None, release_type: str | None = None,
+                 ott_date: date | None = None, ott_platform: str | None = None, ott_window_days: int | None = None) -> NewWork:
     title = " ".join((title or "").split())
     key = title_key(title)
     if not key:
         raise HTTPException(400, "Enter the movie or TV show name.")
     if work_type not in TYPES:
         raise HTTPException(400, "Work type must be Movie or TV Show.")
+    client = await client_of(db, client_id)
+    link = clean_link(video_link)
+    release_date, ott_date = sane_date(release_date, "release date"), sane_date(ott_date, "OTT date")
+    release_type, ott_platform, ott_window_days = release_fields(work_type, release_type, ott_platform, ott_window_days)
+    if release_type != "theatrical":
+        ott_date = None
     data = await Loaded().load(db, NewWork.title_key == key, NewWork.work_type == work_type)
     twin = next((x for x in data.works if data.stage(x) not in ("completed", "closed")), None)
     if twin:
         raise HTTPException(409, f'"{twin.title}" is already in the New Work List ({STAGES[data.stage(twin)].lower()}).')
-    w = NewWork(title=title, title_key=key, work_type=work_type, remarks=(remarks or "").strip() or None, created_by=user.id)
+    today = local_today(datetime.now(timezone.utc))
+    w = NewWork(title=title, title_key=key, work_type=work_type, remarks=(remarks or "").strip() or None, created_by=user.id,
+                client_id=client.id, release_date=release_date, video_link=link,
+                release_alert_level=release_level(release_date, today), release_type=release_type, ott_date=ott_date,
+                ott_platform=ott_platform, ott_window_days=ott_window_days, video_state="waiting" if release_type == "theatrical" else None)
     db.add(w)
     await db.flush()
-    await _log(db, user, "new_work_add", w, f"{TYPES[work_type]} · status Awaiting BGM" + (f" · {w.remarks}" if w.remarks else ""))
+    if w.video_state:
+        arm_video_checks(w, today)
+    exp = expected_ott(w) if w.video_state else None
+    parts = [TYPES[work_type], f"client {client.name}", release_type and RELEASE_TYPES[release_type].lower(),
+             release_date and f"release {day(release_date)}",
+             exp and f"{'OTT' if ott_date else 'expected on OTT around'} {day(exp)}{f' on {ott_platform}' if ott_platform else ''}",
+             "status Awaiting BGM" + (", waiting for the video" if w.video_state else ""), link and f"video {link}", w.remarks]
+    await _log(db, user, "new_work_add", w, " · ".join(p for p in parts if p))
     return w
+
+
+async def _edit_release(db: AsyncSession, w: NewWork, fields: dict, changes: list, today: date, expected_before: date | None) -> None:
+    """Release type and OTT details. Making a work theatrical sends it to "Waiting for video" while its
+    fingerprinting hasn't started; making it OTT or TV ends the wait."""
+    rtype = fields.get("release_type", w.release_type)
+    rtype, platform, window = release_fields(w.work_type, rtype, fields.get("ott_platform", w.ott_platform),
+                                             fields.get("ott_window_days", w.ott_window_days))
+    started_waiting = False
+    if rtype != w.release_type:
+        changes.append(f"release {RELEASE_TYPES.get(w.release_type or '', 'not set').lower()} → {RELEASE_TYPES.get(rtype or '', 'not set').lower()}")
+        w.release_type = rtype
+        if rtype == "theatrical" and w.video_state != "available" and w.fp_status == "not_assigned":
+            w.video_state, started_waiting = "waiting", True
+            changes.append("waiting for the video")
+        elif rtype != "theatrical" and w.video_state == "waiting":
+            w.video_state = None
+            changes.append("no longer waiting for the video")
+    ott_date = sane_date(fields.get("ott_date", w.ott_date), "OTT date") if rtype == "theatrical" else None
+    if ott_date != w.ott_date:
+        changes.append(f"OTT date {day(w.ott_date) or 'none'} → {day(ott_date) or 'cleared'}")
+        w.ott_date = ott_date
+    if platform != w.ott_platform:
+        changes.append(f"OTT platform {platform or 'cleared'}")
+        w.ott_platform = platform
+    if window != w.ott_window_days:
+        if rtype == "theatrical":
+            changes.append(f"usual OTT gap {(window or settings.NEW_WORK_OTT_WINDOW_DAYS) // 7} weeks")
+        w.ott_window_days = window
+    # New dates (or a new wait): the checks still ahead of them are owed, none of those already passed.
+    if w.video_state == "waiting" and (started_waiting or expected_ott(w) != expected_before):
+        arm_video_checks(w, today)
+
+
+async def _no_twin(db: AsyncSession, w: NewWork, key: str, work_type: str) -> None:
+    """A rename or retype must not make this work a second open entry for the same title."""
+    data = await Loaded().load(db, NewWork.title_key == key, NewWork.work_type == work_type, NewWork.id != w.id)
+    twin = next((x for x in data.works if data.stage(x) not in ("completed", "closed")), None)
+    if twin:
+        raise HTTPException(409, f'"{twin.title}" is already in the New Work List ({STAGES[data.stage(twin)].lower()}).')
 
 
 async def edit(db: AsyncSession, w: NewWork, user: User, fields: dict) -> None:
@@ -362,6 +615,7 @@ async def edit(db: AsyncSession, w: NewWork, user: User, fields: dict) -> None:
         if not title_key(title):
             raise HTTPException(400, "Enter the movie or TV show name.")
         if title != w.title:
+            await _no_twin(db, w, title_key(title), fields.get("work_type", w.work_type))
             changes.append(f"renamed {w.title} → {title}")
             w.title, w.title_key = title, title_key(title)
     if "work_type" in fields and fields["work_type"] != w.work_type:
@@ -369,8 +623,32 @@ async def edit(db: AsyncSession, w: NewWork, user: User, fields: dict) -> None:
             raise HTTPException(400, "Work type must be Movie or TV Show.")
         if w.delegation_id:
             raise HTTPException(409, "The cue sheet work is already allotted, so the work type can't change.")
+        if fields["work_type"] != "movie" and fields.get("release_type", w.release_type) == "theatrical":
+            raise HTTPException(400, "Only a movie is released in theatres. Pick OTT or TV for a TV show.")
+        await _no_twin(db, w, w.title_key, fields["work_type"])
         changes.append(f"type {TYPES[w.work_type]} → {TYPES[fields['work_type']]}")
         w.work_type = fields["work_type"]
+    if "client_id" in fields and fields["client_id"] != w.client_id:
+        if w.client_id and w.delegation_id:
+            raise HTTPException(409, "The cue sheet work is already allotted. Change its client under Editors and their serials.")
+        client = await client_of(db, fields["client_id"])
+        old = await db.get(Client, w.client_id) if w.client_id else None
+        changes.append(f"client {old.name if old else 'none'} → {client.name}")
+        w.client_id = client.id
+    today = local_today(datetime.now(timezone.utc))
+    expected_before = expected_ott(w)
+    if "release_date" in fields and fields["release_date"] != w.release_date:
+        new = sane_date(fields["release_date"], "release date")
+        changes.append(f"release date {day(w.release_date) or 'none'} → {day(new) or 'cleared'}")
+        w.release_date = new
+        # Updates are owed again for whatever part of the new date is still ahead.
+        w.release_alert_level = release_level(new, today)
+    await _edit_release(db, w, fields, changes, today, expected_before)
+    if "video_link" in fields:
+        link = clean_link(fields["video_link"])
+        if link != w.video_link:
+            changes.append(f"video link {'changed' if w.video_link else 'added'}: {link}" if link else "video link removed")
+            w.video_link = link
     if "remarks" in fields:
         remarks = (fields["remarks"] or "").strip() or None
         if remarks != w.remarks:
@@ -387,7 +665,8 @@ async def set_bgm(db: AsyncSession, w: NewWork, user: User, received: bool) -> N
         if w.bgm_state == "skipped":
             raise HTTPException(409, "This step was skipped. Reopen it first.")
         w.bgm_state, w.bgm_at, w.bgm_by, w.bgm_skip_reason = "received", datetime.now(timezone.utc), user.id, None
-        await _log(db, user, "new_work_bgm", w, "Date recorded automatically. Fingerprinting can now be assigned.")
+        await _log(db, user, "new_work_bgm", w, "Date recorded automatically. " + (
+            "Fingerprinting opens once the video is available." if w.video_state == "waiting" else "Fingerprinting can now be assigned."))
         await clear_reminders(db, w)
     else:
         await reopen(db, w, user, "bgm")
@@ -405,6 +684,7 @@ async def skip(db: AsyncSession, w: NewWork, user: User, step: str, reason: str 
             raise HTTPException(409, "Complete or skip the BGM step first.")
         if w.fp_status in ("completed", "skipped"):
             raise HTTPException(409, "The fingerprinting step is already closed.")
+        _waiting_for_video(w)
         w.fp_status, w.fp_done_at, w.fp_done_by, w.fp_skip_reason = "skipped", now, user.id, reason
     elif step == "cue":
         if w.fp_status not in ("completed", "skipped"):
@@ -446,9 +726,17 @@ async def reopen(db: AsyncSession, w: NewWork, user: User, step: str) -> None:
         raise HTTPException(400, "Unknown step.")
 
 
+def _waiting_for_video(w: NewWork) -> None:
+    if w.video_state == "waiting":
+        raise HTTPException(409, "This movie is waiting for its video (it is in theatres). Tick Video available once "
+                                 "it is on OTT or the client has sent a copy; fingerprinting opens then.")
+
+
 async def assign_fingerprint(db: AsyncSession, w: NewWork, user: User, editor_id: int | None) -> None:
     if w.bgm_state == "awaiting":
         raise HTTPException(409, "Fingerprinting opens once the BGM is received or that step is skipped.")
+    if editor_id is not None:
+        _waiting_for_video(w)
     if w.fp_status in ("completed", "skipped"):
         raise HTTPException(409, "The fingerprinting step is already closed. Reopen it to change who it is assigned to.")
     if editor_id == w.fp_assigned_to:
@@ -492,6 +780,7 @@ async def complete_fingerprint(db: AsyncSession, w: NewWork, user: User, source_
         raise HTTPException(409, "The fingerprinting step is already closed.")
     if w.fp_status == "not_assigned":
         raise HTTPException(409, "Assign the fingerprinting to someone first.")
+    _waiting_for_video(w)
     mail = await db.get(FingerprintMail, w.fp_mail_id) if w.fp_mail_id else None
     if mail:
         w.fp_source, w.fp_source_note = "bmat_mail", None
@@ -526,6 +815,47 @@ async def link_mail(db: AsyncSession, w: NewWork, user: User, mail_id: int | Non
     w.fp_mail_id, w.fp_mail_linked_by, w.fp_mail_linked_at = mail.id, user.id, datetime.now(timezone.utc)
     await _log(db, user, "new_work_fp_mail_link", w,
                f"Linked email “{mail.subject or '(no subject)'}” received {mail.received_at:%d %b %Y}")
+
+
+async def set_video(db: AsyncSession, w: NewWork, user: User, available: bool, source: str | None = None,
+                    note: str | None = None, link: str | None = None) -> None:
+    """Tick "Video available" (saying where it came from), or take it back while fingerprinting hasn't started."""
+    now = datetime.now(timezone.utc)
+    if available:
+        if w.video_state == "available":
+            return
+        if w.video_state != "waiting":
+            raise HTTPException(409, "This work is not waiting for a video.")
+        if source not in VIDEO_SOURCES:
+            raise HTTPException(400, "Say where the video came from: OTT, a copy from the client, TV or other.")
+        note = " ".join((note or "").split()) or None
+        if source == "other":
+            note = reason_of(note, "Say where the video came from")
+        if source == "ott":
+            link = clean_link(link) or w.video_link
+            if not link:
+                raise HTTPException(400, "Add the OTT link of the movie.")
+            if link != w.video_link:
+                w.video_link = link
+        w.video_state, w.video_at, w.video_by, w.video_source, w.video_note = "available", now, user.id, source, note
+        parts = [VIDEO_SOURCES[source], note, source == "ott" and w.video_link]
+        opens = "Fingerprinting can now be assigned." if w.bgm_state != "awaiting" else "Fingerprinting opens once the BGM step is done."
+        await _log(db, user, "new_work_video", w, " · ".join(p for p in parts if p) + f". {opens}")
+        await db.execute(update(Notification).where(
+            Notification.entity_type == VIDEO, Notification.entity_id == w.id, Notification.is_read.is_(False),
+        ).values(is_read=True))
+        await notify(db, await staff(db, skip=user.id), f"Video available: {w.title}",
+                     f"{VIDEO_SOURCES[source]}, ticked by {user.full_name}. {opens}", w)
+        return
+    if w.video_state != "available":
+        return
+    if w.release_type != "theatrical":
+        raise HTTPException(409, "Only a movie released in theatres waits for its video.")
+    if w.fp_status != "not_assigned":
+        raise HTTPException(409, "Fingerprinting has already started. Unassign or reopen it first.")
+    w.video_state, w.video_at, w.video_by, w.video_source, w.video_note = "waiting", None, None, None, None
+    arm_video_checks(w, local_today(now))
+    await _log(db, user, "new_work_video_undo", w, "Video taken back: waiting for the video again")
 
 
 async def cue_allotted(db: AsyncSession, w: NewWork, user: User, dl: WorkDelegation, editor: User, summary: str) -> None:
@@ -599,3 +929,118 @@ async def send_reminders(db: AsyncSession, now: datetime | None = None) -> int:
         await _log(db, None, "new_work_reminder", w, body)
         sent += 1
     return sent
+
+
+# ── release updates ────────────────────────────────────────────────────────────
+def release_message(w: NewWork, data: Loaded, today: date, level: int) -> tuple[str, str]:
+    """The update for a work whose release day (level 1) or the day RELEASE_FOLLOW_UP days after it (level 2) has come."""
+    days = (today - w.release_date).days
+    if level == 1:
+        title = f"Released today: {w.title}" if days == 0 else f"Released: {w.title}"
+        when = f"is released today, {day(w.release_date)}" if days == 0 else f"was released on {day(w.release_date)}"
+    else:
+        title = f"Released {days} days ago: {w.title}"
+        when = f"was released on {day(w.release_date)}, {ago(days)}"
+    row = data.row(w)
+    who = (row["fingerprint"]["assigned_to_name"] if w.fp_status in ("assigned", "in_progress")
+           else row["cue"]["assigned_to_name"] if row["stage"] in ("cue_assigned", "cue_in_progress") else None)
+    client = data.client(w)
+    body = (f"{w.title} ({TYPES.get(w.work_type, w.work_type)}{f', {client}' if client else ''}) {when}. "
+            f"Current status: {row['stage_label']}{f' ({who})' if who else ''}.")
+    if w.video_state == "waiting":
+        exp = expected_ott(w)
+        body += (f" It is in theatres: fingerprinting waits for the video, "
+                 + (f"due on {w.ott_platform or 'OTT'} on {day(exp)}." if w.ott_date else
+                    f"usually on OTT around {day(exp)}." if exp else "and no OTT date is known yet."))
+    body += f" Video: {w.video_link}" if w.video_link else " No video link has been added yet."
+    return title, body
+
+
+async def send_release_updates(db: AsyncSession, now: datetime | None = None) -> int:
+    """Tell the Admins and Work Delegators when a work's release day comes, and again RELEASE_FOLLOW_UP days later.
+    Claimed with a conditional UPDATE like the reminders, so several workers send each update once. A work already
+    completed or closed is passed over silently."""
+    now = now or datetime.now(timezone.utc)
+    today = local_today(now)
+    data = await Loaded().load(db, NewWork.release_date.is_not(None), NewWork.release_date <= today, NewWork.release_alert_level < 2)
+    data.now = now
+    sent = 0
+    for w in data.works:
+        level = release_level(w.release_date, today)
+        if level <= w.release_alert_level:
+            continue
+        claimed = await db.execute(
+            update(NewWork).where(NewWork.id == w.id, NewWork.release_alert_level < level, NewWork.release_date == w.release_date)
+            .values(release_alert_level=level, updated_at=NewWork.updated_at)   # an update is not an edit
+        )
+        if not claimed.rowcount or data.stage(w) in ("completed", "closed"):
+            continue
+        title, body = release_message(w, data, today, level)
+        await notify(db, await staff(db), title, body, w, RELEASE)
+        await _log(db, None, "new_work_release", w, body)
+        sent += 1
+    return sent
+
+
+# ── is it on OTT yet? ─────────────────────────────────────────────────────────
+def video_message(w: NewWork, data: Loaded, today: date, overdue: bool, nth: int) -> tuple[str, str]:
+    client = data.client(w)
+    name = f"{w.title} ({client})" if client else w.title
+    exp = expected_ott(w)
+    tick = "Tick Video available on the work once it is streaming or the client has sent a copy; fingerprinting opens then."
+    if overdue:
+        since = (f"released in theatres on {day(w.release_date)}, {ago((today - w.release_date).days)}" if w.release_date
+                 else f"added {ago((today - _added_day(w)).days)}")
+        return (f"No video {settings.NEW_WORK_VIDEO_OVERDUE_DAYS}+ days after release: {w.title}",
+                f"{name} was {since}, and its video is still not available. Check with the client: it may be going to TV "
+                f"instead, or they may send a copy. {tick}")
+    if nth > 1:
+        return (f"Still waiting for the video: {w.title}",
+                f"There is still no video for {name}. " + (f"It was expected on {w.ott_platform or 'OTT'} on {day(exp)}. " if exp else "")
+                + f"Check again, or ask the client for a copy. {tick}")
+    if w.ott_date:
+        when = "today" if w.ott_date == today else f"on {day(w.ott_date)}"
+        return (f"Due on OTT: {w.title}", f"{name} is due on {w.ott_platform or 'OTT'} {when}. {tick}")
+    if exp:
+        weeks = (w.ott_window_days or settings.NEW_WORK_OTT_WINDOW_DAYS) // 7
+        return (f"Check OTT: {w.title}",
+                f"{name} was released in theatres on {day(w.release_date)}. Films usually reach OTT about {weeks} weeks "
+                f"after release, so check whether it is streaming, or ask the client for a copy. {tick}")
+    return (f"Ask about the video: {w.title}",
+            f"No release or OTT date is known for {name}. Ask the client when it will be on OTT, or for a copy. {tick}")
+
+
+async def send_video_checks(db: AsyncSession, now: datetime | None = None) -> int:
+    """For each theatrical release still waiting for its video: ask on the expected OTT date and every
+    NEW_WORK_VIDEO_CHECK_DAYS after it, and flag it once NEW_WORK_VIDEO_OVERDUE_DAYS after release. Claimed with
+    conditional UPDATEs so several workers send each one once."""
+    now = now or datetime.now(timezone.utc)
+    today = local_today(now)
+    data = await Loaded().load(db, NewWork.video_state == "waiting")
+    data.now = now
+    sent = 0
+    for w in data.works:
+        due = video_checks_due(w, today)
+        overdue = video_overdue(w, today) and not w.video_overdue_sent
+        if due <= w.video_check_count and not overdue:
+            continue
+        claimed = False
+        if overdue:
+            res = await db.execute(update(NewWork).where(NewWork.id == w.id, NewWork.video_state == "waiting",
+                                                         NewWork.video_overdue_sent.is_(False))
+                                   .values(video_overdue_sent=True, video_check_count=max(due, w.video_check_count),
+                                           updated_at=NewWork.updated_at))
+            claimed = bool(res.rowcount)
+        else:
+            res = await db.execute(update(NewWork).where(NewWork.id == w.id, NewWork.video_state == "waiting",
+                                                         NewWork.video_check_count < due)
+                                   .values(video_check_count=due, updated_at=NewWork.updated_at))
+            claimed = bool(res.rowcount)
+        if not claimed:
+            continue
+        title, body = video_message(w, data, today, overdue, due)
+        await notify(db, await staff(db), title, body, w, VIDEO)
+        await _log(db, None, "new_work_video_check", w, body)
+        sent += 1
+    return sent
+

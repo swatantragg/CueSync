@@ -18,7 +18,7 @@ const DOT = {
   new_work_add: T.teal, new_work_edit: T.blue, new_work_remove: T.red, new_work_bgm: T.green, new_work_skip: T.grayMid,
   new_work_reopen: T.orange, new_work_fp_assign: T.purple, new_work_fp_status: T.purple2, new_work_fp_mail: T.teal,
   new_work_fp_mail_link: T.blue, new_work_fp_done: T.green, new_work_cue_assign: T.blue, new_work_cue_status: T.blue,
-  new_work_cue_removed: T.red, new_work_reminder: T.orange, fp_mailbox_connect: T.green, fp_mailbox_disconnect: T.grayMid,
+  new_work_cue_removed: T.red, new_work_reminder: T.orange, new_work_release: T.teal, new_work_video: T.green, new_work_video_undo: T.orange, new_work_video_check: T.orange, fp_mailbox_connect: T.green, fp_mailbox_disconnect: T.grayMid,
   fp_mailbox_lost: T.orange,
 };
 

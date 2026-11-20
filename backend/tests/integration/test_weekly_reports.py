@@ -179,10 +179,53 @@ def test_status_shows_what_brevo_says(staff, net, login):
     assert s["sending_enabled"] is False and s["delivery"]["delivered"] == 2 and s["delivery"]["errors"] == 3
 
 
+IP_BLOCK = ("We have detected you are using an unrecognised IP address 202.179.93.134. If you performed this action make "
+            "sure to add the new IP address in this link: https://app.brevo.com/security/authorised_ips")
+
+
 def test_status_survives_brevo_blocking_the_server_ip(staff, net, login):
     net.on("GET", brevo.ACCOUNT_URL, httpx.Response(401, json={"message": "unrecognised IP address"}))
     s = login(staff["admin"]).get("/api/reports/status").json()
-    assert "unrecognised IP" in s["brevo_error"] and s["sending_enabled"] is None
+    assert "blocked this server's IP" in s["brevo_error"] and s["sending_enabled"] is None and s["ready"] is False
+
+
+def test_an_ip_block_says_which_address_to_allow_and_where(staff, net, login, base_client, db):
+    net.on("GET", brevo.ACCOUNT_URL, httpx.Response(401, json={"message": IP_BLOCK, "code": "unauthorized"}))
+    s = login(staff["admin"]).get("/api/reports/status").json()
+    reach = next(c for c in s["checks"] if c["key"] == "reachable")
+    assert reach["ok"] is False and "202.179.93.134" in reach["fix"] and brevo.AUTHORISED_IPS_URL in reach["fix"]
+    # A send refused the same way is recorded with the same explanation.
+    net.on("POST", brevo.SEND_URL, httpx.Response(401, json={"message": IP_BLOCK}))
+    assert run(base_client, "T-IP", NOW)["failed"] == 6
+    assert all("Authorised IPs" in r.error and "202.179.93.134" in r.error for r in db.query(ReportSend).all())
+
+
+def test_a_wrong_key_is_named_as_such(net):
+    assert "API key" in brevo.explain(401, "Key not found", "the check")
+    assert brevo.explain(400, "bad", "the email") == "Brevo refused the email (HTTP 400): bad"
+
+
+def test_status_lists_every_reason_nobody_gets_the_email(staff, net, login, monkeypatch):
+    monkeypatch.setattr(settings, "REPORT_ENABLED", False)
+    monkeypatch.setattr(settings, "BREVO_SENDER_EMAIL", "someone@gmail.com")
+    net.on("GET", brevo.ACCOUNT_URL, relay(False))
+    s = login(staff["admin"]).get("/api/reports/status").json()
+    got = {c["key"]: c["ok"] for c in s["checks"]}
+    assert got == {"enabled": False, "configured": True, "sender": False, "reachable": True, "relay": False}
+    sender = next(c for c in s["checks"] if c["key"] == "sender")
+    assert "gmail.com" in sender["fix"] and s["ready"] is False
+
+
+def test_status_is_ready_only_when_everything_is(staff, net, login, monkeypatch):
+    monkeypatch.setattr(settings, "REPORT_ENABLED", True)
+    net.on("GET", brevo.ACCOUNT_URL, relay(True))
+    net.on("GET", brevo.DOMAINS_URL, httpx.Response(200, json={"domains": [{"domain_name": "example.test", "authenticated": True}]}))
+    net.on("GET", brevo.STATS_URL, httpx.Response(200, json={"requests": 1, "delivered": 1}))
+    s = login(staff["admin"]).get("/api/reports/status").json()
+    assert s["ready"] is True and all(c["ok"] for c in s["checks"]) and [c["key"] for c in s["checks"]][-1] == "domain"
+    net.on("GET", brevo.DOMAINS_URL, httpx.Response(200, json={"domains": [{"domain_name": "example.test", "authenticated": False}]}))
+    s = login(staff["admin"]).get("/api/reports/status").json()
+    assert s["ready"] is False and next(c for c in s["checks"] if c["key"] == "domain")["fix"]
 
 
 @pytest.fixture

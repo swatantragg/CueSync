@@ -32,7 +32,7 @@ def s(make, login):
 
 
 def add(s, title="Movie ABC", kind="movie", **kw):
-    res = s["wc"].post("/api/new-works/", json={"title": title, "work_type": kind, **kw})
+    res = s["wc"].post("/api/new-works/", json={"title": title, "work_type": kind, "client_id": s["client"].id, **kw})
     assert res.status_code == 200, res.text
     return res.json()["work"]
 
@@ -89,10 +89,11 @@ def test_a_new_work_starts_awaiting_bgm_with_the_next_two_steps_locked(s):
 
 def test_the_same_title_cannot_be_open_twice(s):
     add(s, "Movie ABC")
-    res = s["wc"].post("/api/new-works/", json={"title": "movie-abc ", "work_type": "movie"})
+    cid = s["client"].id
+    res = s["wc"].post("/api/new-works/", json={"title": "movie-abc ", "work_type": "movie", "client_id": cid})
     assert res.status_code == 409 and "already in the New Work List" in res.json()["detail"]
-    assert s["wc"].post("/api/new-works/", json={"title": "Movie ABC", "work_type": "tv_show"}).status_code == 200
-    assert s["wc"].post("/api/new-works/", json={"title": " -- ", "work_type": "movie"}).status_code == 400
+    assert s["wc"].post("/api/new-works/", json={"title": "Movie ABC", "work_type": "tv_show", "client_id": cid}).status_code == 200
+    assert s["wc"].post("/api/new-works/", json={"title": " -- ", "work_type": "movie", "client_id": cid}).status_code == 400
 
 
 def test_ticking_bgm_records_the_date_and_opens_fingerprinting(s, db):
@@ -522,3 +523,336 @@ def test_notify_editor_draft_names_open_fingerprinting(s):
     draft = s["wc"].get(f"/api/editor-notices/preview/{s['editor'].id}").json()["message"]
     assert "Fingerprinting assigned to you is still open:" in draft and "- Movie ABC (Movie): assigned today, not started yet" in draft
     assert "Fingerprinting" not in s["wc"].get(f"/api/editor-notices/preview/{s['other'].id}").json()["message"]
+
+
+# ── client, release date and video link (4.3.1) ─────────────────────────────
+def today():
+    return new_works.local_today(datetime.now(timezone.utc))
+
+
+def releases(db, *users):
+    return [[n.title for n in notes(db, u, "new_work_release")] for u in users]
+
+
+def release_run(base_client, days_ahead=0):
+    """Run the release updates as if it were `days_ahead` days from now."""
+    return call(base_client, new_works.send_release_updates, NOW + timedelta(days=days_ahead))
+
+
+def test_a_new_work_needs_an_active_client(s, db):
+    post = lambda **kw: s["wc"].post("/api/new-works/", json={"title": "Movie ABC", "work_type": "movie", **kw})
+    assert post().status_code == 400 and "client" in post().json()["detail"]
+    assert post(client_id=999999).status_code == 400
+    gone = s["make"].client("Old Label", is_active=False)
+    assert post(client_id=gone.id).status_code == 400
+    w = add(s)
+    assert (w["client_id"], w["client_name"], w["release"], w["video_link"]) == (s["client"].id, "Sun Music", None, None)
+    assert "client Sun Music" in db.query(AuditLog).filter(AuditLog.action == "new_work_add").one().details
+
+
+def test_release_date_and_video_link_are_kept_and_shown(s, db):
+    on = today() + timedelta(days=10)
+    w = add(s, release_date=on.isoformat(), video_link="  youtu.be/abc123 ")
+    assert (w["release_date"], w["video_link"]) == (on.isoformat(), "https://youtu.be/abc123")
+    r = w["release"]
+    assert (r["days"], r["upcoming"], r["label"], r["updates_sent"], r["next_update"]) == (-10, True, "Releases in 10 days", 0, on.isoformat())
+    assert f"release {on:%d %b %Y}" in db.query(AuditLog).filter(AuditLog.action == "new_work_add").one().details
+    for bad in ("javascript:alert(1)", "not a link", "https://localhost", "ftp://files.example.com/x"):
+        res = s["wc"].post("/api/new-works/", json={"title": f"Other {bad}", "work_type": "movie", "client_id": s["client"].id, "video_link": bad})
+        assert res.status_code == 400, bad
+    assert add(s, "Plain", video_link="https://www.netflix.com/title/1")["video_link"] == "https://www.netflix.com/title/1"
+
+
+def test_release_updates_come_on_the_day_and_seven_days_after(s, db, base_client):
+    w = add(s, release_date=(today() + timedelta(days=3)).isoformat(), video_link="https://youtu.be/x1")
+    assert release_run(base_client) == 0 and release_run(base_client, 2) == 0
+    assert release_run(base_client, 3) == 1
+    assert release_run(base_client, 3) == 0   # once, however often the loop runs
+    admin, wd = releases(db, s["admin"], s["wd"])
+    assert admin == wd == ["Released today: Movie ABC"]
+    assert releases(db, s["editor"]) == [[]]
+    body = notes(db, s["wd"], "new_work_release")[0].body
+    assert "is released today" in body and "Sun Music" in body and "Current status: Awaiting BGM" in body and "https://youtu.be/x1" in body
+    assert release_run(base_client, 9) == 0 and release_run(base_client, 10) == 1 and release_run(base_client, 20) == 0
+    assert releases(db, s["wd"]) == [["Released today: Movie ABC", "Released 7 days ago: Movie ABC"]]
+    assert actions(db, w["id"]).count("new_work_release") == 2
+    got = s["wc"].get(f"/api/new-works/{w['id']}").json()["work"]
+    assert got["release"]["updates_sent"] == 2 and got["release"]["next_update"] is None
+    # A reminder sweep marks reminders read when a step moves; release updates are not reminders and stay.
+    do(s["wc"], w["id"], "bgm", received=True)
+    assert all(not n.is_read for n in notes(db, s["wd"], "new_work_release"))
+
+
+def test_only_dates_still_ahead_get_an_update(s, db, base_client):
+    add(s, "Today", release_date=today().isoformat())                                   # not ahead: no release-day update
+    add(s, "Last Week", release_date=(today() - timedelta(days=2)).isoformat())         # only the 7-days-after one is ahead
+    add(s, "Long Ago", release_date=(today() - timedelta(days=30)).isoformat())         # nothing
+    assert release_run(base_client) == 0
+    assert release_run(base_client, 5) == 1 and release_run(base_client, 7) == 1 and release_run(base_client, 40) == 0
+    assert sorted(releases(db, s["wd"])[0]) == ["Released 7 days ago: Last Week", "Released 7 days ago: Today"]
+
+
+def test_a_new_release_date_brings_its_own_updates_and_finished_work_gets_none(s, db, base_client):
+    w = add(s, release_date=(today() + timedelta(days=1)).isoformat())
+    assert release_run(base_client, 1) == 1
+    later = today() + timedelta(days=5)
+    res = s["wc"].put(f"/api/new-works/{w['id']}", json={"release_date": later.isoformat()}).json()["work"]
+    assert res["release"]["updates_sent"] == 0 and res["release"]["next_update"] == later.isoformat()
+    assert "release date" in db.query(AuditLog).filter(AuditLog.action == "new_work_edit").one().details
+    assert release_run(base_client, 5) == 1
+    assert releases(db, s["wd"])[0] == ["Released today: Movie ABC", "Released today: Movie ABC"]
+    cleared = s["wc"].put(f"/api/new-works/{w['id']}", json={"release_date": None}).json()["work"]
+    assert (cleared["release_date"], cleared["release"]) == (None, None)
+    # Closed without a cue sheet: its release day passes quietly, and never fires later.
+    closed = add(s, "Closed One", release_date=(today() + timedelta(days=2)).isoformat())
+    do(s["wc"], closed["id"], "skip", step="bgm", reason="Client will not send the BGM")
+    do(s["wc"], closed["id"], "skip", step="fingerprint", reason="Not needed for this one")
+    do(s["wc"], closed["id"], "skip", step="cue", reason="Order was cancelled")
+    assert release_run(base_client, 2) == 0 and release_run(base_client, 9) == 0
+    assert "new_work_release" not in actions(db, closed["id"])
+
+
+def test_the_client_is_changed_not_cleared_and_carries_into_the_allotment(s, db):
+    zee = s["make"].client("Zee Music")
+    w = to_cue_step(s)
+    assert s["wc"].put(f"/api/new-works/{w['id']}", json={"client_id": None}).status_code == 400
+    res = s["wc"].put(f"/api/new-works/{w['id']}", json={"client_id": zee.id, "video_link": "https://youtu.be/v"}).json()["work"]
+    assert (res["client_name"], res["video_link"]) == ("Zee Music", "https://youtu.be/v")
+    details = db.query(AuditLog).filter(AuditLog.action == "new_work_edit").one().details
+    assert "client Sun Music → Zee Music" in details and "video link added" in details
+    w = do(s["wc"], w["id"], "cue/allot", assigned_to=s["editor"].id)   # no client sent: the work's own
+    assert w["cue"]["client"] == "Zee Music"
+    assert db.query(WorkDelegation).one().client_id == zee.id
+    assert s["wc"].put(f"/api/new-works/{w['id']}", json={"client_id": s["client"].id}).status_code == 409
+    assert s["wc"].put(f"/api/new-works/{w['id']}", json={"video_link": ""}).json()["work"]["video_link"] is None
+
+
+def test_a_client_named_by_a_new_work_cannot_be_deleted(s):
+    add(s)
+    res = s["ac"].delete(f"/api/clients/{s['client'].id}")
+    assert res.status_code == 409 and "1 new work" in res.json()["detail"]
+
+
+def test_works_added_before_clients_were_required_still_load_and_edit(s, db):
+    db.add(NewWork(title="Legacy", title_key="legacy", work_type="movie"))
+    db.commit()
+    row = next(w for w in s["wc"].get("/api/new-works/").json()["works"] if w["title"] == "Legacy")
+    assert (row["client_id"], row["client_name"], row["release"]) == (None, None, None)
+    res = s["wc"].put(f"/api/new-works/{row['id']}", json={"remarks": "Old entry"})
+    assert res.status_code == 200 and res.json()["work"]["remarks"] == "Old entry"
+    assert s["wc"].put(f"/api/new-works/{row['id']}", json={"client_id": s["client"].id}).json()["work"]["client_name"] == "Sun Music"
+
+
+# ── movies in theatres wait for their video (4.3.2) ─────────────────────────
+def theatrical(s, title="Movie ABC", **kw):
+    return add(s, title, release_type="theatrical", **kw)
+
+
+def video_run(base_client, days_ahead=0):
+    return call(base_client, new_works.send_video_checks, NOW + timedelta(days=days_ahead))
+
+
+def videos(db, user):
+    return [n.title for n in notes(db, user, "new_work_video")]
+
+
+def test_a_movie_in_theatres_waits_for_its_video_before_fingerprinting(s, db):
+    w = theatrical(s, release_date=today().isoformat(), ott_platform=" Netflix ", ott_window_days=28)
+    assert (w["release_type"], w["release_type_label"], w["video"]["state"], w["video"]["waiting"]) == ("theatrical", "Theatres first", "waiting", True)
+    assert (w["ott"]["platform"], w["video"]["expected_ott"], w["video"]["estimated"]) == ("Netflix", (today() + timedelta(days=28)).isoformat(), True)
+    assert "waiting for the video" in db.query(AuditLog).filter(AuditLog.action == "new_work_add").one().details
+    w = do(s["wc"], w["id"], "bgm", received=True)
+    assert (w["stage"], w["stage_label"], w["locked"]["fingerprint"]) == ("awaiting_video", "Waiting for video", True)
+    wid = w["id"]
+    for path, body in (("fingerprint/assign", {"assigned_to": s["editor"].id}), ("skip", {"step": "fingerprint", "reason": "Not needed here"})):
+        res = s["wc"].post(f"/api/new-works/{wid}/{path}", json=body)
+        assert res.status_code == 409 and "waiting for its video" in res.json()["detail"], path
+    # Saying where it came from is required; an OTT source needs its link.
+    assert s["wc"].post(f"/api/new-works/{wid}/video", json={"available": True}).status_code == 400
+    assert s["wc"].post(f"/api/new-works/{wid}/video", json={"available": True, "source": "ott"}).status_code == 400
+    assert s["wc"].post(f"/api/new-works/{wid}/video", json={"available": True, "source": "other", "note": "hm"}).status_code == 400
+    assert s["ec"].post(f"/api/new-works/{wid}/video", json={"available": True, "source": "client"}).status_code == 403
+    w = do(s["wc"], wid, "video", available=True, source="ott", link="netflix.com/title/81")
+    assert (w["video"]["state"], w["video"]["source_label"], w["video"]["by_name"], w["video_link"]) == (
+        "available", "Streaming on OTT", "Asha Delegator", "https://netflix.com/title/81")
+    assert (w["stage"], w["locked"]["fingerprint"]) == ("fp_not_assigned", False)
+    assert [t for t in (n.title for n in notes(db, s["admin"], "new_work"))] == ["Video available: Movie ABC"]
+    assert do(s["wc"], wid, "fingerprint/assign", assigned_to=s["editor"].id)["stage"] == "fp_assigned"
+    assert "new_work_video" in actions(db, wid)
+
+
+def test_the_video_can_be_taken_back_only_before_fingerprinting_starts(s, db):
+    w = theatrical(s)
+    do(s["wc"], w["id"], "bgm", received=True)
+    w = do(s["wc"], w["id"], "video", available=True, source="client", note="Producer shared a Drive link")
+    assert (w["video"]["source"], w["video"]["note"]) == ("client", "Producer shared a Drive link")
+    w = do(s["wc"], w["id"], "video", available=False)
+    assert (w["stage"], w["video"]["state"], w["video"]["at"]) == ("awaiting_video", "waiting", None)
+    do(s["wc"], w["id"], "video", available=True, source="tv")
+    do(s["wc"], w["id"], "fingerprint/assign", assigned_to=s["editor"].id)
+    assert s["wc"].post(f"/api/new-works/{w['id']}/video", json={"available": False}).status_code == 409
+    assert actions(db, w["id"]).count("new_work_video_undo") == 1
+    # Only a theatrical release waits: an OTT one never does.
+    ott = add(s, "Direct To OTT", release_type="ott", ott_date=today().isoformat(), ott_platform="Netflix")
+    assert (ott["video"], ott["ott"]["date"], ott["ott"]["platform"]) == (None, None, None)
+    assert s["wc"].post(f"/api/new-works/{ott['id']}/video", json={"available": True, "source": "ott", "link": "https://x.com/a"}).status_code == 409
+
+
+def test_release_type_rules(s):
+    post = lambda **kw: s["wc"].post("/api/new-works/", json={"title": "Some Show", "client_id": s["client"].id, **kw})
+    assert post(work_type="tv_show", release_type="theatrical").status_code == 400
+    assert post(work_type="movie", release_type="cinema").status_code == 422
+    assert post(work_type="movie", release_type="theatrical", ott_window_days=40).status_code == 400
+    assert post(work_type="tv_show", release_type="tv").status_code == 200
+
+
+def test_while_waiting_for_the_video_the_step_reminders_and_long_flags_hold_off(s, db, base_client):
+    w = theatrical(s)
+    do(s["wc"], w["id"], "bgm", received=True)
+    age(db, w["id"], created_at=40, bgm_at=40)
+    row = s["wc"].get(f"/api/new-works/{w['id']}").json()["work"]
+    assert (row["reminder"], row["days_in_stage"]) == (None, 40)
+    assert call(base_client, new_works.send_reminders) == 0
+    summary = s["wc"].get("/api/new-works/summary").json()["summary"]
+    assert (summary["awaiting_video"], summary["pending_15"], summary["pending_30"]) == (1, 0, 0)
+    # The clock starts when the video comes: fingerprinting is "pending" from then, not from 40 days ago.
+    do(s["wc"], w["id"], "video", available=True, source="client")
+    age(db, w["id"], video_at=6)
+    row = s["wc"].get(f"/api/new-works/{w['id']}").json()["work"]
+    assert (row["days_in_stage"], row["days_open"], row["reminder"]["level"], row["reminder"]["due"]) == (6, 6, 0, True)
+    assert "The video of Movie ABC became available 6 days ago" in row["reminder"]["message"]
+    assert call(base_client, new_works.send_reminders) == 1
+    # And a BGM still awaited is chased as usual, but without the 15/30-day flags while the video is awaited.
+    other = theatrical(s, "Other Movie")
+    age(db, other["id"], created_at=31)
+    r = s["wc"].get(f"/api/new-works/{other['id']}").json()["work"]["reminder"]
+    assert (r["kind"], r["level"], r["due"]) == ("bgm", 0, True)
+
+
+def test_is_it_on_ott_yet_from_the_usual_gap_then_weekly(s, db, base_client):
+    w = theatrical(s, release_date=today().isoformat(), ott_window_days=28)
+    assert video_run(base_client, 27) == 0
+    assert video_run(base_client, 28) == 1 and video_run(base_client, 28) == 0
+    assert video_run(base_client, 34) == 0 and video_run(base_client, 35) == 1
+    assert videos(db, s["wd"]) == ["Check OTT: Movie ABC", "Still waiting for the video: Movie ABC"]
+    assert videos(db, s["editor"]) == []
+    first = notes(db, s["admin"], "new_work_video")[0].body
+    assert "about 4 weeks after release" in first and "Sun Music" in first
+    assert actions(db, w["id"]).count("new_work_video_check") == 2
+    row = s["wc"].get(f"/api/new-works/{w['id']}").json()["work"]
+    assert (row["video"]["checks_sent"], row["video"]["next_check"]) == (2, (today() + timedelta(days=42)).isoformat())
+    # The video arrives: the questions stop, and those in the bell are no longer something to act on.
+    do(s["wc"], w["id"], "bgm", received=True)
+    do(s["wc"], w["id"], "video", available=True, source="ott", link="https://www.primevideo.com/x")
+    assert video_run(base_client, 60) == 0
+    assert all(n.is_read for n in notes(db, s["wd"], "new_work_video"))
+
+
+def test_an_announced_ott_date_and_no_date_at_all(s, db, base_client):
+    theatrical(s, "Dated", release_date=today().isoformat(), ott_date=(today() + timedelta(days=10)).isoformat(), ott_platform="Netflix")
+    theatrical(s, "Undated")
+    assert video_run(base_client, 6) == 0
+    assert video_run(base_client, 7) == 1      # no dates: a week after it was added
+    assert video_run(base_client, 10) == 1     # on the OTT date
+    assert sorted(videos(db, s["wd"])) == ["Ask about the video: Undated", "Due on OTT: Dated"]
+    body = next(n.body for n in notes(db, s["wd"], "new_work_video") if n.title.endswith("Dated") and "Due" in n.title)
+    assert "due on Netflix today" in body
+
+
+def test_no_video_long_after_release_is_flagged_once(s, db, base_client):
+    theatrical(s, release_date=today().isoformat(), ott_window_days=56)
+    assert video_run(base_client, 56) == 1
+    assert video_run(base_client, 90) == 1 and video_run(base_client, 90) == 0
+    assert f"No video {settings.NEW_WORK_VIDEO_OVERDUE_DAYS}+ days after release: Movie ABC" in videos(db, s["wd"])
+    # The flag stands in for the weekly questions missed until then; the next one (day 56 + 5 weeks) still comes.
+    assert video_run(base_client, 91) == 1 and video_run(base_client, 97) == 0 and video_run(base_client, 98) == 1
+    assert videos(db, s["wd"]).count(f"No video {settings.NEW_WORK_VIDEO_OVERDUE_DAYS}+ days after release: Movie ABC") == 1
+    row = s["wc"].get("/api/new-works/").json()
+    assert row["summary"]["video_overdue"] == 0   # "overdue" is judged on today, which is still day 0 here
+
+
+def test_dates_already_past_when_entered_bring_only_what_is_still_ahead(s, db, base_client):
+    old = theatrical(s, release_date=(today() - timedelta(days=100)).isoformat(), ott_window_days=28)
+    assert (old["video"]["overdue"], old["video"]["checks_sent"]) == (True, 11)   # 100 days after day 28: checks 1..11 passed
+    assert old["video"]["next_check"] == (today() + timedelta(days=5)).isoformat()   # day 28 + 7 × 11 = day 105
+    assert video_run(base_client) == 0 and video_run(base_client, 4) == 0
+    assert video_run(base_client, 5) == 1      # the next weekly question, not eleven late ones or a late flag
+    assert videos(db, s["wd"]) == ["Still waiting for the video: Movie ABC"]
+    assert s["wc"].get("/api/new-works/summary").json()["summary"]["video_overdue"] == 1
+
+
+def test_editing_the_release_starts_or_ends_the_wait_and_rearms_the_checks(s, db, base_client):
+    w = add(s, release_type="ott")
+    assert w["video"] is None
+    w = s["wc"].put(f"/api/new-works/{w['id']}", json={"release_type": "theatrical", "release_date": today().isoformat(), "ott_window_days": 28}).json()["work"]
+    assert (w["video"]["waiting"], w["stage"]) == (True, "awaiting_bgm")
+    assert "waiting for the video" in db.query(AuditLog).filter(AuditLog.action == "new_work_edit").one().details
+    assert video_run(base_client, 28) == 1
+    w = s["wc"].put(f"/api/new-works/{w['id']}", json={"ott_date": (today() + timedelta(days=40)).isoformat(), "ott_platform": "Hotstar"}).json()["work"]
+    assert (w["video"]["checks_sent"], w["video"]["expected_ott"], w["video"]["estimated"]) == (0, (today() + timedelta(days=40)).isoformat(), False)
+    assert video_run(base_client, 39) == 0 and video_run(base_client, 40) == 1
+    w = s["wc"].put(f"/api/new-works/{w['id']}", json={"release_type": "ott"}).json()["work"]
+    assert (w["video"], w["ott"]["date"], w["ott"]["platform"]) == (None, None, None)
+    assert video_run(base_client, 60) == 0
+    # A TV show can't be made theatrical, and a theatrical movie can't become a TV show without changing that.
+    assert s["wc"].put(f"/api/new-works/{w['id']}", json={"work_type": "tv_show", "release_type": "theatrical"}).status_code == 400
+    t = theatrical(s, "In Cinemas")
+    assert s["wc"].put(f"/api/new-works/{t['id']}", json={"work_type": "tv_show"}).status_code == 400
+    assert s["wc"].put(f"/api/new-works/{t['id']}", json={"work_type": "tv_show", "release_type": "tv"}).json()["work"]["video"] is None
+
+
+def test_making_a_work_theatrical_after_fingerprinting_started_does_not_lock_it_again(s):
+    w = add(s, release_type="ott")
+    do(s["wc"], w["id"], "bgm", received=True)
+    do(s["wc"], w["id"], "fingerprint/assign", assigned_to=s["editor"].id)
+    w = s["wc"].put(f"/api/new-works/{w['id']}", json={"release_type": "theatrical"}).json()["work"]
+    assert (w["release_type"], w["video"], w["stage"]) == ("theatrical", None, "fp_assigned")
+
+
+def test_a_bmat_email_is_not_matched_to_a_movie_still_waiting_for_its_video(s, db, base_client):
+    w = theatrical(s)
+    do(s["wc"], w["id"], "bgm", received=True)
+    db.add(FingerprintMail(gmail_message_id="m-video-1", mailbox_email=BOX, from_addr=SENDER, subject="Movie ABC report",
+                           match_text="movie abc report", received_at=datetime.now(timezone.utc) + timedelta(minutes=1)))
+    db.commit()
+    assert call(base_client, fingerprint_mail.match_waiting) == 0
+    do(s["wc"], w["id"], "video", available=True, source="client")
+    assert call(base_client, fingerprint_mail.match_waiting) == 1
+
+
+def test_the_release_day_update_says_it_waits_for_the_video(s, db, base_client):
+    theatrical(s, release_date=(today() + timedelta(days=1)).isoformat(), ott_window_days=28)
+    assert release_run(base_client, 1) == 1
+    body = notes(db, s["wd"], "new_work_release")[0].body
+    assert "It is in theatres: fingerprinting waits for the video, usually on OTT around" in body
+
+
+def test_weekly_reports_list_the_movies_waiting_for_their_video(s, db, base_client):
+    theatrical(s, release_date=(today() - timedelta(days=10)).isoformat(), ott_window_days=28)
+    ctx = call(base_client, _ctx)
+    for report in (weekly_reports.wd_report(ctx, s["wd"]), weekly_reports.admin_report(ctx, s["admin"])):
+        assert "Waiting for video (in theatres): 1" in report.text
+        assert "MOVIES WAITING FOR THEIR VIDEO" in report.text and "(usual gap)" in report.text and "Sun Music" in report.text
+
+
+def test_a_rename_or_retype_cannot_make_a_second_open_entry_for_a_title(s):
+    add(s, "Movie ABC")
+    other = add(s, "Movie XYZ")
+    res = s["wc"].put(f"/api/new-works/{other['id']}", json={"title": "movie-abc"})
+    assert res.status_code == 409 and "already in the New Work List" in res.json()["detail"]
+    show = add(s, "Movie ABC", "tv_show", release_type="tv")
+    assert s["wc"].put(f"/api/new-works/{show['id']}", json={"work_type": "movie"}).status_code == 409
+    assert s["wc"].put(f"/api/new-works/{other['id']}", json={"title": "Movie XYZ (2026)"}).status_code == 200
+
+
+def test_dates_outside_a_real_range_are_refused_not_left_to_break_the_list(s):
+    for kind in ("theatrical", "ott"):
+        for bad in ("9999-12-31", "0001-01-01"):
+            res = s["wc"].post("/api/new-works/", json={"title": f"Typo {kind} {bad}", "client_id": s["client"].id,
+                                                         "release_type": kind, "release_date": bad})
+            assert res.status_code == 400 and "between 1950 and 2100" in res.json()["detail"], (kind, bad)
+    w = theatrical(s)
+    assert s["wc"].put(f"/api/new-works/{w['id']}", json={"ott_date": "9999-12-31"}).status_code == 400
+    assert s["wc"].put(f"/api/new-works/{w['id']}", json={"release_date": "2101-01-01"}).status_code == 400
+    assert s["wc"].get("/api/new-works/").status_code == 200
+
